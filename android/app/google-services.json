@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "297636752338",
+    "project_id": "zhini-app",
+    "storage_bucket": "zhini-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:297636752338:android:501e4785453f349754b60b",
+        "android_client_info": {
+          "package_name": "com.ytech.zhini.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDv4BkY7m-Dy5WboAKOR2iUYXQTNgP26H0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

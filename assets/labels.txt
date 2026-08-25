@@ -1,0 +1,12 @@
+AC
+Air Cooler
+Refrigerator
+Vacuum Cleaner
+Water Purifier
+laptop
+mixi
+mobile-phone
+sofa
+stove
+television
+washing-machine
