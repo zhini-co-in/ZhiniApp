@@ -2,7 +2,8 @@
 //
 // "Service" screen — ticket list (with invoice-style billing popup, same
 // design as MyTicketsScreen) + a "quick book" grid for common service
-// categories.
+// categories. Also lets the customer cancel a still-open ticket with a
+// reason (bottom sheet, quick-reason chips + custom text).
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -12,6 +13,13 @@ import 'package:geolocator/geolocator.dart';
 import 'constants/api_config.dart';
 import 'theme/app_theme.dart';
 import 'widgets/service_provider_card.dart';
+
+// ---------------------------------------------------------------------
+// ADD THIS to lib/constants/api_config.dart (if not already present):
+//
+//   static String cancelTicketUrl() => '$baseUrl/cancel-ticket';
+//
+// ---------------------------------------------------------------------
 
 class ServiceTab extends StatefulWidget {
   final String mobileNumber;
@@ -65,10 +73,6 @@ class _ServiceTabState extends State<ServiceTab> {
   // ---------------------------------------------------------------------
   // LOCATION HELPER
   // ---------------------------------------------------------------------
-  // Silent GPS fetch (mirrors HomeTab/ScanTab's _buildGpsLocationQuery) —
-  // no fresh permission prompt in most cases since location is expected
-  // to already be tracked/permitted elsewhere in the app. Returns '' if
-  // location can't be resolved, so callers just fall back to pincode-only.
   Future<String> _buildGpsLocationQuery() async {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -151,9 +155,55 @@ class _ServiceTabState extends State<ServiceTab> {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // CANCEL TICKET — calls PUT {baseUrl}/cancel-ticket with a reason.
+  // ---------------------------------------------------------------------
+  Future<void> _cancelTicket(String ticketId, String reason) async {
+    try {
+      final response = await http.put(
+        Uri.parse(ApiConfig.cancelTicketUrl()),
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: jsonEncode({
+          'ticketId': ticketId,
+          'customerMobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+          'reason': reason,
+        }),
+      );
+
+      debugPrint('🚫 Cancel ticket status: ${response.statusCode}');
+      debugPrint('🚫 Cancel ticket body: ${response.body}');
+
+      final data = response.statusCode == 200 ? jsonDecode(response.body) : null;
+      final ok = data != null && data['success'] == true;
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Ticket cancelled successfully.'
+              : (data?['message']?.toString() ?? 'Could not cancel ticket (${response.statusCode}).')),
+          backgroundColor: ok ? AppColors.success : AppColors.danger,
+        ),
+      );
+
+      if (ok) _fetchTickets(); // refresh list to reflect new status
+    } catch (e) {
+      debugPrint('❌ Cancel ticket error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Network error. Please try again.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
+  }
+
   void _prefetchQuickBookCounts() async {
-    // Best-effort GPS lat/long alongside the pincode — backend can use
-    // whichever it prefers, or fall back if one is missing.
     final locationQuery = await _buildGpsLocationQuery();
 
     final futures = _quickBookCategories.map((cat) async {
@@ -537,6 +587,210 @@ class _ServiceTabState extends State<ServiceTab> {
   }
 
   // -----------------------------------------------------------------------
+  // Cancel ticket sheet — bottom sheet with quick-reason chips + custom text.
+  // -----------------------------------------------------------------------
+  void _showCancelDialog(BuildContext context, Map<String, dynamic> t) {
+    final ticketId = t['ticketId']?.toString();
+    if (ticketId == null || ticketId.isEmpty) return;
+
+    final reasonController = TextEditingController();
+    const quickReasons = [
+      'Found a local technician',
+      'Changed my mind',
+      'Price too high',
+      'Taking too long',
+    ];
+    String? selectedQuickReason;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: AppColors.cardBg,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ---- Drag handle ----
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 18),
+                    decoration: BoxDecoration(
+                      color: AppColors.borderSubtle,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+
+                // ---- Header ----
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.danger.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.cancel_rounded, color: AppColors.danger, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Cancel this ticket?',
+                              style: TextStyle(
+                                  color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+                          Text('Ticket #$ticketId', style: AppText.caption),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // ---- Quick reason chips ----
+                const Text('Quick reasons',
+                    style: TextStyle(
+                        color: AppColors.textSecondary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: quickReasons.map((r) {
+                    final isSelected = selectedQuickReason == r;
+                    return GestureDetector(
+                      onTap: () {
+                        setSheetState(() {
+                          selectedQuickReason = isSelected ? null : r;
+                          reasonController.text = isSelected ? '' : r;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.danger.withValues(alpha: 0.12) : AppColors.scaffoldBg,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isSelected ? AppColors.danger : AppColors.borderSubtle,
+                          ),
+                        ),
+                        child: Text(r,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
+                              color: isSelected ? AppColors.danger : AppColors.textSecondary,
+                            )),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+
+                // ---- Custom reason field ----
+                const Text('Or type your own reason',
+                    style: TextStyle(
+                        color: AppColors.textSecondary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonController,
+                  maxLines: 3,
+                  onChanged: (_) => setSheetState(() => selectedQuickReason = null),
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 13.5),
+                  decoration: InputDecoration(
+                    hintText: "Tell us why you're cancelling...",
+                    hintStyle: AppText.faintCaption,
+                    filled: true,
+                    fillColor: AppColors.scaffoldBg,
+                    contentPadding: const EdgeInsets.all(12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.borderSubtle),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.borderSubtle),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.info_outline_rounded, size: 13, color: AppColors.textMuted),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text('Your assigned technician will be notified once cancelled.',
+                          style: AppText.caption),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+
+                // ---- Actions ----
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.textSecondary,
+                          side: const BorderSide(color: AppColors.borderSubtle),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Keep ticket', style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final reason = reasonController.text.trim();
+                          if (reason.isEmpty) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(content: Text('Please add a reason to cancel.')),
+                            );
+                            return;
+                          }
+                          Navigator.of(ctx).pop();
+                          _cancelTicket(ticketId, reason);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.danger,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Confirm cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // -----------------------------------------------------------------------
   // Quick Book helpers (unchanged from before)
   // -----------------------------------------------------------------------
   Future<void> _callNumber(String? phone) async {
@@ -628,8 +882,6 @@ class _ServiceTabState extends State<ServiceTab> {
 
   Future<List<Map<String, dynamic>>> _fetchProvidersFor(String serviceType) async {
     try {
-      // Best-effort GPS lat/long alongside the pincode — backend can use
-      // whichever it prefers, or fall back if one is missing.
       final locationQuery = await _buildGpsLocationQuery();
 
       final response = await http.post(
@@ -784,6 +1036,7 @@ class _ServiceTabState extends State<ServiceTab> {
     final date = _formattedDate(t);
     final bill = _billFor(t);
     final hasBill = t['billing'] is Map;
+    final isCancellable = _statusBucket(status) == 'open' || _statusBucket(status) == 'in_progress';
 
     return Container(
       decoration: BoxDecoration(
@@ -848,25 +1101,62 @@ class _ServiceTabState extends State<ServiceTab> {
               ],
             ),
           ],
-          if (hasBill) ...[
+
+          // ---- Bottom action row: bill total (left) + cancel pill (right) ----
+          if (hasBill || isCancellable) ...[
             const SizedBox(height: 12),
             Divider(color: AppColors.borderSubtle, height: 1),
             const SizedBox(height: 12),
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: () => _showBill(context, t),
-              child: Row(
-                children: [
-                  const Text('Total', style: TextStyle(color: AppColors.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w700)),
-                  const SizedBox(width: 5),
-                  const Icon(Icons.receipt_long_rounded, size: 14, color: AppColors.textMuted),
+            Row(
+              children: [
+                if (hasBill)
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => _showBill(context, t),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Total',
+                              style: TextStyle(
+                                  color: AppColors.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w700)),
+                          const SizedBox(width: 5),
+                          const Icon(Icons.receipt_long_rounded, size: 14, color: AppColors.textMuted),
+                          const SizedBox(width: 6),
+                          Text(
+                            '₹${bill.total.toStringAsFixed(bill.total % 1 == 0 ? 0 : 2)}',
+                            style: const TextStyle(
+                                color: AppColors.primary, fontSize: 14.5, fontWeight: FontWeight.w700),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
                   const Spacer(),
-                  Text(
-                    '₹${bill.total.toStringAsFixed(bill.total % 1 == 0 ? 0 : 2)}',
-                    style: const TextStyle(color: AppColors.primary, fontSize: 14.5, fontWeight: FontWeight.w700),
+                if (isCancellable)
+                  GestureDetector(
+                    onTap: () => _showCancelDialog(context, t),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: AppColors.danger.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.danger.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.close_rounded, size: 13, color: AppColors.danger),
+                          SizedBox(width: 4),
+                          Text('Cancel',
+                              style: TextStyle(
+                                  color: AppColors.danger, fontSize: 12, fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                    ),
                   ),
-                ],
-              ),
+              ],
             ),
           ],
         ],
