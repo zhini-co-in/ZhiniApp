@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "297636752338",
-    "project_id": "zhini-app",
-    "storage_bucket": "zhini-app.firebasestorage.app"
+    "project_number": "246578636258",
+    "project_id": "zhini-d268d",
+    "storage_bucket": "zhini-d268d.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:297636752338:android:501e4785453f349754b60b",
+        "mobilesdk_app_id": "1:246578636258:android:ab9d057bbc5cba0a9585bb",
         "android_client_info": {
-          "package_name": "com.ytech.zhini.mobile"
+          "package_name": "com.zhini.mobile"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDv4BkY7m-Dy5WboAKOR2iUYXQTNgP26H0"
+          "current_key": "AIzaSyBjdT5QYOttRzTn3k8vaYtBuyyvuJb8FE8"
         }
       ],
       "services": {

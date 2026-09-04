@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.ytech.zhini.mobile</string>
+	<string>com.zhini.mobile</string>
 	<key>PROJECT_ID</key>
 	<string>zhini-app</string>
 	<key>STORAGE_BUCKET</key>

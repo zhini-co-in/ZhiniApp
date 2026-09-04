@@ -2369,6 +2369,40 @@ Future<bool> _submitManualAppliance({
                     label: const Text('Log out', style: TextStyle(color: AppColors.danger, fontSize: 14.5, fontWeight: FontWeight.w600)),
                   ),
                 ),
+               const SizedBox(height: 20),
+                Center(
+                  child: InkWell(
+                    onTap: () async {
+                      final Uri emailUri = Uri(
+                        scheme: 'mailto',
+                        path: 'support@zhini.co.in',
+                        query: 'subject=ZHINI App Support',
+                      );
+                      try {
+                        await launchUrl(emailUri);
+                      } catch (e) {
+                        debugPrint('Email launch error: $e');
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Could not open mail app.')),
+                          );
+                        }
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                      child: Text(
+                        'Powered by Atom8',
+                        style: TextStyle(
+                          color: AppColors.textFaint,
+                          fontSize: 11.5,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -3008,8 +3042,48 @@ Widget _buildHomeSwitcher() {
   }
 
   // Wraps the search bar + separate "+" button row.
+   // Wraps the search bar + separate "+" button row + footer branding.
   Widget _buildBottomArea() {
-    return _buildAskZhiniRow();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildAskZhiniRow(),
+        const SizedBox(height: 10),
+        Center(
+          child: InkWell(
+            onTap: () async {
+              final Uri emailUri = Uri(
+                scheme: 'mailto',
+                path: 'support@zhini.co.in',
+                query: 'subject=ZHINI App Support',
+              );
+              try {
+                await launchUrl(emailUri);
+              } catch (e) {
+                debugPrint('Email launch error: $e');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Could not open mail app.')),
+                  );
+                }
+              }
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4, horizontal: 10),
+              child: Text(
+                'Powered by Atom8',
+                style: TextStyle(
+                  color: AppColors.textFaint,
+                  fontSize: 11,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   // The "Ask ZHINI" pill search bar, with the "+" add button sitting

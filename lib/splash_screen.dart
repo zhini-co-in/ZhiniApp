@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'onboarding_screen.dart';
 import 'main_shell.dart';
 import 'services/session_manager.dart';
@@ -76,6 +77,20 @@ class _SplashScreenState extends State<SplashScreen>
     }
   }
 
+  // ---- Opens the device's mail app with support@zhini.co.in pre-filled ----
+  Future<void> _openSupportMail() async {
+    final Uri emailUri = Uri(
+      scheme: 'mailto',
+      path: 'support@zhini.co.in',
+      query: 'subject=ZHINI App Support',
+    );
+    try {
+      await launchUrl(emailUri);
+    } catch (e) {
+      debugPrint('Email launch error: $e');
+    }
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -86,35 +101,61 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A1628),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              'assets/Zhini_Icon1.png',
-              width: 140,
-              height: 140,
-              fit: BoxFit.contain,
+      body: Stack(
+        children: [
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Image.asset(
+                  'assets/Zhini_Icon1.png',
+                  width: 140,
+                  height: 140,
+                  fit: BoxFit.contain,
+                ),
+                const SizedBox(height: 0),
+                SlideTransition(
+                  position: _slideAnimation,
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: const Text(
+                      'ZHINI',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 7.0,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 0),
-            SlideTransition(
-              position: _slideAnimation,
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: const Text(
-                  'ZHINI',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 7.0,
+          ),
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: InkWell(
+                onTap: _openSupportMail,
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                  child: Text(
+                    'Powered by Atom8',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 11.5,
+                      decoration: TextDecoration.underline,
+                    ),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

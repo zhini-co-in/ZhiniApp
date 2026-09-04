@@ -25,7 +25,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.ytech.zhini.mobile"
+        applicationId = "com.zhini.mobile"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
