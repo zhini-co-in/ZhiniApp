@@ -33,5 +33,6 @@ static String get providerTicketsUrl => '$baseUrl/service/provider-tickets';
     '$baseUrl/service/billing/$phone';
     static String cancelTicketUrl() => '$baseUrl/service/cancel-ticket';
     static String get createHomeUrl => '$baseUrl/product/home'; // adjust path if different on your backend
+    static String deleteRoomUrl(String homeId) => '$baseUrl/product/delete-room/$homeId';
 
 }

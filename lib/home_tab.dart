@@ -420,73 +420,84 @@ Future<void> _fetchAppliances({String? homeId}) async {
         final List rawHomes = rawData is List ? rawData : [rawData];
 
         final parsedHomes = rawHomes.map<Map<String, dynamic>>((h) {
-          final roomsRaw = h['rooms'];
-          final Map<String, List<Map<String, dynamic>>> rooms = {};
-          if (roomsRaw is List) {
-            for (final roomObj in roomsRaw) {
-              if (roomObj is! Map) continue;
-              final roomName = roomObj['roomName']?.toString();
-              final devicesRaw = roomObj['devices'];
-              if (roomName == null || devicesRaw is! List) continue;
+  final roomsRaw = h['rooms'];
+  final Map<String, List<Map<String, dynamic>>> rooms = {};
+  final Map<String, String> roomIds = {}; // 👈 roomKey -> backend room _id, needed for delete
 
-              // Skip the hidden placeholder room created at signup time
-              // (see AddressScreen._createHomeRecord) — it only exists to
-              // force home creation and should never surface in the UI.
-              if (roomName.toLowerCase() == _hiddenSetupRoomKey) continue;
+  if (roomsRaw is List) {
+    for (final roomObj in roomsRaw) {
+      if (roomObj is! Map) continue;
+      final roomName = roomObj['roomName']?.toString();
+      final devicesRaw = roomObj['devices'];
+      if (roomName == null || devicesRaw is! List) continue;
 
-              rooms[roomName.toLowerCase()] =
-                  devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-            }
-          } else if (roomsRaw is Map) {
-            // Fallback for the older flat-map format, in case any endpoint still sends it.
-            roomsRaw.forEach((key, value) {
-              if (value is List) {
-                // Same skip for the flat-map fallback format.
-                if (key.toString().toLowerCase() == _hiddenSetupRoomKey) return;
+      if (roomName.toLowerCase() == _hiddenSetupRoomKey) continue;
 
-                rooms[key.toString().toLowerCase()] =
-                    value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-              }
-            });
-          }
+      final key = roomName.toLowerCase();
+      rooms[key] = devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
-          final membersRaw = h['members'];
-          final List<Map<String, dynamic>> members = membersRaw is List
-              ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
-              : <Map<String, dynamic>>[];
+      // Backend may key the room's own id as _id or roomId.
+      final rid = (roomObj['_id'] ?? roomObj['roomId'])?.toString();
+      if (rid != null && rid.isNotEmpty) roomIds[key] = rid;
+    }
+  } else if (roomsRaw is Map) {
+    // Flat-map fallback format has no per-room id, so roomIds stays
+    // empty for those entries — deletion for such rooms falls back to
+    // the local-only removal path (see _confirmDeleteRoom).
+    roomsRaw.forEach((key, value) {
+      if (value is List) {
+        if (key.toString().toLowerCase() == _hiddenSetupRoomKey) return;
+        rooms[key.toString().toLowerCase()] =
+            value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    });
+  }
 
-          return {
-            'id': (h['_id'] ?? h['id'])?.toString(),
-            'address': h['address']?.toString() ?? widget.address,
-            'pincode': h['pincode']?.toString() ?? widget.pincode,
-            'rooms': rooms,
-            'members': members,
-          };
-        }).toList();
+  final membersRaw = h['members'];
+  final List<Map<String, dynamic>> members = membersRaw is List
+      ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+      : <Map<String, dynamic>>[];
+
+  return {
+    'id': (h['_id'] ?? h['id'])?.toString(),
+    'address': h['address']?.toString() ?? widget.address,
+    'pincode': h['pincode']?.toString() ?? widget.pincode,
+    'rooms': rooms,
+    'roomIds': roomIds, // 👈 NEW
+    'members': members,
+  };
+}).toList();
 
         // 👇 NEW: dedupe homes — same address+pincode (or same id) should
         // collapse into ONE home instead of showing duplicates.
         final dedupedHomes = _dedupeHomes(parsedHomes);
 
         if (isSingleHomeRefresh) {
-          if (dedupedHomes.isNotEmpty && mounted) {
-            final updated = dedupedHomes.first;
-            final idx = _homes.indexWhere((h) => h['id']?.toString() == homeId);
-            setState(() {
-              if (idx != -1) {
-                _homes[idx] = updated;
-              } else {
-                _homes.add(updated);
-              }
-              _localExtraRooms.clear();
-            });
-            await _homeBox.clear();
-            for (final h in _homes) {
-              await _homeBox.add(HomeModel.fromMap(h));
-            }
-          }
-          return;
-        }
+  if (dedupedHomes.isNotEmpty && mounted) {
+    // Backend might not filter strictly by homeId, so don't blindly
+    // trust dedupedHomes.first — find the entry that actually matches
+    // the homeId we asked for; fall back to .first only if that fails.
+    final updated = dedupedHomes.firstWhere(
+      (h) => h['id']?.toString() == homeId,
+      orElse: () => dedupedHomes.first,
+    );
+    final idx = _homes.indexWhere((h) => h['id']?.toString() == homeId);
+    setState(() {
+  if (idx != -1) {
+    _homes[idx] = updated;
+  } else {
+    _homes.add(updated);
+  }
+  final updatedRooms = updated['rooms'] as Map<String, List<Map<String, dynamic>>>;
+  _localExtraRooms.removeWhere((key, _) => updatedRooms.containsKey(key));
+});
+    await _homeBox.clear();
+    for (final h in _homes) {
+      await _homeBox.add(HomeModel.fromMap(h));
+    }
+  }
+  return;
+}
 
         // Full refresh path.
         // Full refresh path.
@@ -495,21 +506,42 @@ for (final h in dedupedHomes) {
   await _homeBox.add(HomeModel.fromMap(h));
 }
 
-final previousSelectedId = _currentHomeId; // _homes overwrite ஆகுறதுக்கு முன்னாடியே capture
+final previousSelectedHome = _currentHome;
+final previousSelectedId = previousSelectedHome?['id']?.toString();
+final previousAddress = previousSelectedHome?['address']?.toString().trim().toLowerCase();
+final previousPincode = previousSelectedHome?['pincode']?.toString().trim();
+final previousHomesSnapshot = List<Map<String, dynamic>>.from(_homes); // 👈 order snapshot
 
 if (mounted) {
   setState(() {
-    _homes = dedupedHomes;
+    _homes = _stableOrderHomes(previousHomesSnapshot, dedupedHomes); // 👈 stable order
 
+    int idx = -1;
     if (previousSelectedId != null) {
-      final idx = _homes.indexWhere((h) => h['id']?.toString() == previousSelectedId);
-      _selectedHomeIndex = idx != -1 ? idx : 0;   // அதே home இருந்தா அதே தான் select
-    } else if (_selectedHomeIndex >= _homes.length) {
-      _selectedHomeIndex = 0;
+      idx = _homes.indexWhere((h) => h['id']?.toString() == previousSelectedId);
+    }
+    if (idx == -1 && previousAddress != null && previousAddress.isNotEmpty) {
+      idx = _homes.indexWhere((h) =>
+          h['address']?.toString().trim().toLowerCase() == previousAddress &&
+          h['pincode']?.toString().trim() == previousPincode);
     }
 
-    _localExtraRooms.clear();
-    _loading = false;
+    if (idx != -1) {
+  _selectedHomeIndex = idx;
+} else if (_selectedHomeIndex >= _homes.length) {
+  _selectedHomeIndex = 0;
+}
+
+// Only drop a local-extra room once the backend actually has it (i.e.
+// a device got added to it) — an empty room the user just created has
+// no backend record yet, so clearing it unconditionally here would
+// make it vanish on every pull-to-refresh.
+final selectedRooms = _homes.isNotEmpty
+    ? (_homes[_selectedHomeIndex]['rooms'] as Map<String, List<Map<String, dynamic>>>)
+    : <String, List<Map<String, dynamic>>>{};
+_localExtraRooms.removeWhere((key, _) => selectedRooms.containsKey(key));
+
+_loading = false;
   });
 }
 return;
@@ -553,16 +585,19 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
           ? 'id:$id'
           : 'addr:${address.trim().toLowerCase()}|${pincode.trim()}';
       if (!merged.containsKey(key)) {
-        final roomsIn = home['rooms'] as Map<String, List<Map<String, dynamic>>>;
-        merged[key] = {
-          'id': home['id'],
-          'address': home['address'],
-          'pincode': home['pincode'],
-          'rooms': roomsIn.map((k, v) => MapEntry(k, List<Map<String, dynamic>>.from(v))),
-          'members': List<Map<String, dynamic>>.from(home['members'] as List),
-        };
-        order.add(key);
-      } else {
+  final roomsIn = home['rooms'] as Map<String, List<Map<String, dynamic>>>;
+  final roomIdsIn = (home['roomIds'] as Map<String, String>?) ?? {};   // 👈 சேருங்க
+  merged[key] = {
+    'id': home['id'],
+    'address': home['address'],
+    'pincode': home['pincode'],
+    'rooms': roomsIn.map((k, v) => MapEntry(k, List<Map<String, dynamic>>.from(v))),
+    'roomIds': Map<String, String>.from(roomIdsIn),   // 👈 சேருங்க
+    'members': List<Map<String, dynamic>>.from(home['members'] as List),
+  };
+  order.add(key);
+} else {
+
         final existing = merged[key]!;
         final existingRooms = existing['rooms'] as Map<String, List<Map<String, dynamic>>>;
         final incomingRooms = home['rooms'] as Map<String, List<Map<String, dynamic>>>;
@@ -573,6 +608,9 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
             existingRooms[roomKey] = List<Map<String, dynamic>>.from(items);
           }
         });
+        final existingRoomIds = existing['roomIds'] as Map<String, String>;
+  final incomingRoomIds = (home['roomIds'] as Map<String, String>?) ?? {};
+  existingRoomIds.addAll(incomingRoomIds);
         final existingMembers = existing['members'] as List<Map<String, dynamic>>;
         final existingMobiles = existingMembers.map((m) => m['mobile']?.toString()).toSet();
         final incomingMembers = home['members'] as List<Map<String, dynamic>>;
@@ -586,7 +624,39 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
     return order.map((key) => merged[key]!).toList();
   }
 
+ // Keep tab order stable across refreshes — don't just trust whatever
+  // order the backend returns homes in, or the switcher chips visibly
+  // jump around every pull-to-refresh even though the selected home
+  // itself is correct.
+  List<Map<String, dynamic>> _stableOrderHomes(
+    List<Map<String, dynamic>> previous,
+    List<Map<String, dynamic>> incoming,
+  ) {
+    final byId = <String, Map<String, dynamic>>{
+      for (final h in incoming)
+        if (h['id'] != null && h['id'].toString().isNotEmpty) h['id'].toString(): h,
+    };
+    final ordered = <Map<String, dynamic>>[];
+    final used = <String>{};
+    for (final old in previous) {
+      final id = old['id']?.toString();
+      if (id != null && byId.containsKey(id)) {
+        ordered.add(byId[id]!);
+        used.add(id);
+      }
+    }
+    for (final h in incoming) {
+      final id = h['id']?.toString();
+      if (id == null || !used.contains(id)) {
+        ordered.add(h);
+      }
+    }
+    return ordered;
+  }
 
+  // ---------------------------------------------------------------------
+  // CURRENT HOME HELPERS
+  // ---------------------------------------------------------------------
   // ---------------------------------------------------------------------
   // CURRENT HOME HELPERS
   // ---------------------------------------------------------------------
@@ -595,6 +665,9 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
 
   Map<String, List<Map<String, dynamic>>> get _currentRooms =>
       (_currentHome?['rooms'] as Map<String, List<Map<String, dynamic>>>?) ?? {};
+
+  Map<String, String> get _currentRoomIds =>
+      (_currentHome?['roomIds'] as Map<String, String>?) ?? {};
 
   List<Map<String, dynamic>> get _currentMembers =>
       (_currentHome?['members'] as List<Map<String, dynamic>>?) ?? [];
@@ -704,7 +777,86 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
 
     return alerts.take(4).toList();
   }
+// Deletes a room on the backend and unassigns its devices there (matches
+// the backend's deleteRoom controller). Only called for rooms that have
+// a real backend roomId — a room created locally via "Add Room" that has
+// no device yet has no backend record, so it's removed purely client-side
+// (see _confirmDeleteRoom).
+Future<bool> _submitDeleteRoom(String homeId, String roomId) async {
+  try {
+    final response = await http.delete(
+      Uri.parse(ApiConfig.deleteRoomUrl(homeId)),
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: jsonEncode({
+        'roomId': roomId,
+        'homeId': homeId,
+      }),
+    );
 
+    debugPrint('🗑️ Delete room status: ${response.statusCode}');
+    debugPrint('🗑️ Delete room body: ${response.body}');
+
+    if (!mounted) return false;
+
+    if (response.statusCode == 200) {
+      return true;
+    } else {
+      final data = jsonDecode(response.body);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(data['message']?.toString() ?? 'Could not delete room.')),
+      );
+      return false;
+    }
+  } catch (e) {
+    debugPrint('❌ Delete room error: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Network error. Try again.')),
+      );
+    }
+    return false;
+  }
+}
+
+// Confirms, then deletes a room — either via the backend (if it has
+// devices/a real roomId) or purely client-side (if it's a locally-created
+// empty room that never got a device, so it has no backend record yet).
+Future<void> _confirmDeleteRoom(String roomKey, String displayName) async {
+  final ok = await showConfirmActionDialog(
+    context,
+    title: 'Delete room?',
+    content: '$displayName and any devices in it will be removed. This cannot be undone.',
+  );
+  if (ok != true) return;
+
+  final homeId = _currentHomeId;
+  final roomId = _currentRoomIds[roomKey];
+
+  // Local-only empty room — nothing on the backend to delete.
+  if (homeId == null || roomId == null) {
+    setState(() => _localExtraRooms.remove(roomKey));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$displayName removed ✅')),
+      );
+    }
+    return;
+  }
+
+  final success = await _submitDeleteRoom(homeId, roomId);
+  if (success) {
+    setState(() => _localExtraRooms.remove(roomKey));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$displayName removed ✅')),
+      );
+    }
+    _fetchAppliances(homeId: homeId); // refresh so the room disappears from the grid
+  }
+}
   // ---------------------------------------------------------------------
   // ROOM DETAIL / ADD ROOM
   // ---------------------------------------------------------------------
@@ -2366,40 +2518,7 @@ Future<bool> _submitManualAppliance({
                     label: const Text('Log out', style: TextStyle(color: AppColors.danger, fontSize: 14.5, fontWeight: FontWeight.w600)),
                   ),
                 ),
-               const SizedBox(height: 20),
-                Center(
-                  child: InkWell(
-                    onTap: () async {
-                      final Uri emailUri = Uri(
-                        scheme: 'mailto',
-                        path: 'support@zhini.co.in',
-                        query: 'subject=ZHINI App Support',
-                      );
-                      try {
-                        await launchUrl(emailUri);
-                      } catch (e) {
-                        debugPrint('Email launch error: $e');
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Could not open mail app.')),
-                          );
-                        }
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-                      child: Text(
-                        'Powered by Atom8',
-                        style: TextStyle(
-                          color: AppColors.textFaint,
-                          fontSize: 11.5,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+               
               ],
             ),
           ),
@@ -2452,10 +2571,12 @@ Widget build(BuildContext context) {
           child: _loading
               ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
               : RefreshIndicator(
-                  color: AppColors.primary,
-                  backgroundColor: AppColors.cardBg,
-                  onRefresh: _fetchAppliances,
-                  child: SingleChildScrollView(
+    color: AppColors.primary,
+    backgroundColor: AppColors.cardBg,
+    onRefresh: () => _currentHomeId != null
+        ? _fetchAppliances(homeId: _currentHomeId)
+        : _fetchAppliances(),   // no home selected yet -> full refresh
+    child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
                     child: Column(
@@ -2830,19 +2951,27 @@ Widget _buildHomeSwitcher() {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  children: [
-                    Icon(_iconForRoom(roomKey), color: AppColors.primary, size: 20),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
+  children: [
+    Icon(_iconForRoom(roomKey), color: AppColors.primary, size: 20),
+    const SizedBox(width: 6),
+    Expanded(
+      child: Text(
+        displayName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
+      ),
+    ),
+    InkWell(
+      onTap: () => _confirmDeleteRoom(roomKey, displayName),
+      borderRadius: BorderRadius.circular(12),
+      child: const Padding(
+        padding: EdgeInsets.all(2),
+        child: Icon(Icons.delete_outline_rounded, size: 16, color: AppColors.textFaint),
+      ),
+    ),
+  ],
+),
                 const SizedBox(height: 4),
                 Text('${items.length} appliance${items.length == 1 ? '' : 's'}', style: AppText.faintCaption),
                 const SizedBox(height: 8),
@@ -3067,40 +3196,6 @@ Widget _buildHomeSwitcher() {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        Center(
-          child: InkWell(
-            onTap: () async {
-              final Uri emailUri = Uri(
-                scheme: 'mailto',
-                path: 'support@zhini.co.in',
-                query: 'subject=ZHINI App Support',
-              );
-              try {
-                await launchUrl(emailUri);
-              } catch (e) {
-                debugPrint('Email launch error: $e');
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Could not open mail app.')),
-                  );
-                }
-              }
-            },
-            borderRadius: BorderRadius.circular(8),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 4, horizontal: 10),
-              child: Text(
-                'Powered by Atom8',
-                style: TextStyle(
-                  color: AppColors.textFaint,
-                  fontSize: 11,
-                  decoration: TextDecoration.underline,
-                ),
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -3271,6 +3366,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
 
     final productController = TextEditingController(text: item['product']?.toString() ?? '');
     final brandController = TextEditingController(text: item['brand']?.toString() ?? '');
+    final warrantyController = TextEditingController(text: item['warranty']?.toString() ?? '');
     bool isSaving = false;
 
     showDialog(
@@ -3281,13 +3377,15 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
           shape: AppDecor.dialogShape,
           title: const Text('Edit Appliance', style: AppText.dialogTitle),
           content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppDialogField(controller: productController, hint: 'Product name'),
-              const SizedBox(height: 10),
-              AppDialogField(controller: brandController, hint: 'Brand'),
-            ],
-          ),
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    AppDialogField(controller: productController, hint: 'Product name'),
+    const SizedBox(height: 10),
+    AppDialogField(controller: brandController, hint: 'Brand'),
+    const SizedBox(height: 10),
+    AppDialogField(controller: warrantyController, hint: 'Warranty (e.g. 2 Years)'),
+  ],
+),
           actions: [
             TextButton(
               onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
@@ -3308,6 +3406,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                         brand: brandController.text.trim().isNotEmpty
                             ? brandController.text.trim()
                             : null,
+                            warranty: warrantyController.text.trim().isNotEmpty ? warrantyController.text.trim() : null,
                       );
                       if (dialogContext.mounted) Navigator.pop(dialogContext);
                       if (!mounted) return;
@@ -3320,6 +3419,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                         setState(() {
                           item['product'] = productController.text.trim();
                           item['brand'] = brandController.text.trim();
+                          item['warranty'] = warrantyController.text.trim();
                         });
                       }
                     },

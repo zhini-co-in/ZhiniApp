@@ -17,10 +17,11 @@ class EntityUpdateService {
     String? product,
     String? brand,
     String? roomName,
+    String? warranty,
   }) async {
-    if (homeId == null && deviceId == null && roomId == null) {
-      return {'success': false, 'message': 'homeId/deviceId/roomId ஏதாவது ஒண்ணு தேவை'};
-    }
+    if (homeId == null) {
+  return {'success': false, 'message': 'homeId mandatory'};
+}
 
     final body = <String, dynamic>{
       'homeId': ?homeId,
@@ -33,6 +34,7 @@ class EntityUpdateService {
       'product': ?product,
       'brand': ?brand,
       'roomName': ?roomName,
+      'warranty': ?warranty,
     };
 
     try {
@@ -54,9 +56,9 @@ class EntityUpdateService {
         };
       }
       return {
-        'success': false,
-        'message': data['error']?.toString() ?? data['details']?.toString() ?? 'Update failed',
-      };
+  'success': false,
+  'message': data['message']?.toString() ?? data['error']?.toString() ?? 'Update failed',
+};
     } catch (e) {
       return {'success': false, 'message': 'Network error: $e'};
     }

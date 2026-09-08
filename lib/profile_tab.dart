@@ -36,6 +36,13 @@ import 'home_tab.dart' show ScanRequest;
 import 'address_screen.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'services/member_service.dart'; // 👈 add this import
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'services/device_id_service.dart';
+import 'dart:io';
 
 // Optional, backend-fed extras. Leave null/default until you have a real
 // source for them — the UI degrades gracefully either way.
@@ -272,8 +279,88 @@ Future<void> _openAddHomeDialog() async {
     }
 
     // No default home yet — genuine "add a new home" path.
-    widget.onScanTap?.call(homeId: null, address: address, pincode: pincode ?? '');
+    // No default home yet — genuine "add a new home" path.
+// Create the home directly (mirrors HomeTab._createNewHomeRecord) instead
+// of jumping into the camera — the user just wants the home added.
+final newHomeId = await _createNewHomeRecord(
+  address: address,
+  pincode: pincode ?? '',
+  name: widget.name,
+  homeName: address.split(',').first.trim().isNotEmpty
+      ? address.split(',').first.trim()
+      : 'Home',
+);
+
+if (!mounted) return;
+
+if (newHomeId == null) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Could not create the new home. Try again.')),
+  );
+  return;
+}
+
+setState(() {}); // Hive listener refreshes once created
+ScaffoldMessenger.of(context).showSnackBar(
+  const SnackBar(content: Text('Home added ✅')),
+);
   }
+  Future<String?> _createNewHomeRecord({
+  required String address,
+  required String pincode,
+  required String name,
+  required String homeName,
+}) async {
+  try {
+    final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+    final deviceId = await DeviceIdService.getDeviceId();
+    final fcmToken = await FirebaseMessaging.instance.getToken();
+    if (authToken == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please sign in again to add a home.')),
+        );
+      }
+      return null;
+    }
+    final response = await http.post(
+      Uri.parse(ApiConfig.createHomeUrl),
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+        'x-auth-token': authToken,
+        'x-device-id': deviceId,
+      },
+      body: jsonEncode({
+        'name': name,
+        'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+        'address': address,
+        'pincode': pincode,
+        'homeName': homeName,
+        'PlatformInfo': {
+          'device': {
+            'deviceId': deviceId,
+            'fcmToken': fcmToken,
+            'os': Platform.isAndroid ? 'android' : 'ios',
+          },
+        },
+      }),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      if (data['success'] == true && data['data'] != null) {
+        final homeId = data['data']['homeId']?.toString();
+        if (homeId != null && homeId.isNotEmpty) {
+          await SessionManager.updateHomeId(homeId);
+        }
+        return homeId;
+      }
+    }
+  } catch (e) {
+    debugPrint('❌ Create home error: $e');
+  }
+  return null;
+}
 
   void _openEditAddressDialog(Map<String, dynamic> home) {
     final addressController = TextEditingController(text: home['address']?.toString() ?? '');
@@ -427,6 +514,74 @@ Future<void> _openAddHomeDialog() async {
     Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false);
   }
 
+// ---------------------------------------------------------------------
+// PULL TO REFRESH — re-fetches home/appliance data from backend and
+// updates the shared Hive box, mirroring HomeTab's fetch logic.
+// ---------------------------------------------------------------------
+Future<void> _refreshHomes() async {
+  try {
+    final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
+    final response = await http.get(
+      Uri.parse('${ApiConfig.submissionSearchUrl}?mobile=$plainMobile'),
+      headers: {'ngrok-skip-browser-warning': 'true'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data['success'] == true && data['data'] != null) {
+        final rawData = data['data'];
+        final List rawHomes = rawData is List ? rawData : [rawData];
+
+        final parsedHomes = rawHomes.map<Map<String, dynamic>>((h) {
+          final roomsRaw = h['rooms'];
+          final Map<String, List<Map<String, dynamic>>> rooms = {};
+          if (roomsRaw is List) {
+            for (final roomObj in roomsRaw) {
+              if (roomObj is! Map) continue;
+              final roomName = roomObj['roomName']?.toString();
+              final devicesRaw = roomObj['devices'];
+              if (roomName == null || devicesRaw is! List) continue;
+              rooms[roomName.toLowerCase()] =
+                  devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            }
+          } else if (roomsRaw is Map) {
+            roomsRaw.forEach((key, value) {
+              if (value is List) {
+                rooms[key.toString().toLowerCase()] =
+                    value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+              }
+            });
+          }
+
+          final membersRaw = h['members'];
+          final List<Map<String, dynamic>> members = membersRaw is List
+              ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+              : <Map<String, dynamic>>[];
+
+          return {
+            'id': (h['_id'] ?? h['id'])?.toString(),
+            'address': h['address']?.toString() ?? widget.address,
+            'pincode': h['pincode']?.toString() ?? widget.pincode,
+            'rooms': rooms,
+            'members': members,
+          };
+        }).toList();
+
+        await _homeBox.clear();
+        for (final h in parsedHomes) {
+          await _homeBox.add(HomeModel.fromMap(h));
+        }
+      }
+    }
+  } catch (e) {
+    debugPrint('❌ Profile refresh error: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not refresh. Try again.')),
+      );
+    }
+  }
+}
   // ---------------------------------------------------------------------
   // BUILD
   // ---------------------------------------------------------------------
@@ -448,9 +603,14 @@ final hasHome = homes.isNotEmpty;
             child: Column(
               children: [
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-                    child: Column(
+  child: RefreshIndicator(
+    color: AppColors.primary,
+    backgroundColor: AppColors.cardBg,
+    onRefresh: _refreshHomes,
+    child: SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildHeader(),
@@ -586,18 +746,49 @@ final hasHome = homes.isNotEmpty;
                         ],
 
                         const SizedBox(height: 18),
-                        Center(
-                          child: Text('Your data is never sold · DPDP compliant · v1.0.0',
-                              style: AppText.faintCaption, textAlign: TextAlign.center),
-                        ),
+Center(
+  child: Text('Your data is never sold · DPDP compliant · v1.0.0',
+      style: AppText.faintCaption, textAlign: TextAlign.center),
+),
+const SizedBox(height: 10),
+Center(
+  child: InkWell(
+    onTap: () async {
+      final Uri emailUri = Uri(
+        scheme: 'mailto',
+        path: 'support@zhini.co.in',
+        query: 'subject=ZHINI App Support',
+      );
+      try {
+        await launchUrl(emailUri);
+      } catch (e) {
+        debugPrint('Email launch error: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open mail app.')),
+          );
+        }
+      }
+    },
+    borderRadius: BorderRadius.circular(8),
+    child: const Padding(
+      padding: EdgeInsets.symmetric(vertical: 4, horizontal: 10),
+      child: Text(
+        'powered by Atom8',
+        style: TextStyle(
+          color: AppColors.textFaint,
+          fontSize: 11,
+          decoration: TextDecoration.underline,
+        ),
+      ),
+    ),
+  ),
+),
                       ],
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                  child: _buildAskZhiniBar(),
-                ),
+                ),   // 👈 closes SingleChildScrollView
               ],
             ),
           ),
@@ -1226,27 +1417,6 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
     );
   }
 
-  Widget _buildAskZhiniBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: AppColors.primaryBorder.withValues(alpha: 0.5)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.auto_awesome, color: AppColors.primary, size: 18),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text('Ask ZHINI about your account…', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-          ),
-          Icon(Icons.mic_none_rounded, color: AppColors.textMuted, size: 20),
-        ],
-      ),
-    );
-  }
 }
 
 // Minimal, local warranty-expiry parser used only for the vault subtitle
