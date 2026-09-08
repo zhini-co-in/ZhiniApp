@@ -18,9 +18,12 @@ import 'widgets/app_dialog_field.dart';
 import 'widgets/confirm_action_dialog.dart';
 import 'widgets/room_selector_chips.dart';
 import 'widgets/service_provider_card.dart';
-import 'my_tickets_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import 'address_screen.dart'; // 👈 NEW
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'services/device_id_service.dart';
+import 'dart:io';
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
@@ -62,7 +65,6 @@ class _HomeTabState extends State<HomeTab> {
   bool _loading = true;
   String? _error;
   final _homeBox = Hive.box<HomeModel>('homes');
-  final bool _isAddingHome = false;
 
    bool _fetchInFlight = false;
 
@@ -260,7 +262,7 @@ class _HomeTabState extends State<HomeTab> {
       }
 
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
       );
       return '&latitude=${position.latitude}&longitude=${position.longitude}';
     } catch (e) {
@@ -285,33 +287,6 @@ void _openServiceCategorySheet(Map<String, dynamic> category) {
         );
       },
     );
-  }
-
-  Future<void> _callNumber(String phone) async {
-    final uri = Uri(scheme: 'tel', path: phone);
-    try {
-      await launchUrl(uri);
-    } catch (e) {
-      debugPrint('Call launch error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Could not start call.')));
-      }
-    }
-  }
-
-  Future<void> _openMapDirections(String address) async {
-    final query = Uri.encodeComponent(address);
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('Directions launch error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Could not open maps.')));
-      }
-    }
   }
 
   Widget _buildServicesNearYou() {
@@ -514,20 +489,30 @@ Future<void> _fetchAppliances({String? homeId}) async {
         }
 
         // Full refresh path.
-        await _homeBox.clear();
-        for (final h in dedupedHomes) {
-          await _homeBox.add(HomeModel.fromMap(h));
-        }
+        // Full refresh path.
+await _homeBox.clear();
+for (final h in dedupedHomes) {
+  await _homeBox.add(HomeModel.fromMap(h));
+}
 
-        if (mounted) {
-          setState(() {
-            _homes = dedupedHomes;
-            if (_selectedHomeIndex >= _homes.length) _selectedHomeIndex = 0;
-            _localExtraRooms.clear();
-            _loading = false;
-          });
-        }
-        return;
+final previousSelectedId = _currentHomeId; // _homes overwrite ஆகுறதுக்கு முன்னாடியே capture
+
+if (mounted) {
+  setState(() {
+    _homes = dedupedHomes;
+
+    if (previousSelectedId != null) {
+      final idx = _homes.indexWhere((h) => h['id']?.toString() == previousSelectedId);
+      _selectedHomeIndex = idx != -1 ? idx : 0;   // அதே home இருந்தா அதே தான் select
+    } else if (_selectedHomeIndex >= _homes.length) {
+      _selectedHomeIndex = 0;
+    }
+
+    _localExtraRooms.clear();
+    _loading = false;
+  });
+}
+return;
       }
     }
 
@@ -1224,10 +1209,6 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
   // AddressScreen creates the home + refreshes this list, then pops back.
   // ---------------------------------------------------------------------
 void _openAddHomeDialog() async {
-  // If a "Default" home already exists (created silently by Skip+Scan),
-  // registering now should UPDATE that same home's address instead of
-  // creating a brand-new one — otherwise already-scanned devices get
-  // orphaned under the old "Default" home.
   final existingDefaultId = _defaultHome?['id']?.toString();
 
   final result = await Navigator.push<Map<String, String>>(
@@ -1246,9 +1227,6 @@ void _openAddHomeDialog() async {
   final newPincode = result['pincode'] ?? '';
 
   if (existingDefaultId != null) {
-    // Promote the existing Default home — reuses _submitAddressUpdate,
-    // which already calls the existing EntityUpdateService.update() API
-    // (same one _openEditAddressDialog uses), so no backend change needed.
     if (newAddress.isEmpty) return;
     final ok = await _submitAddressUpdate(existingDefaultId, newAddress, newPincode);
     if (ok && mounted) {
@@ -1263,21 +1241,109 @@ void _openAddHomeDialog() async {
     return;
   }
 
-  // No default home yet — genuine "add a new home" path, unchanged.
+  // No default home yet — genuine "add a new home" path.
+  if (newAddress.isEmpty) return;
+
+final newHomeId = await _createNewHomeRecord(
+  address: newAddress,
+  pincode: newPincode,
+  name: widget.name,
+  homeName: newAddress.split(',').first.trim().isNotEmpty
+      ? newAddress.split(',').first.trim()
+      : 'Home ${_homes.length + 1}',
+);
+
+  if (newHomeId == null) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not create the new home. Try again.')),
+      );
+    }
+    return;
+  }
+
   await _fetchAppliances();
+  if (!mounted) return;
   setState(() {
-    _selectedHomeIndex = _homes.length - 1;
+    final idx = _homes.indexWhere((h) => h['id']?.toString() == newHomeId);
+    _selectedHomeIndex = idx != -1 ? idx : _homes.length - 1;
     _serviceCounts.clear();
   });
   _prefetchServiceCounts();
 
-  if (newAddress.isNotEmpty) {
-    widget.onScanTap?.call(
-      homeId: _currentHomeId,
-      address: newAddress,
-      pincode: newPincode,
+  if (mounted) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Home added ✅')),
+  );
+}
+}
+
+  // Creates a brand-new home record on the backend for the given
+  // address/pincode and returns its homeId (or null on failure). Used by
+  // _openAddHomeDialog's genuine "add a new home" path, once we know
+  // there's no existing default home to just update instead.
+Future<String?> _createNewHomeRecord({
+  required String address,
+  required String pincode,
+  required String name,
+  required String homeName,
+}) async {
+  try {
+    final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+    final deviceId = await DeviceIdService.getDeviceId();
+    final fcmToken = await FirebaseMessaging.instance.getToken();
+
+    if (authToken == null) {
+      debugPrint('❌ No Firebase auth token — user not signed in?');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please sign in again to add a home.')),
+        );
+      }
+      return null;
+    }
+
+    final response = await http.post(
+      Uri.parse(ApiConfig.createHomeUrl),
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+        'x-auth-token': authToken,     // 👈 idhு than missing-ah irundhுchu
+        'x-device-id': deviceId,       // 👈 backend-ku idhுவும் required
+      },
+      body: jsonEncode({
+        'name': name,
+        'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+        'address': address,
+        'pincode': pincode,
+        'homeName': homeName,
+        'PlatformInfo': {
+          'device': {
+            'deviceId': deviceId,
+            'fcmToken': fcmToken,
+            'os': Platform.isAndroid ? 'android' : 'ios',
+          },
+        },
+      }),
     );
+
+    debugPrint('🏠 Create home status: ${response.statusCode}');
+    debugPrint('🏠 Create home body: ${response.body}');
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      if (data['success'] == true && data['data'] != null) {
+        final homeId = data['data']['homeId']?.toString();
+        if (homeId != null && homeId.isNotEmpty) {
+          await SessionManager.updateHomeId(homeId);
+        }
+        return homeId;
+      }
+    }
+  } catch (e) {
+    debugPrint('❌ Create home error: $e');
   }
+  return null;
 }
 
   // ---------------------------------------------------------------------
@@ -1912,6 +1978,7 @@ Future<bool> _submitManualAppliance({
             'name': widget.name,
             'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
             'address': _currentAddress,
+            'homeName': _currentAddress.split(',').first.trim(),
           }),
         );
         if (response.statusCode == 200 || response.statusCode == 201) {
@@ -2253,80 +2320,10 @@ Future<bool> _submitManualAppliance({
                 const Divider(color: AppColors.borderSubtle),
                 const SizedBox(height: 12),
 
-                // MY HOMES - Compact, active home explicitly marked
-                const Text('MY HOMES', style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 8),
-
-                ..._homes.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final home = entry.value;
-                  final address = home['address']?.toString() ?? '';
-                  final pincode = home['pincode']?.toString() ?? '';
-                  final isSelected = index == _selectedHomeIndex;
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.cardBgAlt,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isSelected ? AppColors.primary.withValues(alpha: 0.6) : Colors.transparent,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          isSelected ? Icons.check_circle : Icons.circle_outlined,
-                          size: 16,
-                          color: isSelected ? AppColors.primary : AppColors.textFaint,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(address.split(',').first, style: const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-                              Text(
-                                isSelected ? 'Selected · Pincode $pincode' : 'Pincode $pincode',
-                                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                        InkWell(
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            _openEditAddressDialog(index, home);
-                          },
-                          borderRadius: BorderRadius.circular(8),
-                          child: const Padding(
-                            padding: EdgeInsets.all(4),
-                            child: Icon(Icons.edit, color: AppColors.primary, size: 18),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(sheetContext);
-                      _openAddHomeDialog();
-                    },
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 11),
-                      side: const BorderSide(color: AppColors.textMuted),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.add_home_rounded, color: AppColors.textSecondary, size: 18),
-                    label: const Text('Add another home', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
-                  ),
-                ),
+                // MY HOMES section — now shares a single implementation
+                // with the standalone card via _buildMyHomesSection(),
+                // instead of duplicating the list/edit UI inline here.
+                _buildMyHomesSection(),
 
                 const SizedBox(height: 16),
                 const Divider(color: AppColors.borderSubtle),
@@ -3047,7 +3044,29 @@ Widget _buildHomeSwitcher() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildAskZhiniRow(),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(child: _buildAskZhiniRow()),
+            const SizedBox(width: 10),
+            InkWell(
+              onTap: _openAddOptionsSheet,
+              borderRadius: BorderRadius.circular(28),
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 10, offset: const Offset(0, 4)),
+                  ],
+                ),
+                child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 10),
         Center(
           child: InkWell(
@@ -3086,9 +3105,9 @@ Widget _buildHomeSwitcher() {
     );
   }
 
-  // The "Ask ZHINI" pill search bar, with the "+" add button sitting
-  // OUTSIDE it as its own circular button on the right. The "+" now opens
-  // the same labeled action sheet as everywhere else (Scan / Add Appliance)
+  // The "Ask ZHINI" pill search bar. The "+" add button now sits OUTSIDE
+  // it as its own circular button (see _buildBottomArea) and opens the
+  // same labeled action sheet as everywhere else (Scan / Add Appliance)
   // instead of jumping straight into the manual-entry dialog, so there is
   // one consistent Add flow across the app.
 Widget _buildAskZhiniRow() {
@@ -3740,7 +3759,6 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                 final item = _items[index];
                 final product = item['product']?.toString() ?? 'Unknown';
                 final brand = item['brand']?.toString() ?? 'N/A';
-                final warranty = item['warranty']?.toString() ?? 'N/A';
                 final photoUrl = item['imageUrl']?.toString();
                 final warrantyCardUrl = item['warrantyCardUrl']?.toString();
 

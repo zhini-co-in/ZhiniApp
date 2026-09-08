@@ -8,6 +8,10 @@ import 'services/session_manager.dart';
 import 'constants/api_config.dart';
 // already add pannirukeenga (AppColors etc-ku)
 import 'widgets/app_dialog_field.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'services/device_id_service.dart';
+import 'dart:io'; 
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class AddressScreen extends StatefulWidget {
   final String mobileNumber;
@@ -179,27 +183,36 @@ class _AddressScreenState extends State<AddressScreen> {
   /// autofilling the form. Lets the user add a home with ONE tap using
   /// their current location, without also having to press "Add Home"
   /// afterwards.
-  Future<void> _useCurrentLocationAndAddHome() async {
-    setState(() => _isFetchingLocation = true);
-    try {
-      final position = await _determinePosition();
-      final resolved = await _resolveAddressFromPosition(position);
+/// "Add Home" flow-லும் — GPS fetch பண்ணி, reverse-geocode பண்ணி, form
+/// fields-ஐ autofill பண்ணும் (like normal signup flow). User "Add Home"
+/// button explicit-ah press pண்ணும்போது மட்டும் தான் home create ஆகும்.
+Future<void> _useCurrentLocationAndAddHome() async {
+  setState(() => _isFetchingLocation = true);
+  try {
+    final position = await _determinePosition();
+    final resolved = await _resolveAddressFromPosition(position);
 
-      final fullAddress =
-          [resolved.address, resolved.city].where((e) => e.isNotEmpty).join(', ') +
-              (resolved.pincode.isNotEmpty ? ' - ${resolved.pincode}' : '');
-
-      if (!mounted) return;
-      Navigator.pop(context, {'address': fullAddress, 'pincode': resolved.pincode});
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-      );
-    } finally {
-      if (mounted) setState(() => _isFetchingLocation = false);
+    _addressController.text = resolved.address;
+    _cityController.text = resolved.city;
+    _pincodeController.text = resolved.pincode;
+    // Add Home mode-ல name field கேட்கலைனா, fallback name kudுங்க
+    if (_nameController.text.trim().isEmpty) {
+      _nameController.text = 'Guest';
     }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Address filled from current location. Review and tap Add Home.')),
+    );
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+    );
+  } finally {
+    if (mounted) setState(() => _isFetchingLocation = false);
   }
+}
 
   // ---------------------------------------------------------------------
   // SAVE (full manual/auto-filled address form)
@@ -240,11 +253,11 @@ class _AddressScreenState extends State<AddressScreen> {
       name: name,
     );
 
-    final newHomeId = await _createHomeRecord(
-      fullAddress: fullAddress,
-      pincode: pincode,
-      name: name,
-    );
+    final newHomeId = await _createNewHomeRecord(
+  address: fullAddress,
+  pincode: pincode,
+  name: name,
+);
 
     if (!mounted) return;
     Navigator.pushReplacement(
@@ -303,11 +316,11 @@ Future<void> _skip() async {
     // HomeTab andha home-a isDefault-nu recognize pannum (address == 'Default'),
     // so Register card continue-a காட்டும், ஆனா devices already andha
     // homeId-ku கீழ சேமிக்கப்படும்.
-    final defaultHomeId = await _createHomeRecord(
-      fullAddress: defaultAddress,
-      pincode: defaultPincode,
-      name: defaultName,
-    );
+    final defaultHomeId = await _createNewHomeRecord(
+  address: defaultAddress,
+  pincode: defaultPincode,
+  name: defaultName,
+);
 
     if (!mounted) return;
     Navigator.pushReplacement(
@@ -337,43 +350,58 @@ Future<void> _skip() async {
   // creates/reuses a home for this address). Used by Register AND Skip.
   // ---------------------------------------------------------------------
 
-  Future<String?> _createHomeRecord({
-    required String fullAddress,
-    required String pincode,
-    required String name,
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse(ApiConfig.createHomeUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'name': name,
-          'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-          'address': fullAddress,
-        }),
-      );
+Future<String?> _createNewHomeRecord({
+  required String address,
+  required String pincode,
+  required String name,
+}) async {
+  try {
+    final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+    final deviceId = await DeviceIdService.getDeviceId();
+    final fcmToken = await FirebaseMessaging.instance.getToken();
 
-      debugPrint('🏠 Create home status: ${response.statusCode}');
-      debugPrint('🏠 Create home body: ${response.body}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          final homeId = data['data']['homeId']?.toString();
-          if (homeId != null) {
-            await SessionManager.updateHomeId(homeId);
-            return homeId;
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ Create home error: $e');
+    if (authToken == null) {
+      debugPrint('❌ No Firebase auth token — user not signed in?');
+      return null;
     }
-    return null;
+
+    final response = await http.post(
+      Uri.parse(ApiConfig.createHomeUrl),
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+        'x-auth-token': authToken,
+        'x-device-id': deviceId,
+      },
+      body: jsonEncode({
+        'name': name,
+        'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+        'address': address,
+        'pincode': pincode,
+        'PlatformInfo': {
+          'device': {
+            'deviceId': deviceId,
+            'fcmToken': fcmToken,
+            'os': Platform.isAndroid ? 'android' : 'ios',
+          },
+        },
+      }),
+    );
+
+    debugPrint('🏠 Create new home status: ${response.statusCode}');
+    debugPrint('🏠 Create new home body: ${response.body}');
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      if (data['success'] == true && data['data'] != null) {
+        return data['data']['homeId']?.toString();
+      }
+    }
+  } catch (e) {
+    debugPrint('❌ Create new home error: $e');
   }
+  return null;
+}
 
   @override
   void dispose() {
@@ -469,28 +497,20 @@ Future<void> _skip() async {
                   // instead completes the add-home flow immediately (no
                   // need to also fill the form / press Add Home).
                   Align(
-                    alignment: Alignment.center,
-                    child: TextButton.icon(
-                      onPressed: (_isFetchingLocation || anyActionInProgress)
-                          ? null
-                          : (widget.isAddingHome
-                              ? _useCurrentLocationAndAddHome
-                              : _useCurrentLocationForAddress),
-                      icon: _isFetchingLocation
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.my_location, size: 18, color: Colors.blue),
-                      label: Text(
-                        widget.isAddingHome
-                            ? 'Use current location to add home'
-                            : 'Use current location',
-                        style: const TextStyle(color: Colors.blue),
-                      ),
-                    ),
-                  ),
+  alignment: Alignment.center,
+  child: TextButton.icon(
+    onPressed: (_isFetchingLocation || anyActionInProgress)
+        ? null
+        : _useCurrentLocationForAddress,   // 👈 rendு modes-லும் இதே function
+    icon: _isFetchingLocation
+        ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+        : const Icon(Icons.my_location, size: 18, color: Colors.blue),
+    label: Text(
+      widget.isAddingHome ? 'Use current location' : 'Use current location',
+      style: const TextStyle(color: Colors.blue),
+    ),
+  ),
+),
 
                   const SizedBox(height: 24),
                   SizedBox(
