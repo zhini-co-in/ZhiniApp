@@ -54,7 +54,7 @@ flutter:
   generate: true   # ADDED — tells Flutter to run gen-l10n and create lib/l10n/app_localizations.dart
   assets:
     - assets/Zhini_Icon1.png
-    - assets/Zhini_Logo1.png
+    - assets/zhini_logo.png
     - assets/images/
     - assets/model.tflite
     - assets/labels.txt
