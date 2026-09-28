@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:country_code_picker/country_code_picker.dart';
 import 'otp_screen.dart';
@@ -17,8 +18,21 @@ class _LoginScreenState extends State<LoginScreen> {
   // Default country code - India. User can change via the picker.
   String _selectedDialCode = '+91';
 
-  // Tracks whether the user has checked "I'm a service professional".
+  // Tracks whether the user has checked "I'm a service provider".
   bool _isServiceProfessional = false;
+
+  // Short, inline error shown directly below the mobile number field.
+  String? _errorText;
+
+  // Secondary text colour — raised from white38 for better contrast on the
+  // dark background while still reading as secondary. Reuse this everywhere
+  // the same level of text appears in the app.
+  static const Color _secondaryText = Color(0xB3FFFFFF); // white @ 70%
+  static const Color _labelText = Color(0xE6FFFFFF); // white @ 90%
+  static const Color _errorColor = Color(0xFFFF5A5A);
+
+  // Max digits allowed for the currently selected country.
+  int get _maxDigits => _selectedDialCode == '+91' ? 10 : 15;
 
   @override
   void initState() {
@@ -28,27 +42,37 @@ class _LoginScreenState extends State<LoginScreen> {
     _phoneController.addListener(_onPhoneChanged);
   }
 
-  void _onPhoneChanged() => setState(() {});
+  void _onPhoneChanged() {
+    setState(() {
+      // Clear any stale error as soon as the user edits the number.
+      if (_errorText != null) _errorText = null;
+    });
+  }
 
-  // Generic validation: most countries use 7-15 digit numbers (E.164 max).
+  String get _digits => _phoneController.text.replaceAll(RegExp(r'\D'), '');
+
+  /// India: exactly 10 digits starting with 6-9.
+  /// Everything else: 7-15 digits (E.164 range).
   bool get _isPhoneValid {
-    final digitsOnly = _phoneController.text.trim().replaceAll(RegExp(r'\D'), '');
-    return digitsOnly.length >= 7 && digitsOnly.length <= 15;
+    final d = _digits;
+    if (_selectedDialCode == '+91') {
+      return d.length == 10 && RegExp(r'^[6-9]').hasMatch(d);
+    }
+    return d.length >= 7 && d.length <= 15;
   }
 
   Future<void> _sendOtp() async {
-    final phoneNumber = _phoneController.text.trim();
-
     if (!_isPhoneValid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid mobile number')),
-      );
+      setState(() => _errorText = 'Enter a valid mobile number');
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorText = null;
+    });
 
-    final fullPhoneNumber = '$_selectedDialCode$phoneNumber';
+    final fullPhoneNumber = '$_selectedDialCode$_digits';
 
     await FirebaseAuth.instance.verifyPhoneNumber(
       phoneNumber: fullPhoneNumber,
@@ -59,15 +83,17 @@ class _LoginScreenState extends State<LoginScreen> {
       },
 
       verificationFailed: (FirebaseAuthException e) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Verification failed: ${e.message}')),
-        );
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          // Keep it short and human — the raw Firebase message is far too long.
+          _errorText = _friendlyError(e.code);
+        });
       },
 
       codeSent: (String verificationId, int? resendToken) {
-        setState(() => _isLoading = false);
         if (!mounted) return;
+        setState(() => _isLoading = false);
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -84,6 +110,21 @@ class _LoginScreenState extends State<LoginScreen> {
         // Optional: handle timeout if needed
       },
     );
+  }
+
+  String _friendlyError(String code) {
+    switch (code) {
+      case 'invalid-phone-number':
+        return 'Invalid mobile number. Please check and try again.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please try again later.';
+      case 'network-request-failed':
+        return 'No internet connection. Please try again.';
+      case 'quota-exceeded':
+        return 'Service busy. Please try again in a while.';
+      default:
+        return "Couldn't send OTP. Please try again.";
+    }
   }
 
   @override
@@ -112,16 +153,19 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   const SizedBox(height: 60),
 
+                  // Larger logo for better visibility.
                   Image.asset(
                     'assets/Zhini_Icon1.png',
-                    width: 80,
-                    height: 80,
+                    width: 112,
+                    height: 112,
                   ),
 
                   const SizedBox(height: 40),
 
+                  // Centered to balance with the centered logo.
                   const Text(
                     "Your home's AI genie\nstarts here",
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 28,
@@ -134,8 +178,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const Text(
                     'Enter your mobile number to get started.',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white60,
+                      color: _secondaryText,
                       fontSize: 15,
                       height: 1.4,
                     ),
@@ -145,11 +190,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Persistent field label (stays visible above the field,
                   // unlike a hint that disappears once typing starts).
-                  Align(
+                  const Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
                       'Mobile number',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+                      style: TextStyle(color: _labelText, fontSize: 14),
                     ),
                   ),
 
@@ -157,12 +202,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Phone number input row with country code picker
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Country selector — explicit border + padding so it
-                      // reads as clearly tappable, not just decorative text.
+                      // Country selector — filled background + dropdown arrow
+                      // so it clearly reads as a tappable control, and the same
+                      // 56px height as the mobile number field.
                       Container(
-                        height: 52,
+                        height: 56,
                         decoration: BoxDecoration(
+                          color: const Color(0xFF16243A),
                           border: Border.all(color: Colors.blue.shade300),
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -172,6 +220,16 @@ class _LoginScreenState extends State<LoginScreen> {
                             onChanged: (country) {
                               setState(() {
                                 _selectedDialCode = country.dialCode ?? '+91';
+                                // Trim anything now over the new country's limit.
+                                final d = _digits;
+                                if (d.length > _maxDigits) {
+                                  _phoneController.text =
+                                      d.substring(0, _maxDigits);
+                                  _phoneController.selection =
+                                      TextSelection.collapsed(
+                                          offset: _phoneController.text.length);
+                                }
+                                _errorText = null;
                               });
                             },
                             initialSelection: 'IN',
@@ -179,42 +237,65 @@ class _LoginScreenState extends State<LoginScreen> {
                             showCountryOnly: false,
                             showOnlyCountryWhenClosed: false,
                             alignLeft: false,
-                            textStyle: const TextStyle(color: Colors.white, fontSize: 16),
-                            dialogTextStyle: const TextStyle(color: Colors.black),
+                            showDropDownButton: true,
+                            padding: EdgeInsets.zero,
+                            textStyle: const TextStyle(
+                                color: Colors.white, fontSize: 16),
+                            dialogTextStyle:
+                                const TextStyle(color: Colors.black),
                             searchStyle: const TextStyle(color: Colors.black),
-                            backgroundColor: const Color(0xFF0A1628),
+                            backgroundColor: const Color(0xFF16243A),
                             dialogBackgroundColor: Colors.white,
                           ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: TextField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          maxLength: 15,
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
-                          decoration: InputDecoration(
-                            counterText: '',
-                            hintText: 'Enter mobile number',
-                            hintStyle: const TextStyle(color: Colors.white38),
-                            // Inline validation icon once a valid number is entered.
-                            suffixIcon: _isPhoneValid
-                                ? const Icon(Icons.check_circle, color: Colors.greenAccent, size: 20)
-                                : null,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 16),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: Colors.blue.shade300),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(color: Colors.blue, width: 2),
-                            ),
-                            disabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(color: Colors.white24),
+                        child: SizedBox(
+                          height: 56,
+                          child: TextField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.number,
+                            // Numeric input only, capped at the country's limit.
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(_maxDigits),
+                            ],
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 16),
+                            decoration: InputDecoration(
+                              counterText: '',
+                              hintText: 'Enter mobile number',
+                              hintStyle: const TextStyle(color: Colors.white54),
+                              // Tick appears only once validation passes.
+                              suffixIcon: _isPhoneValid
+                                  ? const Icon(Icons.check_circle,
+                                      color: Colors.greenAccent, size: 20)
+                                  : null,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 16),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(
+                                  color: _errorText != null
+                                      ? _errorColor
+                                      : Colors.blue.shade300,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(
+                                  color: _errorText != null
+                                      ? _errorColor
+                                      : Colors.blue,
+                                  width: 2,
+                                ),
+                              ),
+                              disabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide:
+                                    const BorderSide(color: Colors.white24),
+                              ),
                             ),
                           ),
                         ),
@@ -222,16 +303,45 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                   ),
 
+                  // Inline error, directly under the field, in red.
+                  if (_errorText != null) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.error_outline,
+                              color: _errorColor, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _errorText!,
+                              style: const TextStyle(
+                                  color: _errorColor,
+                                  fontSize: 13,
+                                  height: 1.3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 12),
 
-                  const Text(
-                    "We'll send a 6-digit code to verify your number.\nStandard rates may apply.",
-                    style: TextStyle(color: Colors.white38, fontSize: 12, height: 1.4),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "We'll send a 6-digit code to verify your number.\nStandard rates may apply.",
+                      style: TextStyle(
+                          color: _secondaryText, fontSize: 12, height: 1.4),
+                    ),
                   ),
 
                   const SizedBox(height: 24),
 
-                  // Checkbox: "I'm a service professional"
+                  // Checkbox: "I'm a service provider"
                   Row(
                     children: [
                       SizedBox(
@@ -241,7 +351,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           value: _isServiceProfessional,
                           activeColor: Colors.blue,
                           checkColor: Colors.white,
-                          side: const BorderSide(color: Colors.white38),
+                          side: const BorderSide(color: Colors.white70),
                           onChanged: (value) {
                             setState(() {
                               _isServiceProfessional = value ?? false;
@@ -257,8 +367,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           });
                         },
                         child: const Text(
-                          "I'm service provider",
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                          "I'm a service provider",
+                          style: TextStyle(color: _labelText, fontSize: 14),
                         ),
                       ),
                     ],
@@ -271,31 +381,34 @@ class _LoginScreenState extends State<LoginScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-  onPressed: (_isLoading || !_isPhoneValid) ? null : _sendOtp,
-  style: ElevatedButton.styleFrom(
-    backgroundColor: Colors.blue,
-    disabledBackgroundColor: const Color(0xFF3A4556),
-    padding: const EdgeInsets.symmetric(vertical: 16),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
-    ),
-  ),
+                      onPressed:
+                          (_isLoading || !_isPhoneValid) ? null : _sendOtp,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        disabledBackgroundColor: const Color(0xFF3A4556),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
                       child: _isLoading
-    ? const SizedBox(
-        height: 20,
-        width: 20,
-        child: CircularProgressIndicator(
-          color: Colors.white,
-          strokeWidth: 2,
-        ),
-      )
-    : Text(
-        'Send OTP',
-        style: TextStyle(
-          color: _isPhoneValid ? Colors.white : Colors.white38,  // 👈 dim when disabled
-          fontSize: 16,
-        ),
-      ),
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              'Send OTP',
+                              style: TextStyle(
+                                color: _isPhoneValid
+                                    ? Colors.white
+                                    : Colors.white54,
+                                fontSize: 16,
+                              ),
+                            ),
                     ),
                   ),
 
@@ -304,7 +417,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Text.rich(
                     TextSpan(
                       text: 'By continuing you agree to our ',
-                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                      style: TextStyle(color: _secondaryText, fontSize: 12),
                       children: [
                         TextSpan(
                           text: 'Terms',
@@ -323,8 +436,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 4),
 
                   const Text(
-                    'Your data is never sold.',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                    'Your data will never be sold.',
+                    style: TextStyle(color: _secondaryText, fontSize: 12),
                   ),
 
                   const SizedBox(height: 24),
