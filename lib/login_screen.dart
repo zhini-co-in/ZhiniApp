@@ -200,63 +200,62 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 8),
 
-                  // Phone number input row with country code picker
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Country selector — filled background + dropdown arrow
-                      // so it clearly reads as a tappable control, and the same
-                      // 56px height as the mobile number field.
-                      Container(
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF16243A),
-                          border: Border.all(color: Colors.blue.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Center(
-                          child: CountryCodePicker(
-                            onChanged: (country) {
-                              setState(() {
-                                _selectedDialCode = country.dialCode ?? '+91';
-                                // Trim anything now over the new country's limit.
-                                final d = _digits;
-                                if (d.length > _maxDigits) {
-                                  _phoneController.text =
-                                      d.substring(0, _maxDigits);
-                                  _phoneController.selection =
-                                      TextSelection.collapsed(
-                                          offset: _phoneController.text.length);
-                                }
-                                _errorText = null;
-                              });
-                            },
-                            initialSelection: 'IN',
-                            favorite: const ['+91', 'IN', '+1', 'US', '+44', 'GB'],
-                            showCountryOnly: false,
-                            showOnlyCountryWhenClosed: false,
-                            alignLeft: false,
-                            showDropDownButton: true,
-                            padding: EdgeInsets.zero,
-                            textStyle: const TextStyle(
-                                color: Colors.white, fontSize: 16),
-                            dialogTextStyle:
-                                const TextStyle(color: Colors.black),
-                            searchStyle: const TextStyle(color: Colors.black),
-                            backgroundColor: const Color(0xFF16243A),
-                            dialogBackgroundColor: Colors.white,
+                                   // Phone number input row with country code picker
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                                                                        Container(
+                          width: 110, // slightly wider to fit the larger flag
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF16243A),
+                            border: Border.all(
+                              color: _errorText != null
+                                  ? _errorColor
+                                  : Colors.blue.shade300,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Center(
+                            child: CountryCodePicker(
+                              onChanged: (country) {
+                                setState(() {
+                                  _selectedDialCode = country.dialCode ?? '+91';
+                                  final d = _digits;
+                                  if (d.length > _maxDigits) {
+                                    _phoneController.text =
+                                        d.substring(0, _maxDigits);
+                                    _phoneController.selection =
+                                        TextSelection.collapsed(
+                                            offset: _phoneController.text.length);
+                                  }
+                                  _errorText = null;
+                                });
+                              },
+                              initialSelection: 'IN',
+                              favorite: const ['+91', 'IN', '+1', 'US', '+44', 'GB'],
+                              showCountryOnly: false,
+                              showOnlyCountryWhenClosed: false,
+                              alignLeft: false,
+                              showDropDownButton: true,
+                              padding: EdgeInsets.zero,
+                              flagWidth: 28, // bigger, clearer flag icon
+                              textStyle: const TextStyle(
+                                  color: Colors.white, fontSize: 16),
+                              dialogTextStyle:
+                                  const TextStyle(color: Colors.black),
+                              searchStyle: const TextStyle(color: Colors.black),
+                              backgroundColor: const Color(0xFF16243A),
+                              dialogBackgroundColor: Colors.white,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SizedBox(
-                          height: 56,
+                        const SizedBox(width: 12),
+                        Expanded(
                           child: TextField(
                             controller: _phoneController,
                             keyboardType: TextInputType.number,
-                            // Numeric input only, capped at the country's limit.
                             inputFormatters: [
                               FilteringTextInputFormatter.digitsOnly,
                               LengthLimitingTextInputFormatter(_maxDigits),
@@ -267,7 +266,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               counterText: '',
                               hintText: 'Enter mobile number',
                               hintStyle: const TextStyle(color: Colors.white54),
-                              // Tick appears only once validation passes.
                               suffixIcon: _isPhoneValid
                                   ? const Icon(Icons.check_circle,
                                       color: Colors.greenAccent, size: 20)
@@ -299,8 +297,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
 
                   // Inline error, directly under the field, in red.

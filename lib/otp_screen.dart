@@ -451,56 +451,49 @@ class _OtpScreenState extends State<OtpScreen> {
               const SizedBox(height: 12),
 
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(6, (index) {
-                  return SizedBox(
-                    width: 48,
-                    height: 56,
-                    child: TextField(
-                      controller: _controllers[index],
-                      focusNode: _focusNodes[index],
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      // Vertically centres the digit — without this the
-                      // default content padding pushed it below the box.
-                      textAlignVertical: TextAlignVertical.center,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
-                      // maxLength intentionally left uncapped here so a
-                      // pasted 6-digit string can land in one field and be
-                      // redistributed in _handleDigitChange; each box still
-                      // visually shows only its own digit once redistributed.
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold),
-                      decoration: InputDecoration(
-                        counterText: '',
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: _otpError != null
-                                ? _errorColor
-                                : Colors.blue.shade300,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: _otpError != null ? _errorColor : Colors.blue,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                      onChanged: (value) => _handleDigitChange(value, index),
-                    ),
-                  );
-                }),
+  children: [
+    for (int i = 0; i < 6; i++) ...[
+      Expanded(
+        child: SizedBox(
+  height: 56,
+  child: TextField(
+    controller: _controllers[i],
+    focusNode: _focusNodes[i],
+    keyboardType: TextInputType.number,
+    textAlign: TextAlign.center,
+    textAlignVertical: TextAlignVertical.center,
+    expands: true,      // 👈 add
+    maxLines: null,     // 👈 add (expands use pannum bodhu null irukanum)
+    minLines: null,     // 👈 add
+    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+    style: const TextStyle(
+        color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+    decoration: InputDecoration(
+      counterText: '',
+      isDense: true,
+      contentPadding: EdgeInsets.zero,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: _otpError != null ? _errorColor : Colors.blue.shade300,
+                ),
               ),
-
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: _otpError != null ? _errorColor : Colors.blue,
+                  width: 2,
+                ),
+              ),
+            ),
+            onChanged: (value) => _handleDigitChange(value, i),
+          ),
+        ),
+      ),
+      if (i != 5) const SizedBox(width: 8),
+    ],
+  ],
+),
               // Inline error, right under the boxes, in red.
               if (_otpError != null) ...[
                 const SizedBox(height: 8),
