@@ -489,33 +489,35 @@ class _OtpScreenState extends State<OtpScreen> {
           // Invisible input on top: receives typing, paste (long-press),
           // autofill and backspace.
           Positioned.fill(
-            child: TextField(
-              controller: _otpController,
-              focusNode: _otpFocus,
-              enabled: !_isVerifying,
-              keyboardType: TextInputType.number,
-              autofillHints: const [AutofillHints.oneTimeCode],
-              showCursor: false,
-              enableSuggestions: false,
-              autocorrect: false,
-              maxLength: _otpLength,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(_otpLength),
-              ],
-              style: const TextStyle(color: Colors.transparent, fontSize: 1),
-              cursorColor: Colors.transparent,
-              decoration: const InputDecoration(
-                counterText: '',
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-              ),
-              onChanged: _handleOtpChanged,
-            ),
-          ),
+  child: TextField(
+    controller: _otpController,
+    focusNode: _otpFocus,
+    enabled: !_isVerifying,
+    keyboardType: TextInputType.text,        // number -> text
+    autofillHints: const [AutofillHints.oneTimeCode],
+    showCursor: false,
+    enableSuggestions: true,                 // false -> true
+    autocorrect: false,
+    // maxLength remove pannunga
+    inputFormatters: [
+      OtpExtractFormatter(),                 // new
+      FilteringTextInputFormatter.digitsOnly,
+      LengthLimitingTextInputFormatter(_otpLength),
+    ],
+    style: const TextStyle(color: Colors.transparent, fontSize: 18), // 1 -> 18
+    cursorColor: Colors.transparent,
+    decoration: const InputDecoration(
+      counterText: '',
+      border: InputBorder.none,
+      enabledBorder: InputBorder.none,
+      focusedBorder: InputBorder.none,
+      disabledBorder: InputBorder.none,
+      contentPadding: EdgeInsets.zero,
+      isCollapsed: true,
+    ),
+    onChanged: _handleOtpChanged,
+  ),
+),
         ],
       ),
     );
@@ -576,34 +578,13 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 32),
 
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Enter OTP',
-                    style: TextStyle(color: _labelText, fontSize: 14),
-                  ),
-                  GestureDetector(
-                    onTap: _isVerifying ? null : _pasteFromClipboard,
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.content_paste_rounded,
-                            size: 14, color: Colors.blue),
-                        SizedBox(width: 4),
-                        Text(
-                          'Paste',
-                          style: TextStyle(
-                            color: Colors.blue,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+              const Align(
+  alignment: Alignment.centerLeft,
+  child: Text(
+    'Enter OTP',
+    style: TextStyle(color: _labelText, fontSize: 14),
+  ),
+),
 
               const SizedBox(height: 12),
 
@@ -744,5 +725,23 @@ class _OtpScreenState extends State<OtpScreen> {
         ),
       ),
     );
+  }
+}
+class OtpExtractFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final t = newValue.text;
+    if (t.length > 6) {
+      final m = RegExp(r'(?<!\d)\d{6}(?!\d)').firstMatch(t);
+      if (m != null) {
+        final code = m.group(0)!;
+        return TextEditingValue(
+          text: code,
+          selection: TextSelection.collapsed(offset: code.length),
+        );
+      }
+    }
+    return newValue;
   }
 }
