@@ -1,9 +1,10 @@
 // lib/services/member_service.dart
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'api_client.dart';
 import 'package:hive_ce/hive_ce.dart';
 import '../constants/api_config.dart';
 import '../models/home_model.dart';
+
 
 /// Shared Add/Delete-member calls + single-home Hive refresh, so every
 /// screen (HomeTab, ProfileTab, ...) that listens to the 'homes' box
@@ -22,19 +23,10 @@ class MemberService {
     required String newMobile,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse(ApiConfig.memberAddUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'homeId': homeId,
-          'myMobile': myMobile,
-          'newName': newName,
-          'newMobile': newMobile,
-        }),
-      );
+      final response = await ApiClient.post(ApiConfig.memberAddUrl, body: {
+  'homeId': homeId, 'myMobile': myMobile,
+  'newName': newName, 'newMobile': newMobile,
+});
       final data = jsonDecode(response.body);
       return {
         'success': response.statusCode == 200 && data['success'] == true,
@@ -53,14 +45,10 @@ class MemberService {
     required String mobile,
   }) async {
     try {
-      final response = await http.delete(
-        Uri.parse(ApiConfig.memberDeleteUrl(homeId)),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({'mobile': mobile}),
-      );
+      final response = await ApiClient.delete(
+  ApiConfig.memberDeleteUrl(homeId),
+  body: {'mobile': mobile},
+);
       final data = jsonDecode(response.body);
       return {
         'success': response.statusCode == 200 && data['success'] == true,
@@ -81,10 +69,9 @@ class MemberService {
   }) async {
     try {
       final plainMobile = ApiConfig.stripCountryCode(mobileNumber);
-      final response = await http.get(
-        Uri.parse('${ApiConfig.submissionSearchUrl}?mobile=$plainMobile&homeId=$homeId'),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
+      final response = await ApiClient.get(
+  '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile&homeId=$homeId',
+);
       if (response.statusCode != 200) return;
 
       final data = jsonDecode(response.body);

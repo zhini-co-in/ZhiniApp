@@ -7,7 +7,6 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'constants/api_config.dart';
 import 'models/home_model.dart';
@@ -19,6 +18,7 @@ import 'widgets/confirm_action_dialog.dart';
 import 'widgets/service_provider_card.dart';
 import 'home_tab.dart' show ScanRequest;
 import 'package:url_launcher/url_launcher.dart';
+import 'services/api_client.dart';
 
 class DevicesTab extends StatefulWidget {
   final String mobileNumber;
@@ -265,19 +265,12 @@ class _DevicesTabState extends State<DevicesTab> {
 
   Future<List<Map<String, dynamic>>> _fetchNearbyProviders(_DeviceEntry e) async {
     try {
-      final response = await http.post(
-        Uri.parse(ApiConfig.nearbyServiceUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'brand': e.brand,
-          'product': e.product,
-          'pincode': e.pincode,
-          'isUnderWarranty': e.isUnderWarranty,
-        }),
-      );
+      final response = await ApiClient.post(ApiConfig.nearbyServiceUrl, body: {
+  'brand': e.brand,
+  'product': e.product,
+  'pincode': e.pincode,
+  'isUnderWarranty': e.isUnderWarranty,
+});
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -454,6 +447,7 @@ class _DevicesTabState extends State<DevicesTab> {
                   : () async {
                       setDialogState(() => isSaving = true);
                       final result = await EntityUpdateService.update(
+                        homeId: e.homeId,
                         deviceId: e.deviceId,
                         product: productController.text.trim().isNotEmpty ? productController.text.trim() : null,
                         brand: brandController.text.trim().isNotEmpty ? brandController.text.trim() : null,
@@ -493,11 +487,10 @@ class _DevicesTabState extends State<DevicesTab> {
     );
     if (ok != true || e.homeId == null) return;
     try {
-      final response = await http.delete(
-        Uri.parse(ApiConfig.productDeleteUrl(e.homeId!)),
-        headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-        body: jsonEncode({'roomName': e.roomKey, 'product': e.product}),
-      );
+      final response = await ApiClient.delete(
+  ApiConfig.productDeleteUrl(e.homeId!),
+  body: {'roomName': e.roomKey, 'product': e.product},
+);
       if (!mounted) return;
       if (response.statusCode == 200) {
         setState(() {}); // Hive box listener (below) will refresh once HomeTab re-fetches.

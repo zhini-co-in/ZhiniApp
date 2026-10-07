@@ -3,6 +3,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'onboarding_screen.dart';
 import 'main_shell.dart';
 import 'services/session_manager.dart';
+import 'services/log_service.dart';
+// Phase 3: import 'services/push_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -55,6 +57,7 @@ class _SplashScreenState extends State<SplashScreen>
     final session = await SessionManager.getSession();
 
     if (session != null) {
+      LogService.instance.mobile = session['mobileNumber'];
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(

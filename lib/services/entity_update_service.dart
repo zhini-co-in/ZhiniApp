@@ -1,11 +1,13 @@
 // lib/services/entity_update_service.dart
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import '../constants/api_config.dart';
+import 'api_client.dart';
 
 class EntityUpdateService {
   /// Backend-ல எந்த field(s) குடுக்கிறீங்களோ, அது மட்டும் update ஆகும்.
-  /// homeId → address/pincode/name/mobile, deviceId → product/brand, roomId → roomName.
+  /// homeId → address/pincode/name/mobile, deviceId → product/brand/warranty,
+  /// roomId → roomName.
   static Future<Map<String, dynamic>> update({
     String? homeId,
     String? name,
@@ -19,9 +21,10 @@ class EntityUpdateService {
     String? roomName,
     String? warranty,
   }) async {
-    if (homeId == null) {
-  return {'success': false, 'message': 'homeId mandatory'};
-}
+    // homeId / deviceId / roomId — onnu aavadhu venum
+    if (homeId == null && deviceId == null && roomId == null) {
+      return {'success': false, 'message': 'homeId, deviceId or roomId is required'};
+    }
 
     final body = <String, dynamic>{
       'homeId': ?homeId,
@@ -38,16 +41,17 @@ class EntityUpdateService {
     };
 
     try {
-      final response = await http.put( // route POST ஆ இருந்தா இதை மாத்துங்க
-        Uri.parse(ApiConfig.updateEntityUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode(body),
-      );
+      // ✅ ApiClient.put → x-auth-token + x-device-id + Content-Type automatic
+      final response = await ApiClient.put(ApiConfig.updateEntityUrl, body: body);
 
-      final data = jsonDecode(response.body);
+      debugPrint('✏️ Update status: ${response.statusCode}');
+      debugPrint('✏️ Update body: ${response.body}');
+
+      Map<String, dynamic> data = {};
+      try {
+        data = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {}
+
       if (response.statusCode == 200 && data['success'] == true) {
         return {
           'success': true,
@@ -56,9 +60,11 @@ class EntityUpdateService {
         };
       }
       return {
-  'success': false,
-  'message': data['message']?.toString() ?? data['error']?.toString() ?? 'Update failed',
-};
+        'success': false,
+        'message': data['message']?.toString() ??
+            data['error']?.toString() ??
+            'Update failed (${response.statusCode})',
+      };
     } catch (e) {
       return {'success': false, 'message': 'Network error: $e'};
     }

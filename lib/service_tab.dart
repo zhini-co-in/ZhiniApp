@@ -13,6 +13,7 @@ import 'package:geolocator/geolocator.dart';
 import 'constants/api_config.dart';
 import 'theme/app_theme.dart';
 import 'widgets/service_provider_card.dart';
+import 'services/api_client.dart';
 
 // ---------------------------------------------------------------------
 // ADD THIS to lib/constants/api_config.dart (if not already present):
@@ -107,10 +108,7 @@ class _ServiceTabState extends State<ServiceTab> {
     });
     try {
       final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
-      final response = await http.get(
-        Uri.parse(ApiConfig.customerBillingUrl(plainMobile)),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
+      final response = await ApiClient.get(ApiConfig.customerBillingUrl(plainMobile));
 
       debugPrint('🎫 Service tickets status: ${response.statusCode}');
       debugPrint('🎫 Service tickets body: ${response.body}');
@@ -160,18 +158,11 @@ class _ServiceTabState extends State<ServiceTab> {
   // ---------------------------------------------------------------------
   Future<void> _cancelTicket(String ticketId, String reason) async {
     try {
-      final response = await http.put(
-        Uri.parse(ApiConfig.cancelTicketUrl()),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'ticketId': ticketId,
-          'customerMobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-          'reason': reason,
-        }),
-      );
+      final response = await ApiClient.put(ApiConfig.cancelTicketUrl(), body: {
+  'ticketId': ticketId,
+  'customerMobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+  'reason': reason,
+});
 
       debugPrint('🚫 Cancel ticket status: ${response.statusCode}');
       debugPrint('🚫 Cancel ticket body: ${response.body}');
@@ -209,15 +200,12 @@ class _ServiceTabState extends State<ServiceTab> {
     final futures = _quickBookCategories.map((cat) async {
       final type = cat['type'] as String;
       try {
-        final response = await http.post(
-          Uri.parse(
-            '${ApiConfig.homeServicesUrl}'
-            '?serviceType=${Uri.encodeQueryComponent(type)}'
-            '&pincode=${widget.pincode}'
-            '$locationQuery',
-          ),
-          headers: {'ngrok-skip-browser-warning': 'true'},
-        );
+        final response = await ApiClient.post(
+  '${ApiConfig.homeServicesUrl}'
+  '?serviceType=${Uri.encodeQueryComponent(type)}'   // _fetchProvidersFor la `serviceType`
+  '&pincode=${widget.pincode}'
+  '$locationQuery',
+);
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           if (data['success'] == true && data['data'] != null) {

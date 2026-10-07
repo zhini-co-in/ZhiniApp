@@ -1,6 +1,7 @@
 class ApiConfig {
-  //static const String baseUrl = 'https://zhini.atom8itsolutions.com'; // unnoda machine IP, localhost illa (phone-la run panna)
-   static const String baseUrl = 'http://192.168.1.6:8080';
+  static const String baseUrl = 'https://zhini.atom8itsolutions.com'; // unnoda machine IP, localhost illa (phone-la run panna)
+  //static const String baseUrl = 'https://crucial-purifier-canopener.ngrok-free.dev';
+
 
   static const String productSubmitUrl = '$baseUrl/product/submit';
   static const String submissionSearchUrl = '$baseUrl/product/search';
@@ -34,5 +35,7 @@ static String get providerTicketsUrl => '$baseUrl/service/provider-tickets';
     static String cancelTicketUrl() => '$baseUrl/service/cancel-ticket';
     static String get createHomeUrl => '$baseUrl/product/home'; // adjust path if different on your backend
     static String deleteRoomUrl(String homeId) => '$baseUrl/product/delete-room/$homeId';
+    static const String crashLogUrl = '$baseUrl/crash/add';
+    static const String sessionSyncUrl = '$baseUrl/product/session';
 
 }

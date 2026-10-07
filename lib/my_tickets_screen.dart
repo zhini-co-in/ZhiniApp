@@ -1,43 +1,4 @@
-// lib/my_tickets_screen.dart
-//
-// "My Tickets" screen — lists every service ticket raised by the customer,
-// shows its current status, who it's assigned to, the service details, and
-// a bill/invoice-style pricing breakdown once the backend has one.
-// Also lets the customer cancel a still-open ticket with a reason.
-//
-// Backend:
-//   GET  {baseUrl}/getCustomerBilling?phone=<10-digit-mobile>
-//        (see ApiConfig.customerBillingUrl)
-//   PUT  {baseUrl}/cancel-ticket
-//        (see ApiConfig.cancelTicketUrl — add this getter, snippet at bottom
-//        of this file's comments)
-//
-// Expected (flexible) shape per record:
-// {
-//   "ticketId": "...",
-//   "assignedTo": "..." | { "name": "...", "phone": "..." },
-//   "customerDetails": { "name": "...", "phone": "...", "address": "..." },
-//   "serviceDetails": { "product": "...", "brand": "...", "description": "..." },
-//   "billing": {
-//     "productName": "Dell XPS 15",
-//     "partsUsed": [ ... ],
-//     "laborCharge": 500,
-//     "partsCost": 4500,
-//     "totalAmount": 5000,      // if backend total already includes GST, it's used as-is
-//     "gstPercent": 18,          // optional — overrides the 18% default
-//     "gstAmount": 900,          // optional — overrides computed GST entirely
-//     "notes": "...",
-//     "warrantyDays": 90,
-//     "status": "paid" | "pending" | ...
-//   },
-//   "status": "new" | "open" | "assigned" | "in_progress" | "completed" | "cancelled",
-//   "updatedAt": "2026-08-01T10:30:00.000Z"
-// }
-//
-// Every field is read defensively — nothing here assumes a field is always
-// present, since ticket documents can be partially filled at different
-// stages of the service lifecycle.
-//
+
 // ---------------------------------------------------------------------------
 // ADD THIS to lib/constants/api_config.dart (next to customerBillingUrl):
 //
@@ -47,9 +8,9 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'constants/api_config.dart';
-import 'theme/app_theme.dart';
+import 'theme/app_theme.dart';  // 👈 remove
+import 'services/api_client.dart';         // 👈 add
 
 class MyTicketsScreen extends StatefulWidget {
   final String mobileNumber;
@@ -90,10 +51,7 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
     });
     try {
       final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
-      final response = await http.get(
-        Uri.parse(ApiConfig.customerBillingUrl(plainMobile)),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
+      final response = await ApiClient.get(ApiConfig.customerBillingUrl(plainMobile));
 
       debugPrint('🎫 My tickets status: ${response.statusCode}');
       debugPrint('🎫 My tickets body: ${response.body}');
@@ -143,18 +101,14 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
   // -----------------------------------------------------------------------
   Future<void> _cancelTicket(String ticketId, String reason) async {
     try {
-      final response = await http.put(
-        Uri.parse(ApiConfig.cancelTicketUrl()),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'ticketId': ticketId,
-          'customerMobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-          'reason': reason,
-        }),
-      );
+      final response = await ApiClient.put(
+  ApiConfig.cancelTicketUrl(),
+  body: {
+    'ticketId': ticketId,
+    'customerMobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+    'reason': reason,
+  },
+);
 
       debugPrint('🚫 Cancel ticket status: ${response.statusCode}');
       debugPrint('🚫 Cancel ticket body: ${response.body}');

@@ -1,27 +1,33 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'address_screen.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'constants/api_config.dart';
 import 'main_shell.dart';
 import 'services/session_manager.dart';
 import 'service_provider_screen.dart';
 import 'service_provider_dashboard.dart';
-import 'login_screen.dart'; // 👈 needed for a proper "Change number"
+import 'login_screen.dart';
+import 'services/log_service.dart';
+import 'services/api_client.dart';
+// Phase 3:
+// import 'services/push_service.dart';
 
 class OtpScreen extends StatefulWidget {
   final String verificationId;
   final String phoneNumber;
   final bool isServiceProfessional;
+  final int? resendToken; // NEW: passed from login screen
 
   const OtpScreen({
     super.key,
     required this.verificationId,
     required this.phoneNumber,
     this.isServiceProfessional = false,
+    this.resendToken,
   });
 
   @override
@@ -29,20 +35,23 @@ class OtpScreen extends StatefulWidget {
 }
 
 class _OtpScreenState extends State<OtpScreen> {
-  final List<TextEditingController> _controllers =
-      List.generate(6, (_) => TextEditingController());
-  final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
+  static const int _otpLength = 6;
+
+  // One hidden TextField holds the whole code. The 6 boxes only display it.
+  // This makes paste, autofill and backspace work reliably on every device.
+  final TextEditingController _otpController = TextEditingController();
+  final FocusNode _otpFocus = FocusNode();
 
   bool _isVerifying = false;
+  bool _isResending = false;
   int _secondsLeft = 60;
   Timer? _timer;
   late String _verificationId;
+  int? _resendToken;
 
   // Short inline error shown directly below the OTP boxes.
   String? _otpError;
 
-  // Same secondary/label tokens as the login screen — keeps text contrast
-  // consistent across the app.
   static const Color _secondaryText = Color(0xB3FFFFFF); // white @ 70%
   static const Color _labelText = Color(0xE6FFFFFF); // white @ 90%
   static const Color _errorColor = Color(0xFFFF5A5A);
@@ -51,19 +60,27 @@ class _OtpScreenState extends State<OtpScreen> {
   void initState() {
     super.initState();
     _verificationId = widget.verificationId;
+    _resendToken = widget.resendToken;
     _startTimer();
-    // Rebuilds the widget whenever any box's text changes, so the
-    // "Verify and continue" button can enable/disable itself in real time
-    // based on whether all 6 digits are filled in.
-    for (var c in _controllers) {
-      c.addListener(() => setState(() {}));
-    }
+    _otpController.addListener(() {
+      if (mounted) setState(() {});
+    });
+    _otpFocus.addListener(() {
+      if (mounted) setState(() {});
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _otpFocus.requestFocus();
+    });
   }
 
   void _startTimer() {
     _secondsLeft = 60;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (_secondsLeft == 0) {
         timer.cancel();
       } else {
@@ -72,8 +89,7 @@ class _OtpScreenState extends State<OtpScreen> {
     });
   }
 
-  /// Renders as "+91 98••••••12" — country code separated, first two and
-  /// last two digits visible, everything in between masked.
+  /// Renders as "+91 98••••••12"
   String get _maskedNumber {
     final raw = widget.phoneNumber.trim();
     final digits = raw.replaceAll(RegExp(r'\D'), '');
@@ -91,44 +107,47 @@ class _OtpScreenState extends State<OtpScreen> {
     return '$prefix$first2$masked$last2';
   }
 
-  String get _enteredOtp => _controllers.map((c) => c.text).join();
+  String get _enteredOtp => _otpController.text;
 
-  // Handles both normal single-digit typing AND a full 6-digit code pasted
-  // into any one box (common on Android when the OS long-press "Paste"
-  // menu is used, or when SMS autofill drops the whole code into box 0).
-  void _handleDigitChange(String value, int index) {
-    final digitsOnly = value.replaceAll(RegExp(r'\D'), '');
-
-    // Clear any previous error as soon as the user edits the code.
+  // Called on every typing / paste / backspace in the hidden field.
+  void _handleOtpChanged(String value) {
     if (_otpError != null) {
       setState(() => _otpError = null);
     }
-
-    if (digitsOnly.length > 1) {
-      // Pasted / autofilled full code — distribute across all boxes.
-      for (var i = 0; i < 6; i++) {
-        _controllers[i].text = i < digitsOnly.length ? digitsOnly[i] : '';
-      }
-      final lastFilled = (digitsOnly.length - 1).clamp(0, 5);
-      _focusNodes[lastFilled].requestFocus();
-      if (_enteredOtp.length == 6) _verifyOtp();
-      return;
-    }
-
-    _controllers[index].text = digitsOnly;
-    if (digitsOnly.isNotEmpty && index < 5) {
-      _focusNodes[index + 1].requestFocus();
-    } else if (digitsOnly.isEmpty && index > 0) {
-      _focusNodes[index - 1].requestFocus();
-    }
-    if (_enteredOtp.length == 6) {
+    if (value.length == _otpLength) {
       _verifyOtp();
     }
   }
 
+  // "Paste" button — reads the clipboard and fills all 6 boxes.
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final digits = (data?.text ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return;
+
+    final code =
+        digits.length > _otpLength ? digits.substring(0, _otpLength) : digits;
+    _otpController.value = TextEditingValue(
+      text: code,
+      selection: TextSelection.collapsed(offset: code.length),
+    );
+    if (_otpError != null) setState(() => _otpError = null);
+    _otpFocus.requestFocus();
+    if (code.length == _otpLength) _verifyOtp();
+  }
+
+  void _clearOtp() {
+    _otpController.clear();
+    _otpFocus.requestFocus();
+  }
+
   Future<void> _verifyOtp() async {
+    // Block duplicate calls (autofill / paste / button tap can trigger
+    // this twice; the 2nd call would fail with session-expired).
+    if (_isVerifying) return;
+
     final otp = _enteredOtp;
-    if (otp.length != 6) {
+    if (otp.length != _otpLength) {
       setState(() => _otpError = 'Enter the complete 6-digit code.');
       return;
     }
@@ -145,26 +164,54 @@ class _OtpScreenState extends State<OtpScreen> {
       );
 
       await FirebaseAuth.instance.signInWithCredential(credential);
+      _onSignedIn();
 
       if (!mounted) return;
       await _checkExistingUserAndNavigate();
     } on FirebaseAuthException catch (e) {
+      debugPrint('OTP error: ${e.code} - ${e.message}');
       if (!mounted) return;
-      String message = 'Invalid OTP. Try again.';
+
+      // Safety net: if the user is already signed in with this number
+      // (e.g. auto-retrieval finished first), just continue.
+      final current = FirebaseAuth.instance.currentUser;
+      if (current != null && current.phoneNumber == widget.phoneNumber) {
+        _onSignedIn();
+        await _checkExistingUserAndNavigate();
+        return;
+      }
+
+      String message = "Couldn't verify the code. Try again.";
       if (e.code == 'invalid-verification-code') {
         message = 'Incorrect OTP. Try again.';
       } else if (e.code == 'session-expired') {
         message = 'OTP expired. Request a new one.';
+      } else if (e.code == 'network-request-failed') {
+        message = 'No internet connection. Please try again.';
+      } else if (e.code == 'too-many-requests') {
+        message = 'Too many attempts. Please try again later.';
       }
+
       setState(() {
         _isVerifying = false;
         _otpError = message;
       });
-      for (var c in _controllers) {
-        c.clear();
-      }
-      _focusNodes[0].requestFocus();
+      _clearOtp();
+    } catch (e) {
+      debugPrint('Unexpected OTP error: $e');
+      if (!mounted) return;
+      setState(() {
+        _isVerifying = false;
+        _otpError = 'Something went wrong. Please try again.';
+      });
     }
+  }
+
+  void _onSignedIn() {
+    LogService.instance.mobile = widget.phoneNumber;
+    ApiClient.mobile = widget.phoneNumber;
+    FirebaseCrashlytics.instance
+        .setUserIdentifier(widget.phoneNumber.hashCode.toString());
   }
 
   Future<void> _checkExistingUserAndNavigate() async {
@@ -179,10 +226,7 @@ class _OtpScreenState extends State<OtpScreen> {
     debugPrint('🔍 Checking existing user: $url');
 
     try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
+      final response = await ApiClient.get(url);
       debugPrint('📡 Status: ${response.statusCode}, Body: ${response.body}');
 
       if (response.statusCode == 200) {
@@ -239,8 +283,7 @@ class _OtpScreenState extends State<OtpScreen> {
         }
       }
 
-      // No existing record found (or API returned success:false) — treat as
-      // a new user and send them to collect their name and address.
+      // No existing record found — treat as a new user.
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -259,17 +302,14 @@ class _OtpScreenState extends State<OtpScreen> {
     }
   }
 
-  // 👇 checks if this mobile already has a service provider profile
+  // Checks if this mobile already has a service provider profile.
   Future<void> _checkExistingProviderAndNavigate() async {
     final plainMobile = ApiConfig.stripCountryCode(widget.phoneNumber);
     final url = ApiConfig.getServiceProviderUrl(plainMobile);
     debugPrint('🔍 Checking existing provider: $url');
 
     try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
+      final response = await ApiClient.get(url);
       debugPrint(
           '📡 Provider status: ${response.statusCode}, Body: ${response.body}');
 
@@ -327,38 +367,61 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   Future<void> _resendOtp() async {
-    await FirebaseAuth.instance.verifyPhoneNumber(
-      phoneNumber: widget.phoneNumber,
-      timeout: const Duration(seconds: 60),
-      verificationCompleted: (PhoneAuthCredential credential) async {
-        await FirebaseAuth.instance.signInWithCredential(credential);
-      },
-      verificationFailed: (FirebaseAuthException e) {
-        if (!mounted) return;
-        setState(() => _otpError = "Couldn't resend the code. Try again.");
-      },
-      codeSent: (String verificationId, int? resendToken) {
-        if (!mounted) return;
-        setState(() {
+    if (_isResending) return;
+    setState(() {
+      _isResending = true;
+      _otpError = null;
+    });
+
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: widget.phoneNumber,
+        timeout: const Duration(seconds: 60),
+        forceResendingToken: _resendToken,
+
+        // No auto sign-in here either, otherwise the OTP is consumed.
+        verificationCompleted: (PhoneAuthCredential credential) async {},
+
+        verificationFailed: (FirebaseAuthException e) {
+          debugPrint('Resend failed: ${e.code} - ${e.message}');
+          if (!mounted) return;
+          setState(() {
+            _isResending = false;
+            _otpError = "Couldn't resend the code. Try again.";
+          });
+        },
+
+        codeSent: (String verificationId, int? resendToken) {
+          if (!mounted) return;
+          setState(() {
+            _verificationId = verificationId;
+            _resendToken = resendToken;
+            _isResending = false;
+            _otpError = null;
+          });
+          _clearOtp();
+          _startTimer();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('OTP resent')),
+          );
+        },
+
+        codeAutoRetrievalTimeout: (String verificationId) {
           _verificationId = verificationId;
-          _otpError = null;
-        });
-        for (var c in _controllers) {
-          c.clear();
-        }
-        _focusNodes[0].requestFocus();
-        _startTimer();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('OTP resent')),
-        );
-      },
-      codeAutoRetrievalTimeout: (String verificationId) {},
-    );
+        },
+      );
+    } catch (e) {
+      debugPrint('Resend error: $e');
+      if (!mounted) return;
+      setState(() {
+        _isResending = false;
+        _otpError = "Couldn't resend the code. Try again.";
+      });
+    }
   }
 
-  // "Change number" previously used Navigator.pop, but the login screen was
-  // removed from the stack with pushReplacement — popping left an empty
-  // route (the black screen). Push a fresh login screen instead.
+  // Push a fresh login screen (Navigator.pop would leave a black screen
+  // because the login route was replaced).
   void _changeNumber() {
     Navigator.pushReplacement(
       context,
@@ -374,13 +437,88 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   void dispose() {
     _timer?.cancel();
-    for (var c in _controllers) {
-      c.dispose();
-    }
-    for (var f in _focusNodes) {
-      f.dispose();
-    }
+    _otpController.dispose();
+    _otpFocus.dispose();
     super.dispose();
+  }
+
+  // The 6 visual boxes + the invisible TextField laid on top of them.
+  Widget _buildOtpBoxes() {
+    final text = _otpController.text;
+    final focused = _otpFocus.hasFocus;
+    final activeIndex = text.length.clamp(0, _otpLength - 1);
+
+    return SizedBox(
+      height: 56,
+      child: Stack(
+        children: [
+          // Visual boxes
+          Row(
+            children: [
+              for (int i = 0; i < _otpLength; i++) ...[
+                Expanded(
+                  child: Container(
+                    height: 56,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _otpError != null
+                            ? _errorColor
+                            : (focused && i == activeIndex)
+                                ? Colors.blue
+                                : Colors.blue.shade300,
+                        width: (focused && i == activeIndex) ? 2 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      i < text.length ? text[i] : '',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                if (i != _otpLength - 1) const SizedBox(width: 8),
+              ],
+            ],
+          ),
+
+          // Invisible input on top: receives typing, paste (long-press),
+          // autofill and backspace.
+          Positioned.fill(
+            child: TextField(
+              controller: _otpController,
+              focusNode: _otpFocus,
+              enabled: !_isVerifying,
+              keyboardType: TextInputType.number,
+              autofillHints: const [AutofillHints.oneTimeCode],
+              showCursor: false,
+              enableSuggestions: false,
+              autocorrect: false,
+              maxLength: _otpLength,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(_otpLength),
+              ],
+              style: const TextStyle(color: Colors.transparent, fontSize: 1),
+              cursorColor: Colors.transparent,
+              decoration: const InputDecoration(
+                counterText: '',
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
+              onChanged: _handleOtpChanged,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -415,8 +553,6 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 12),
 
-              // Centered to match the heading; number on its own line so the
-              // masked format stays easy to read.
               Column(
                 children: [
                   const Text(
@@ -440,60 +576,39 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 32),
 
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Enter OTP',
-                  style: TextStyle(color: _labelText, fontSize: 14),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Enter OTP',
+                    style: TextStyle(color: _labelText, fontSize: 14),
+                  ),
+                  GestureDetector(
+                    onTap: _isVerifying ? null : _pasteFromClipboard,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.content_paste_rounded,
+                            size: 14, color: Colors.blue),
+                        SizedBox(width: 4),
+                        Text(
+                          'Paste',
+                          style: TextStyle(
+                            color: Colors.blue,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
 
               const SizedBox(height: 12),
 
-              Row(
-  children: [
-    for (int i = 0; i < 6; i++) ...[
-      Expanded(
-        child: SizedBox(
-  height: 56,
-  child: TextField(
-    controller: _controllers[i],
-    focusNode: _focusNodes[i],
-    keyboardType: TextInputType.number,
-    textAlign: TextAlign.center,
-    textAlignVertical: TextAlignVertical.center,
-    expands: true,      // 👈 add
-    maxLines: null,     // 👈 add (expands use pannum bodhu null irukanum)
-    minLines: null,     // 👈 add
-    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-    style: const TextStyle(
-        color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-    decoration: InputDecoration(
-      counterText: '',
-      isDense: true,
-      contentPadding: EdgeInsets.zero,
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(
-                  color: _otpError != null ? _errorColor : Colors.blue.shade300,
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(
-                  color: _otpError != null ? _errorColor : Colors.blue,
-                  width: 2,
-                ),
-              ),
-            ),
-            onChanged: (value) => _handleDigitChange(value, i),
-          ),
-        ),
-      ),
-      if (i != 5) const SizedBox(width: 8),
-    ],
-  ],
-),
+              _buildOtpBoxes(),
+
               // Inline error, right under the boxes, in red.
               if (_otpError != null) ...[
                 const SizedBox(height: 8),
@@ -516,8 +631,6 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 16),
 
-              // While the timer runs: just the countdown. Once it expires:
-              // "Didn't get the code? Resend" with Resend clearly tappable.
               Align(
                 alignment: Alignment.centerLeft,
                 child: _secondsLeft > 0
@@ -535,10 +648,10 @@ class _OtpScreenState extends State<OtpScreen> {
                                 color: _secondaryText, fontSize: 13),
                           ),
                           GestureDetector(
-                            onTap: _resendOtp,
-                            child: const Text(
-                              'Resend',
-                              style: TextStyle(
+                            onTap: _isResending ? null : _resendOtp,
+                            child: Text(
+                              _isResending ? 'Sending...' : 'Resend',
+                              style: const TextStyle(
                                 color: Colors.blue,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -551,13 +664,11 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 32),
 
-              // "Verify and continue" — stays disabled (dimmed) until all
-              // 6 digits are entered, and while a verification is already
-              // in flight, instead of always being tappable.
+              // "Verify and continue"
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: (_isVerifying || _enteredOtp.length != 6)
+                  onPressed: (_isVerifying || _enteredOtp.length != _otpLength)
                       ? null
                       : _verifyOtp,
                   style: ElevatedButton.styleFrom(
@@ -580,7 +691,7 @@ class _OtpScreenState extends State<OtpScreen> {
                       : Text(
                           'Verify and continue',
                           style: TextStyle(
-                            color: _enteredOtp.length == 6
+                            color: _enteredOtp.length == _otpLength
                                 ? Colors.white
                                 : Colors.white54,
                             fontSize: 16,
@@ -591,8 +702,6 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 12),
 
-              // "Change number" de-emphasized to a tertiary text action so
-              // it no longer visually competes with "Verify and continue".
               TextButton(
                 onPressed: _isVerifying ? null : _changeNumber,
                 style: TextButton.styleFrom(

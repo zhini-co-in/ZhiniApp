@@ -38,7 +38,7 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import 'services/member_service.dart'; // 👈 add this import
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'services/api_client.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/device_id_service.dart';
@@ -314,7 +314,7 @@ ScaffoldMessenger.of(context).showSnackBar(
   try {
     final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
     final deviceId = await DeviceIdService.getDeviceId();
-    final fcmToken = await FirebaseMessaging.instance.getToken();
+    final fcmToken = await ApiClient.safeFcmToken();
     if (authToken == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -323,29 +323,20 @@ ScaffoldMessenger.of(context).showSnackBar(
       }
       return null;
     }
-    final response = await http.post(
-      Uri.parse(ApiConfig.createHomeUrl),
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-        'x-auth-token': authToken,
-        'x-device-id': deviceId,
-      },
-      body: jsonEncode({
-        'name': name,
-        'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-        'address': address,
-        'pincode': pincode,
-        'homeName': homeName,
-        'PlatformInfo': {
-          'device': {
-            'deviceId': deviceId,
-            'fcmToken': fcmToken,
-            'os': Platform.isAndroid ? 'android' : 'ios',
-          },
-        },
-      }),
-    );
+    final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
+  'name': name,
+  'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+  'address': address,
+  'pincode': pincode,
+  'homeName': homeName,
+  'PlatformInfo': {
+    'device': {
+      'deviceId': deviceId,
+      'fcmToken': fcmToken,
+      'os': Platform.isAndroid ? 'android' : 'ios',
+    },
+  },
+});
     if (response.statusCode == 200 || response.statusCode == 201) {
       final data = jsonDecode(response.body);
       if (data['success'] == true && data['data'] != null) {
@@ -506,7 +497,8 @@ ScaffoldMessenger.of(context).showSnackBar(
       confirmLabel: 'Log out',
     );
     if (confirm != true) return;
-
+ApiClient.reset();
+await FirebaseAuth.instance.signOut();
     await SessionManager.clearSession();
     await Hive.box<HomeModel>('homes').clear();
 
@@ -521,10 +513,9 @@ ScaffoldMessenger.of(context).showSnackBar(
 Future<void> _refreshHomes() async {
   try {
     final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
-    final response = await http.get(
-      Uri.parse('${ApiConfig.submissionSearchUrl}?mobile=$plainMobile'),
-      headers: {'ngrok-skip-browser-warning': 'true'},
-    );
+    final response = await ApiClient.get(
+  '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile',
+);
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);

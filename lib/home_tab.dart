@@ -19,11 +19,11 @@ import 'widgets/confirm_action_dialog.dart';
 import 'widgets/room_selector_chips.dart';
 import 'widgets/service_provider_card.dart';
 import 'package:geolocator/geolocator.dart';
-import 'address_screen.dart'; // 👈 NEW
+import 'address_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/device_id_service.dart';
 import 'dart:io';
+import 'services/api_client.dart';
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
@@ -66,7 +66,7 @@ class _HomeTabState extends State<HomeTab> {
   String? _error;
   final _homeBox = Hive.box<HomeModel>('homes');
 
-   bool _fetchInFlight = false;
+  bool _fetchInFlight = false;
 
   // Each entry: { id, address, pincode, members: [{name, mobile}], rooms: {roomKey: [items]} }
   List<Map<String, dynamic>> _homes = [];
@@ -86,8 +86,6 @@ class _HomeTabState extends State<HomeTab> {
 
   // ---------------------------------------------------------------------
   // ADD-A-ROOM 3-STEP FLOW — catalog data
-  // (Step 1: pick a room type, Step 2: name the room, Step 3: room added +
-  // quick device suggestions.)
   // ---------------------------------------------------------------------
   static const List<Map<String, dynamic>> _roomTypes = [
     {'key': 'living room', 'label': 'Living room', 'icon': Icons.weekend_rounded, 'color': Color(0xFF4A90E2)},
@@ -173,10 +171,8 @@ class _HomeTabState extends State<HomeTab> {
     {'label': 'Pest Control', 'type': 'pest control', 'icon': Icons.pest_control_rounded},
   ];
 
-  // serviceType -> fetched provider list (cached so re-opening a category
-  // sheet doesn't re-hit the API every time).
-  final Map<String, int> _serviceCounts = {};
   // serviceType -> provider count, shown as "X nearby" on each category card.
+  final Map<String, int> _serviceCounts = {};
 
   @override
   void initState() {
@@ -196,7 +192,7 @@ class _HomeTabState extends State<HomeTab> {
     await Future.wait(futures);
   }
 
-// Single source of truth for the nearby-services fetch. Defaults to the
+  // Single source of truth for the nearby-services fetch. Defaults to the
   // home's saved pincode; falls back to live GPS lat/long when there's no
   // pincode (e.g. a home created via AddressScreen's "Skip" flow) or when
   // the sheet explicitly asks for GPS / a manually-entered pincode.
@@ -216,13 +212,10 @@ class _HomeTabState extends State<HomeTab> {
       locationQuery ??= await _buildGpsLocationQuery();
       if (locationQuery == null) return [];
 
-      final response = await http.post(
-        Uri.parse(
-          '${ApiConfig.homeServicesUrl}'
-          '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
-          '$locationQuery',
-        ),
-        headers: {'ngrok-skip-browser-warning': 'true'},
+      final response = await ApiClient.post(
+        '${ApiConfig.homeServicesUrl}'
+        '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
+        '$locationQuery',
       );
 
       debugPrint('🔧 Home services ($serviceType) status: ${response.statusCode}');
@@ -243,10 +236,8 @@ class _HomeTabState extends State<HomeTab> {
     return [];
   }
 
-  // Silent GPS fetch — no fresh permission prompt in most cases since
-  // location is expected to already be tracked/permitted elsewhere in
-  // the app. Returns null (caller shows "no results") if location can't
-  // be resolved at all.
+  // Silent GPS fetch — returns null (caller shows "no results") if location
+  // can't be resolved at all.
   Future<String?> _buildGpsLocationQuery() async {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -271,7 +262,7 @@ class _HomeTabState extends State<HomeTab> {
     }
   }
 
-void _openServiceCategorySheet(Map<String, dynamic> category) {
+  void _openServiceCategorySheet(Map<String, dynamic> category) {
     final type = category['type'] as String;
     final label = category['label'] as String;
 
@@ -289,18 +280,40 @@ void _openServiceCategorySheet(Map<String, dynamic> category) {
     );
   }
 
+  // "Services near you        View all >"
+  Widget _servicesHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text('Services near you',
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
+        InkWell(
+          onTap: _openAllRoomsSheet, // TODO: open a screen with all service categories
+          borderRadius: BorderRadius.circular(8),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Row(children: [
+              Text('View all', style: TextStyle(color: AppColors.primary, fontSize: 13)),
+              Icon(Icons.chevron_right_rounded, color: AppColors.primary, size: 18),
+            ]),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildServicesNearYou() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionHeader('SERVICES NEAR YOU'),
+        _servicesHeader(),
         const SizedBox(height: 12),
         SizedBox(
           height: 104,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: _serviceCategories.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               final cat = _serviceCategories[index];
               final type = cat['type'] as String;
@@ -317,6 +330,7 @@ void _openServiceCategorySheet(Map<String, dynamic> category) {
     );
   }
 
+  // Icon top-left, chevron top-right, bold label, green "N nearby".
   Widget _serviceCategoryCard({
     required IconData icon,
     required String label,
@@ -327,35 +341,40 @@ void _openServiceCategorySheet(Map<String, dynamic> category) {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        width: 92,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        width: 100,
+        padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
         decoration: AppDecor.flatCard(radius: 14),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppColors.primarySoft,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: AppColors.primary, size: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: AppColors.primary, size: 18),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 16),
+              ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               label,
-              textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w600),
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 2),
             Text(
               count == null ? '...' : '$count nearby',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppColors.success, fontSize: 9, fontWeight: FontWeight.w600),
+              style: const TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -376,205 +395,195 @@ void _openServiceCategorySheet(Map<String, dynamic> category) {
   // ---------------------------------------------------------------------
   // FETCH
   // ---------------------------------------------------------------------
-Future<void> _fetchAppliances({String? homeId}) async {
-  final isSingleHomeRefresh = homeId != null;
+  Future<void> _fetchAppliances({String? homeId}) async {
+    final isSingleHomeRefresh = homeId != null;
 
-  // Skip if a full refresh is already running.
-  if (!isSingleHomeRefresh) {
-    if (_fetchInFlight) return;
-    _fetchInFlight = true;
-  }
-
-  // 1. Cache-ல இருந்து instant ஆ காட்டு — full refresh-க்கு மட்டும்.
-  if (!isSingleHomeRefresh) {
-    if (_homeBox.isNotEmpty && mounted) {
-      setState(() {
-        _homes = _homeBox.values.map((h) => h.toMap()).toList();
-        _loading = false;
-      });
-    } else {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    }
-  }
-
-  try {
-    final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
-    var url = '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile';
-    if (isSingleHomeRefresh) url += '&homeId=$homeId';
-
-    final response = await http.get(
-      Uri.parse(url),
-      headers: {'ngrok-skip-browser-warning': 'true'},
-    );
-
-    debugPrint('🏠 Home fetch status: ${response.statusCode}');
-    debugPrint('🏠 Home fetch body: ${response.body}');
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data['success'] == true && data['data'] != null) {
-        final rawData = data['data'];
-        final List rawHomes = rawData is List ? rawData : [rawData];
-
-        final parsedHomes = rawHomes.map<Map<String, dynamic>>((h) {
-  final roomsRaw = h['rooms'];
-  final Map<String, List<Map<String, dynamic>>> rooms = {};
-  final Map<String, String> roomIds = {}; // 👈 roomKey -> backend room _id, needed for delete
-
-  if (roomsRaw is List) {
-    for (final roomObj in roomsRaw) {
-      if (roomObj is! Map) continue;
-      final roomName = roomObj['roomName']?.toString();
-      final devicesRaw = roomObj['devices'];
-      if (roomName == null || devicesRaw is! List) continue;
-
-      if (roomName.toLowerCase() == _hiddenSetupRoomKey) continue;
-
-      final key = roomName.toLowerCase();
-      rooms[key] = devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-
-      // Backend may key the room's own id as _id or roomId.
-      final rid = (roomObj['_id'] ?? roomObj['roomId'])?.toString();
-      if (rid != null && rid.isNotEmpty) roomIds[key] = rid;
-    }
-  } else if (roomsRaw is Map) {
-    // Flat-map fallback format has no per-room id, so roomIds stays
-    // empty for those entries — deletion for such rooms falls back to
-    // the local-only removal path (see _confirmDeleteRoom).
-    roomsRaw.forEach((key, value) {
-      if (value is List) {
-        if (key.toString().toLowerCase() == _hiddenSetupRoomKey) return;
-        rooms[key.toString().toLowerCase()] =
-            value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      }
-    });
-  }
-
-  final membersRaw = h['members'];
-  final List<Map<String, dynamic>> members = membersRaw is List
-      ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
-      : <Map<String, dynamic>>[];
-
-  return {
-    'id': (h['_id'] ?? h['id'])?.toString(),
-    'address': h['address']?.toString() ?? widget.address,
-    'pincode': h['pincode']?.toString() ?? widget.pincode,
-    'rooms': rooms,
-    'roomIds': roomIds, // 👈 NEW
-    'members': members,
-  };
-}).toList();
-
-        // 👇 NEW: dedupe homes — same address+pincode (or same id) should
-        // collapse into ONE home instead of showing duplicates.
-        final dedupedHomes = _dedupeHomes(parsedHomes);
-
-        if (isSingleHomeRefresh) {
-  if (dedupedHomes.isNotEmpty && mounted) {
-    // Backend might not filter strictly by homeId, so don't blindly
-    // trust dedupedHomes.first — find the entry that actually matches
-    // the homeId we asked for; fall back to .first only if that fails.
-    final updated = dedupedHomes.firstWhere(
-      (h) => h['id']?.toString() == homeId,
-      orElse: () => dedupedHomes.first,
-    );
-    final idx = _homes.indexWhere((h) => h['id']?.toString() == homeId);
-    setState(() {
-  if (idx != -1) {
-    _homes[idx] = updated;
-  } else {
-    _homes.add(updated);
-  }
-  final updatedRooms = updated['rooms'] as Map<String, List<Map<String, dynamic>>>;
-  _localExtraRooms.removeWhere((key, _) => updatedRooms.containsKey(key));
-});
-    await _homeBox.clear();
-    for (final h in _homes) {
-      await _homeBox.add(HomeModel.fromMap(h));
-    }
-  }
-  return;
-}
-
-        // Full refresh path.
-        // Full refresh path.
-await _homeBox.clear();
-for (final h in dedupedHomes) {
-  await _homeBox.add(HomeModel.fromMap(h));
-}
-
-final previousSelectedHome = _currentHome;
-final previousSelectedId = previousSelectedHome?['id']?.toString();
-final previousAddress = previousSelectedHome?['address']?.toString().trim().toLowerCase();
-final previousPincode = previousSelectedHome?['pincode']?.toString().trim();
-final previousHomesSnapshot = List<Map<String, dynamic>>.from(_homes); // 👈 order snapshot
-
-if (mounted) {
-  setState(() {
-    _homes = _stableOrderHomes(previousHomesSnapshot, dedupedHomes); // 👈 stable order
-
-    int idx = -1;
-    if (previousSelectedId != null) {
-      idx = _homes.indexWhere((h) => h['id']?.toString() == previousSelectedId);
-    }
-    if (idx == -1 && previousAddress != null && previousAddress.isNotEmpty) {
-      idx = _homes.indexWhere((h) =>
-          h['address']?.toString().trim().toLowerCase() == previousAddress &&
-          h['pincode']?.toString().trim() == previousPincode);
+    // Skip if a full refresh is already running.
+    if (!isSingleHomeRefresh) {
+      if (_fetchInFlight) return;
+      _fetchInFlight = true;
     }
 
-    if (idx != -1) {
-  _selectedHomeIndex = idx;
-} else if (_selectedHomeIndex >= _homes.length) {
-  _selectedHomeIndex = 0;
-}
-
-// Only drop a local-extra room once the backend actually has it (i.e.
-// a device got added to it) — an empty room the user just created has
-// no backend record yet, so clearing it unconditionally here would
-// make it vanish on every pull-to-refresh.
-final selectedRooms = _homes.isNotEmpty
-    ? (_homes[_selectedHomeIndex]['rooms'] as Map<String, List<Map<String, dynamic>>>)
-    : <String, List<Map<String, dynamic>>>{};
-_localExtraRooms.removeWhere((key, _) => selectedRooms.containsKey(key));
-
-_loading = false;
-  });
-}
-return;
+    // Show cache instantly — full refresh only.
+    if (!isSingleHomeRefresh) {
+      if (_homeBox.isNotEmpty && mounted) {
+        setState(() {
+          _homes = _homeBox.values.map((h) => h.toMap()).toList();
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _loading = true;
+          _error = null;
+        });
       }
     }
 
-    if (isSingleHomeRefresh) return;
+    try {
+      final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
+      var url = '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile';
+      if (isSingleHomeRefresh) url += '&homeId=$homeId';
 
-    if (mounted && _homeBox.isEmpty) {
-      setState(() {
-        _homes = [];
-        _loading = false;
-      });
-    } else if (mounted) {
-      setState(() => _loading = false);
-    }
-  } catch (e) {
-    debugPrint('❌ Home fetch error (network): $e');
-    if (isSingleHomeRefresh) return;
-    if (mounted) {
-      setState(() {
-        if (_homeBox.isEmpty) {
-          _error = 'Could not load your home. Pull down to retry.';
+      final response = await ApiClient.get(url);
+
+      debugPrint('🏠 Home fetch status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final rawData = data['data'];
+          final List rawHomes = rawData is List ? rawData : [rawData];
+
+          final parsedHomes = rawHomes.map<Map<String, dynamic>>((h) {
+            final roomsRaw = h['rooms'];
+            final Map<String, List<Map<String, dynamic>>> rooms = {};
+            final Map<String, String> roomIds = {}; // roomKey -> backend room _id, needed for delete
+
+            if (roomsRaw is List) {
+              for (final roomObj in roomsRaw) {
+                if (roomObj is! Map) continue;
+                final roomName = roomObj['roomName']?.toString();
+                final devicesRaw = roomObj['devices'];
+                if (roomName == null || devicesRaw is! List) continue;
+
+                if (roomName.toLowerCase() == _hiddenSetupRoomKey) continue;
+
+                final key = roomName.toLowerCase();
+                rooms[key] = devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+                // Backend may key the room's own id as _id or roomId.
+                final rid = (roomObj['_id'] ?? roomObj['roomId'])?.toString();
+                if (rid != null && rid.isNotEmpty) roomIds[key] = rid;
+              }
+            } else if (roomsRaw is Map) {
+              // Flat-map fallback format has no per-room id, so roomIds stays
+              // empty for those entries — deletion for such rooms falls back to
+              // the local-only removal path (see _confirmDeleteRoom).
+              roomsRaw.forEach((key, value) {
+                if (value is List) {
+                  if (key.toString().toLowerCase() == _hiddenSetupRoomKey) return;
+                  rooms[key.toString().toLowerCase()] =
+                      value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+                }
+              });
+            }
+
+            final membersRaw = h['members'];
+            final List<Map<String, dynamic>> members = membersRaw is List
+                ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+                : <Map<String, dynamic>>[];
+
+            return {
+              'id': (h['_id'] ?? h['id'])?.toString(),
+              'address': h['address']?.toString() ?? widget.address,
+              'pincode': h['pincode']?.toString() ?? widget.pincode,
+              'rooms': rooms,
+              'roomIds': roomIds,
+              'members': members,
+            };
+          }).toList();
+
+          // Dedupe homes — same address+pincode (or same id) collapse into ONE.
+          final dedupedHomes = _dedupeHomes(parsedHomes);
+
+          if (isSingleHomeRefresh) {
+            if (dedupedHomes.isNotEmpty && mounted) {
+              // Backend might not filter strictly by homeId, so find the entry
+              // that actually matches; fall back to .first only if that fails.
+              final updated = dedupedHomes.firstWhere(
+                (h) => h['id']?.toString() == homeId,
+                orElse: () => dedupedHomes.first,
+              );
+              final idx = _homes.indexWhere((h) => h['id']?.toString() == homeId);
+              setState(() {
+                if (idx != -1) {
+                  _homes[idx] = updated;
+                } else {
+                  _homes.add(updated);
+                }
+                final updatedRooms = updated['rooms'] as Map<String, List<Map<String, dynamic>>>;
+                _localExtraRooms.removeWhere((key, _) => updatedRooms.containsKey(key));
+              });
+              await _homeBox.clear();
+              for (final h in _homes) {
+                await _homeBox.add(HomeModel.fromMap(h));
+              }
+            }
+            return;
+          }
+
+          // Full refresh path.
+          await _homeBox.clear();
+          for (final h in dedupedHomes) {
+            await _homeBox.add(HomeModel.fromMap(h));
+          }
+
+          final previousSelectedHome = _currentHome;
+          final previousSelectedId = previousSelectedHome?['id']?.toString();
+          final previousAddress = previousSelectedHome?['address']?.toString().trim().toLowerCase();
+          final previousPincode = previousSelectedHome?['pincode']?.toString().trim();
+          final previousHomesSnapshot = List<Map<String, dynamic>>.from(_homes);
+
+          if (mounted) {
+            setState(() {
+              _homes = _stableOrderHomes(previousHomesSnapshot, dedupedHomes);
+
+              int idx = -1;
+              if (previousSelectedId != null) {
+                idx = _homes.indexWhere((h) => h['id']?.toString() == previousSelectedId);
+              }
+              if (idx == -1 && previousAddress != null && previousAddress.isNotEmpty) {
+                idx = _homes.indexWhere((h) =>
+                    h['address']?.toString().trim().toLowerCase() == previousAddress &&
+                    h['pincode']?.toString().trim() == previousPincode);
+              }
+
+              if (idx != -1) {
+                _selectedHomeIndex = idx;
+              } else if (_selectedHomeIndex >= _homes.length) {
+                _selectedHomeIndex = 0;
+              }
+
+              // Only drop a local-extra room once the backend actually has it.
+              final selectedRooms = _homes.isNotEmpty
+                  ? (_homes[_selectedHomeIndex]['rooms'] as Map<String, List<Map<String, dynamic>>>)
+                  : <String, List<Map<String, dynamic>>>{};
+              _localExtraRooms.removeWhere((key, _) => selectedRooms.containsKey(key));
+
+              _loading = false;
+            });
+          }
+          return;
         }
-        _loading = false;
-      });
-    }
-  } finally {
-    if (!isSingleHomeRefresh) _fetchInFlight = false;
-  }
-}
+      }
 
-List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
+      if (isSingleHomeRefresh) return;
+
+      if (mounted && _homeBox.isEmpty) {
+        setState(() {
+          _homes = [];
+          _loading = false;
+        });
+      } else if (mounted) {
+        setState(() => _loading = false);
+      }
+    } catch (e) {
+      debugPrint('❌ Home fetch error (network): $e');
+      if (isSingleHomeRefresh) return;
+      if (mounted) {
+        setState(() {
+          if (_homeBox.isEmpty) {
+            _error = 'Could not load your home. Pull down to retry.';
+          }
+          _loading = false;
+        });
+      }
+    } finally {
+      if (!isSingleHomeRefresh) _fetchInFlight = false;
+    }
+  }
+
+  List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
     final Map<String, Map<String, dynamic>> merged = {};
     final List<String> order = []; // preserve first-seen order
     for (final home in homes) {
@@ -585,19 +594,18 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
           ? 'id:$id'
           : 'addr:${address.trim().toLowerCase()}|${pincode.trim()}';
       if (!merged.containsKey(key)) {
-  final roomsIn = home['rooms'] as Map<String, List<Map<String, dynamic>>>;
-  final roomIdsIn = (home['roomIds'] as Map<String, String>?) ?? {};   // 👈 சேருங்க
-  merged[key] = {
-    'id': home['id'],
-    'address': home['address'],
-    'pincode': home['pincode'],
-    'rooms': roomsIn.map((k, v) => MapEntry(k, List<Map<String, dynamic>>.from(v))),
-    'roomIds': Map<String, String>.from(roomIdsIn),   // 👈 சேருங்க
-    'members': List<Map<String, dynamic>>.from(home['members'] as List),
-  };
-  order.add(key);
-} else {
-
+        final roomsIn = home['rooms'] as Map<String, List<Map<String, dynamic>>>;
+        final roomIdsIn = (home['roomIds'] as Map<String, String>?) ?? {};
+        merged[key] = {
+          'id': home['id'],
+          'address': home['address'],
+          'pincode': home['pincode'],
+          'rooms': roomsIn.map((k, v) => MapEntry(k, List<Map<String, dynamic>>.from(v))),
+          'roomIds': Map<String, String>.from(roomIdsIn),
+          'members': List<Map<String, dynamic>>.from(home['members'] as List),
+        };
+        order.add(key);
+      } else {
         final existing = merged[key]!;
         final existingRooms = existing['rooms'] as Map<String, List<Map<String, dynamic>>>;
         final incomingRooms = home['rooms'] as Map<String, List<Map<String, dynamic>>>;
@@ -609,8 +617,8 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
           }
         });
         final existingRoomIds = existing['roomIds'] as Map<String, String>;
-  final incomingRoomIds = (home['roomIds'] as Map<String, String>?) ?? {};
-  existingRoomIds.addAll(incomingRoomIds);
+        final incomingRoomIds = (home['roomIds'] as Map<String, String>?) ?? {};
+        existingRoomIds.addAll(incomingRoomIds);
         final existingMembers = existing['members'] as List<Map<String, dynamic>>;
         final existingMobiles = existingMembers.map((m) => m['mobile']?.toString()).toSet();
         final incomingMembers = home['members'] as List<Map<String, dynamic>>;
@@ -624,10 +632,9 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
     return order.map((key) => merged[key]!).toList();
   }
 
- // Keep tab order stable across refreshes — don't just trust whatever
+  // Keep tab order stable across refreshes — don't just trust whatever
   // order the backend returns homes in, or the switcher chips visibly
-  // jump around every pull-to-refresh even though the selected home
-  // itself is correct.
+  // jump around every pull-to-refresh.
   List<Map<String, dynamic>> _stableOrderHomes(
     List<Map<String, dynamic>> previous,
     List<Map<String, dynamic>> incoming,
@@ -657,9 +664,6 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
   // ---------------------------------------------------------------------
   // CURRENT HOME HELPERS
   // ---------------------------------------------------------------------
-  // ---------------------------------------------------------------------
-  // CURRENT HOME HELPERS
-  // ---------------------------------------------------------------------
   Map<String, dynamic>? get _currentHome =>
       _homes.isEmpty ? null : _homes[_selectedHomeIndex];
 
@@ -681,6 +685,7 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
     final firstPart = address.split(',').first.trim();
     return firstPart.isNotEmpty ? firstPart : 'Home ${index + 1}';
   }
+
   bool _isDefaultHome(Map<String, dynamic> home) {
     final addr = home['address']?.toString().trim().toLowerCase() ?? '';
     return addr == 'default';
@@ -710,7 +715,6 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
 
   // ---------------------------------------------------------------------
   // WARRANTY / STATS / ALERTS
-  // (date-parsing logic now lives in WarrantyUtils — no more local copy)
   // ---------------------------------------------------------------------
   Map<String, int> _computeStats() {
     int devices = 0;
@@ -777,86 +781,77 @@ List<Map<String, dynamic>> _dedupeHomes(List<Map<String, dynamic>> homes) {
 
     return alerts.take(4).toList();
   }
-// Deletes a room on the backend and unassigns its devices there (matches
-// the backend's deleteRoom controller). Only called for rooms that have
-// a real backend roomId — a room created locally via "Add Room" that has
-// no device yet has no backend record, so it's removed purely client-side
-// (see _confirmDeleteRoom).
-Future<bool> _submitDeleteRoom(String homeId, String roomId) async {
-  try {
-    final response = await http.delete(
-      Uri.parse(ApiConfig.deleteRoomUrl(homeId)),
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
-      body: jsonEncode({
-        'roomId': roomId,
-        'homeId': homeId,
-      }),
-    );
 
-    debugPrint('🗑️ Delete room status: ${response.statusCode}');
-    debugPrint('🗑️ Delete room body: ${response.body}');
-
-    if (!mounted) return false;
-
-    if (response.statusCode == 200) {
-      return true;
-    } else {
-      final data = jsonDecode(response.body);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(data['message']?.toString() ?? 'Could not delete room.')),
+  // Deletes a room on the backend and unassigns its devices there. Only
+  // called for rooms that have a real backend roomId.
+  Future<bool> _submitDeleteRoom(String homeId, String roomId) async {
+    try {
+      final response = await ApiClient.delete(
+        ApiConfig.deleteRoomUrl(homeId),
+        body: {'roomId': roomId, 'homeId': homeId},
       );
+
+      debugPrint('🗑️ Delete room status: ${response.statusCode}');
+      debugPrint('🗑️ Delete room body: ${response.body}');
+
+      if (!mounted) return false;
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        final data = jsonDecode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message']?.toString() ?? 'Could not delete room.')),
+        );
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Delete room error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Network error. Try again.')),
+        );
+      }
       return false;
     }
-  } catch (e) {
-    debugPrint('❌ Delete room error: $e');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Network error. Try again.')),
-      );
-    }
-    return false;
-  }
-}
-
-// Confirms, then deletes a room — either via the backend (if it has
-// devices/a real roomId) or purely client-side (if it's a locally-created
-// empty room that never got a device, so it has no backend record yet).
-Future<void> _confirmDeleteRoom(String roomKey, String displayName) async {
-  final ok = await showConfirmActionDialog(
-    context,
-    title: 'Delete room?',
-    content: '$displayName and any devices in it will be removed. This cannot be undone.',
-  );
-  if (ok != true) return;
-
-  final homeId = _currentHomeId;
-  final roomId = _currentRoomIds[roomKey];
-
-  // Local-only empty room — nothing on the backend to delete.
-  if (homeId == null || roomId == null) {
-    setState(() => _localExtraRooms.remove(roomKey));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$displayName removed ✅')),
-      );
-    }
-    return;
   }
 
-  final success = await _submitDeleteRoom(homeId, roomId);
-  if (success) {
-    setState(() => _localExtraRooms.remove(roomKey));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$displayName removed ✅')),
-      );
+  // Confirms, then deletes a room — via backend (if it has a real roomId) or
+  // purely client-side (locally-created empty room).
+  Future<void> _confirmDeleteRoom(String roomKey, String displayName) async {
+    final ok = await showConfirmActionDialog(
+      context,
+      title: 'Delete room?',
+      content: '$displayName and any devices in it will be removed. This cannot be undone.',
+    );
+    if (ok != true) return;
+
+    final homeId = _currentHomeId;
+    final roomId = _currentRoomIds[roomKey];
+
+    // Local-only empty room — nothing on the backend to delete.
+    if (homeId == null || roomId == null) {
+      setState(() => _localExtraRooms.remove(roomKey));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$displayName removed ✅')),
+        );
+      }
+      return;
     }
-    _fetchAppliances(homeId: homeId); // refresh so the room disappears from the grid
+
+    final success = await _submitDeleteRoom(homeId, roomId);
+    if (success) {
+      setState(() => _localExtraRooms.remove(roomKey));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$displayName removed ✅')),
+        );
+      }
+      _fetchAppliances(homeId: homeId);
+    }
   }
-}
+
   // ---------------------------------------------------------------------
   // ROOM DETAIL / ADD ROOM
   // ---------------------------------------------------------------------
@@ -878,7 +873,7 @@ Future<void> _confirmDeleteRoom(String roomKey, String displayName) async {
       ),
     ).then((_) {
       if (_currentHomeId != null) {
-        _fetchAppliances(homeId: _currentHomeId);   // 👈 single-home refresh
+        _fetchAppliances(homeId: _currentHomeId);
       } else {
         _fetchAppliances();
       }
@@ -886,10 +881,7 @@ Future<void> _confirmDeleteRoom(String roomKey, String displayName) async {
   }
 
   // ---------------------------------------------------------------------
-  // ADD A ROOM — 3-step guided flow:
-  //   Step 1: pick a room type (icon grid)
-  //   Step 2: name the room (pre-filled suggestion + quick-suggestion chips)
-  //   Step 3: room added confirmation + quick device suggestions
+  // ADD A ROOM — 3-step guided flow
   // ---------------------------------------------------------------------
   void _openAddRoomDialog() {
     int step = 0;
@@ -1353,15 +1345,26 @@ Future<void> _confirmDeleteRoom(String roomKey, String displayName) async {
   }
 
   // ---------------------------------------------------------------------
-  // ADD HOME (creates a brand-new home record via a fresh address)
+  // ADD HOME — pushes AddressScreen (isAddingHome: true).
   // ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
-  // ADD HOME — now pushes AddressScreen (isAddingHome: true) instead of a
-  // small inline dialog, so the user gets "use current location" too.
-  // AddressScreen creates the home + refreshes this list, then pops back.
-  // ---------------------------------------------------------------------
+  // home_tab.dart — REPLACE the existing `_openAddHomeDialog` with this.
+// (_isDefaultHome can stay as it is.)
+
 void _openAddHomeDialog() async {
-  final existingDefaultId = _defaultHome?['id']?.toString();
+  // REGISTER flow  : user has NO registered home yet (only the Guest/"Default"
+  //                  home) -> the new address must UPDATE that Default home.
+  // ADD-HOME flow  : user already has a registered home -> always CREATE a
+  //                  new home, never touch the Default one.
+ final bool isRegisterFlow = !_hasRegisteredHome;
+
+String? existingDefaultId;
+if (isRegisterFlow) {
+  final dh = _defaultHome;
+  if (dh != null) existingDefaultId = dh['id']?.toString();
+}
+
+  debugPrint('🏠 isRegisterFlow=$isRegisterFlow existingDefaultId=$existingDefaultId');
+  debugPrint('🏠 homes=${_homes.map((h) => "${h['id']} -> ${h['address']}").toList()}');
 
   final result = await Navigator.push<Map<String, String>>(
     context,
@@ -1377,12 +1380,15 @@ void _openAddHomeDialog() async {
 
   final newAddress = result['address'] ?? '';
   final newPincode = result['pincode'] ?? '';
+  if (newAddress.isEmpty) return;
 
+  // ---------- UPDATE the Default (Guest) home ----------
   if (existingDefaultId != null) {
-    if (newAddress.isEmpty) return;
+    debugPrint('✏️ Updating Default home $existingDefaultId -> $newAddress');
     final ok = await _submitAddressUpdate(existingDefaultId, newAddress, newPincode);
     if (ok && mounted) {
       await _fetchAppliances(homeId: existingDefaultId);
+      if (!mounted) return;
       setState(() {
         final idx = _homes.indexWhere((h) => h['id']?.toString() == existingDefaultId);
         if (idx != -1) _selectedHomeIndex = idx;
@@ -1393,17 +1399,16 @@ void _openAddHomeDialog() async {
     return;
   }
 
-  // No default home yet — genuine "add a new home" path.
-  if (newAddress.isEmpty) return;
-
-final newHomeId = await _createNewHomeRecord(
-  address: newAddress,
-  pincode: newPincode,
-  name: widget.name,
-  homeName: newAddress.split(',').first.trim().isNotEmpty
-      ? newAddress.split(',').first.trim()
-      : 'Home ${_homes.length + 1}',
-);
+  // ---------- CREATE a brand-new home ----------
+  debugPrint('🆕 Creating NEW home -> $newAddress');
+  final newHomeId = await _createNewHomeRecord(
+    address: newAddress,
+    pincode: newPincode,
+    name: widget.name,
+    homeName: newAddress.split(',').first.trim().isNotEmpty
+        ? newAddress.split(',').first.trim()
+        : 'Home ${_homes.length + 1}',
+  );
 
   if (newHomeId == null) {
     if (mounted) {
@@ -1424,79 +1429,76 @@ final newHomeId = await _createNewHomeRecord(
   _prefetchServiceCounts();
 
   if (mounted) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Home added ✅')),
-  );
-}
-}
-
-  // Creates a brand-new home record on the backend for the given
-  // address/pincode and returns its homeId (or null on failure). Used by
-  // _openAddHomeDialog's genuine "add a new home" path, once we know
-  // there's no existing default home to just update instead.
-Future<String?> _createNewHomeRecord({
-  required String address,
-  required String pincode,
-  required String name,
-  required String homeName,
-}) async {
-  try {
-    final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
-    final deviceId = await DeviceIdService.getDeviceId();
-    final fcmToken = await FirebaseMessaging.instance.getToken();
-
-    if (authToken == null) {
-      debugPrint('❌ No Firebase auth token — user not signed in?');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please sign in again to add a home.')),
-        );
-      }
-      return null;
-    }
-
-    final response = await http.post(
-      Uri.parse(ApiConfig.createHomeUrl),
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-        'x-auth-token': authToken,     // 👈 idhு than missing-ah irundhுchu
-        'x-device-id': deviceId,       // 👈 backend-ku idhுவும் required
-      },
-      body: jsonEncode({
-        'name': name,
-        'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-        'address': address,
-        'pincode': pincode,
-        'homeName': homeName,
-        'PlatformInfo': {
-          'device': {
-            'deviceId': deviceId,
-            'fcmToken': fcmToken,
-            'os': Platform.isAndroid ? 'android' : 'ios',
-          },
-        },
-      }),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Home added ✅')),
     );
-
-    debugPrint('🏠 Create home status: ${response.statusCode}');
-    debugPrint('🏠 Create home body: ${response.body}');
-
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final data = jsonDecode(response.body);
-      if (data['success'] == true && data['data'] != null) {
-        final homeId = data['data']['homeId']?.toString();
-        if (homeId != null && homeId.isNotEmpty) {
-          await SessionManager.updateHomeId(homeId);
-        }
-        return homeId;
-      }
-    }
-  } catch (e) {
-    debugPrint('❌ Create home error: $e');
   }
-  return null;
 }
+
+  // Creates a brand-new home record on the backend and returns its homeId.
+  Future<String?> _createNewHomeRecord({
+    required String address,
+    required String pincode,
+    required String name,
+    required String homeName,
+  }) async {
+    try {
+      final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      final deviceId = await DeviceIdService.getDeviceId();
+      final fcmToken = await ApiClient.safeFcmToken();
+
+      if (authToken == null) {
+        debugPrint('❌ No Firebase auth token — user not signed in?');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please sign in again to add a home.')),
+          );
+        }
+        return null;
+      }
+
+      final response = await http.post(
+        Uri.parse(ApiConfig.createHomeUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          'x-auth-token': authToken,
+          'x-device-id': deviceId,
+        },
+        body: jsonEncode({
+          'name': name,
+          'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+          'address': address,
+          'pincode': pincode,
+          'homeName': homeName,
+          'PlatformInfo': {
+            'device': {
+              'deviceId': deviceId,
+              'fcmToken': fcmToken,
+              'os': Platform.isAndroid ? 'android' : 'ios',
+            },
+          },
+        }),
+      );
+
+      debugPrint('🏠 Create home status: ${response.statusCode}');
+      debugPrint('🏠 Create home body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final homeId = data['data']['homeId']?.toString();
+          if (homeId != null && homeId.isNotEmpty) {
+            await SessionManager.updateHomeId(homeId);
+          }
+          return homeId;
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Create home error: $e');
+    }
+    return null;
+  }
 
   // ---------------------------------------------------------------------
   // EDIT HOME ADDRESS
@@ -1560,7 +1562,7 @@ Future<String?> _createNewHomeRecord({
                           final ok = await _submitAddressUpdate(homeId, newAddress, newPincode);
                           if (dialogContext.mounted) Navigator.pop(dialogContext);
                           if (ok && mounted) {
-                            _fetchAppliances(homeId: homeId); // Refresh list
+                            _fetchAppliances(homeId: homeId);
                           }
                         },
                   child: isSaving
@@ -1599,7 +1601,7 @@ Future<String?> _createNewHomeRecord({
   }
 
   // ---------------------------------------------------------------------
-  // ADD MEMBER — Contacts-only (no manual name/mobile typing)
+  // ADD MEMBER — Contacts-only
   // ---------------------------------------------------------------------
   void _openAddMemberDialog() {
     String? pickedName;
@@ -1622,8 +1624,7 @@ Future<String?> _createNewHomeRecord({
               final contact = await FlutterContacts.openExternalPick();
               if (contact == null) return;
 
-              // openExternalPick sometimes returns without full details,
-              // so fetch the full contact to be safe.
+              // openExternalPick sometimes returns without full details.
               final full = await FlutterContacts.getContact(contact.id);
               if (full == null) return;
 
@@ -1660,8 +1661,6 @@ Future<String?> _createNewHomeRecord({
                     style: AppText.faintCaption,
                   ),
                   const SizedBox(height: 14),
-
-                  // ---- Pick from Contacts button (only way to add) ----
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -1676,8 +1675,6 @@ Future<String?> _createNewHomeRecord({
                     ),
                   ),
                   const SizedBox(height: 14),
-
-                  // ---- Selected contact preview (read-only) ----
                   if (pickedName != null && pickedMobile != null)
                     Container(
                       width: double.infinity,
@@ -1762,19 +1759,12 @@ Future<String?> _createNewHomeRecord({
         return;
       }
 
-      final response = await http.post(
-        Uri.parse(ApiConfig.memberAddUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'homeId': _currentHomeId,
-          'myMobile': myMobile,
-          'newName': name,
-          'newMobile': newMobile,
-        }),
-      );
+      final response = await ApiClient.post(ApiConfig.memberAddUrl, body: {
+        'homeId': _currentHomeId,
+        'myMobile': myMobile,
+        'newName': name,
+        'newMobile': newMobile,
+      });
 
       debugPrint('👥 Add member status: ${response.statusCode}');
       debugPrint('👥 Add member body: ${response.body}');
@@ -1809,17 +1799,12 @@ Future<String?> _createNewHomeRecord({
   Future<void> _submitDeleteMember(String mobile, String name) async {
     if (_currentHomeId == null) return;
     try {
-      final response = await http.delete(
-        Uri.parse(ApiConfig.memberDeleteUrl(_currentHomeId!)),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({'mobile': mobile}),
+      final response = await ApiClient.delete(
+        ApiConfig.memberDeleteUrl(_currentHomeId!),
+        body: {'mobile': mobile},
       );
 
       debugPrint('🗑️ Delete member status: ${response.statusCode}');
-      debugPrint('🗑️ Delete member body: ${response.body}');
 
       if (!mounted) return;
 
@@ -1955,9 +1940,6 @@ Future<String?> _createNewHomeRecord({
     bool isCustomRoom = false;
     bool isSubmitting = false;
 
-    // Lets the "Add appliance" button gate itself on the product field
-    // without assuming AppDialogField exposes an onChanged callback — we
-    // just listen to the controller directly and re-run setDialogState.
     StateSetter? refreshDialog;
     productController.addListener(() => refreshDialog?.call(() {}));
 
@@ -1972,51 +1954,51 @@ Future<String?> _createNewHomeRecord({
               backgroundColor: AppColors.cardBg,
               shape: AppDecor.dialogShape,
               title: Row(
-  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  children: [
-    Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          onTap: () => Navigator.pop(dialogContext),
-          borderRadius: BorderRadius.circular(20),
-          child: const Padding(
-            padding: EdgeInsets.only(right: 8),
-            child: Icon(Icons.arrow_back_rounded, color: AppColors.textSecondary, size: 20),
-          ),
-        ),
-        const Text('Add Appliance', style: AppText.dialogTitle),
-      ],
-    ),
-    InkWell(
-      onTap: () {
-        Navigator.pop(dialogContext);
-        widget.onScanTap?.call(
-          homeId: _currentHomeId,
-          address: _currentAddress,
-          pincode: _currentPincode,
-          knownRooms: _displayRooms.map((e) => e.value).toList(),
-        );
-      },
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.primarySoft,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.qr_code_scanner_rounded, color: AppColors.primary, size: 20),
-            SizedBox(width: 4),
-            Text('Scan', style: AppText.linkAction),
-          ],
-        ),
-      ),
-    ),
-  ],
-),
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      InkWell(
+                        onTap: () => Navigator.pop(dialogContext),
+                        borderRadius: BorderRadius.circular(20),
+                        child: const Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: Icon(Icons.arrow_back_rounded, color: AppColors.textSecondary, size: 20),
+                        ),
+                      ),
+                      const Text('Add Appliance', style: AppText.dialogTitle),
+                    ],
+                  ),
+                  InkWell(
+                    onTap: () {
+                      Navigator.pop(dialogContext);
+                      widget.onScanTap?.call(
+                        homeId: _currentHomeId,
+                        address: _currentAddress,
+                        pincode: _currentPincode,
+                        knownRooms: _displayRooms.map((e) => e.value).toList(),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primarySoft,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.qr_code_scanner_rounded, color: AppColors.primary, size: 20),
+                          SizedBox(width: 4),
+                          Text('Scan', style: AppText.linkAction),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2064,9 +2046,6 @@ Future<String?> _createNewHomeRecord({
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                  // Task-specific CTA: stays disabled until the required
-                  // product name is actually filled in, instead of relying
-                  // on a snackbar error after the tap.
                   onPressed: (isSubmitting || !productHasText)
                       ? null
                       : () async {
@@ -2087,7 +2066,7 @@ Future<String?> _createNewHomeRecord({
                           if (dialogContext.mounted) Navigator.pop(dialogContext);
                           if (ok) {
                             if (_currentHomeId != null) {
-                              _fetchAppliances(homeId: _currentHomeId);   // 👈
+                              _fetchAppliances(homeId: _currentHomeId);
                             } else {
                               _fetchAppliances();
                             }
@@ -2109,30 +2088,21 @@ Future<String?> _createNewHomeRecord({
     );
   }
 
-Future<bool> _submitManualAppliance({
+  Future<bool> _submitManualAppliance({
     required String product,
     required String brand,
     required String warranty,
     required String room,
   }) async {
     try {
-      // Same rule as ScanTab — backend needs a real homeId before it will
-      // accept a product submission.
       String? homeIdToUse = _currentHomeId;
       if (homeIdToUse == null) {
-        final response = await http.post(
-          Uri.parse(ApiConfig.createHomeUrl),
-          headers: {
-            'Content-Type': 'application/json',
-            'ngrok-skip-browser-warning': 'true',
-          },
-          body: jsonEncode({
-            'name': widget.name,
-            'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-            'address': _currentAddress,
-            'homeName': _currentAddress.split(',').first.trim(),
-          }),
-        );
+        final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
+          'name': widget.name,
+          'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+          'address': _currentAddress,
+          'homeName': _currentAddress.split(',').first.trim(),
+        });
         if (response.statusCode == 200 || response.statusCode == 201) {
           final data = jsonDecode(response.body);
           if (data['success'] == true && data['data'] != null) {
@@ -2154,7 +2124,7 @@ Future<bool> _submitManualAppliance({
         'POST',
         Uri.parse(ApiConfig.productSubmitUrl),
       );
-      request.headers['ngrok-skip-browser-warning'] = 'true';
+      request.headers.addAll(await ApiClient.authHeaders());
 
       request.fields['homeId'] = homeIdToUse;
       request.fields['address'] = _currentAddress;
@@ -2170,7 +2140,6 @@ Future<bool> _submitManualAppliance({
       final response = await http.Response.fromStream(streamed);
 
       debugPrint('📦 Manual submit status: ${response.statusCode}');
-      debugPrint('📦 Manual submit body: ${response.body}');
 
       if (!mounted) return false;
 
@@ -2181,8 +2150,8 @@ Future<bool> _submitManualAppliance({
         return true;
       } else {
         final data = jsonDecode(response.body);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(data['message']?.toString() ?? 'Could not add appliance. Try again.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(data['message']?.toString() ?? 'Could not add appliance. Try again.')));
         return false;
       }
     } catch (e) {
@@ -2355,24 +2324,23 @@ Future<bool> _submitManualAppliance({
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                 Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('Profile',
-                style: TextStyle(
-                    color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
-            InkWell(
-              onTap: () => Navigator.pop(sheetContext),
-              borderRadius: BorderRadius.circular(20),
-              child: const Padding(
-                padding: EdgeInsets.all(4),
-                child: Icon(Icons.close_rounded, color: AppColors.textSecondary, size: 20),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-                // Top Header - Compact
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Profile',
+                        style: TextStyle(
+                            color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+                    InkWell(
+                      onTap: () => Navigator.pop(sheetContext),
+                      borderRadius: BorderRadius.circular(20),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(Icons.close_rounded, color: AppColors.textSecondary, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     CircleAvatar(
@@ -2401,18 +2369,13 @@ Future<bool> _submitManualAppliance({
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 16),
                 const Divider(color: AppColors.borderSubtle, thickness: 0.8),
                 const SizedBox(height: 12),
-
-                // ---- HOUSEHOLD section (separated from Account below,
-                // per "group household management" recommendation) ----
                 const Text('HOUSEHOLD',
                     style: TextStyle(
                         color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1)),
                 const SizedBox(height: 10),
-
                 ..._currentMembers.map((m) {
                   final name = m['name']?.toString() ?? 'Member';
                   final mobile = m['mobile']?.toString() ?? '';
@@ -2421,13 +2384,17 @@ Future<bool> _submitManualAppliance({
                     padding: const EdgeInsets.symmetric(vertical: 5),
                     child: Row(
                       children: [
-                        const CircleAvatar(radius: 16, backgroundColor: AppColors.memberAvatarBg, child: Icon(Icons.person, color: AppColors.textPrimary, size: 16)),
+                        const CircleAvatar(
+                            radius: 16,
+                            backgroundColor: AppColors.memberAvatarBg,
+                            child: Icon(Icons.person, color: AppColors.textPrimary, size: 16)),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(isMe ? '$name (You)' : name, style: const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+                              Text(isMe ? '$name (You)' : name,
+                                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
                               Text(isMe ? 'Owner' : 'Member', style: AppText.caption),
                             ],
                           ),
@@ -2448,7 +2415,6 @@ Future<bool> _submitManualAppliance({
                     ),
                   );
                 }),
-
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
@@ -2466,23 +2432,12 @@ Future<bool> _submitManualAppliance({
                     label: const Text('Add Member', style: TextStyle(color: AppColors.primary, fontSize: 14)),
                   ),
                 ),
-                // inside _showProfileSheet, after the "Add Member" OutlinedButton:
-
                 const SizedBox(height: 18),
                 const Divider(color: AppColors.borderSubtle),
                 const SizedBox(height: 12),
-
-                // MY HOMES section — now shares a single implementation
-                // with the standalone card via _buildMyHomesSection(),
-                // instead of duplicating the list/edit UI inline here.
                 _buildMyHomesSection(),
-
                 const SizedBox(height: 16),
                 const Divider(color: AppColors.borderSubtle),
-
-                // ---- ACCOUNT section — refer + logout kept apart from
-                // Household/Homes, and logout gets clear destructive styling
-                // so it doesn't look equivalent to "Refer a Friend". ----
                 const SizedBox(height: 12),
                 const Text('ACCOUNT',
                     style: TextStyle(
@@ -2495,12 +2450,14 @@ Future<bool> _submitManualAppliance({
                       Navigator.pop(sheetContext);
                       _openReferFriendSheet(context);
                     },
-                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 11), side: const BorderSide(color: AppColors.textFaint), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                    style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        side: const BorderSide(color: AppColors.textFaint),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                     icon: const Icon(Icons.share_rounded, color: AppColors.textSecondary, size: 18),
                     label: const Text('Refer a Friend', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
                   ),
                 ),
-
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
@@ -2515,10 +2472,10 @@ Future<bool> _submitManualAppliance({
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     icon: const Icon(Icons.logout, color: AppColors.danger, size: 18),
-                    label: const Text('Log out', style: TextStyle(color: AppColors.danger, fontSize: 14.5, fontWeight: FontWeight.w600)),
+                    label: const Text('Log out',
+                        style: TextStyle(color: AppColors.danger, fontSize: 14.5, fontWeight: FontWeight.w600)),
                   ),
                 ),
-               
               ],
             ),
           ),
@@ -2537,6 +2494,8 @@ Future<bool> _submitManualAppliance({
 
     if (confirm != true) return;
 
+    ApiClient.reset();
+    await FirebaseAuth.instance.signOut();
     await SessionManager.clearSession();
     await Hive.box<HomeModel>('homes').clear();
 
@@ -2551,105 +2510,106 @@ Future<bool> _submitManualAppliance({
   // ---------------------------------------------------------------------
   // BUILD
   // ---------------------------------------------------------------------
-@override
-Widget build(BuildContext context) {
-  final stats = _loading ? null : _computeStats();
-  final alerts = _loading ? <Map<String, String>>[] : _computeAlerts();
-  // No registered home yet (skip-flow) — rooms/stats grid don't apply.
-  final hasHome = !_loading && _hasRegisteredHome;
-  if (!_loading) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.onHomeStatusChanged?.call(hasHome);
-    });
-  }
+  @override
+  Widget build(BuildContext context) {
+    final stats = _loading ? null : _computeStats();
+    final alerts = _loading ? <Map<String, String>>[] : _computeAlerts();
+    // No registered home yet (skip-flow) — rooms/stats grid don't apply.
+    final hasHome = !_loading && _hasRegisteredHome;
+    if (!_loading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onHomeStatusChanged?.call(hasHome);
+      });
+    }
 
-  return SafeArea(
-    child: Column(
-      children: [
-        // ================= EVERYTHING SCROLLS TOGETHER =================
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-              : RefreshIndicator(
-    color: AppColors.primary,
-    backgroundColor: AppColors.cardBg,
-    onRefresh: () => _currentHomeId != null
-        ? _fetchAppliances(homeId: _currentHomeId)
-        : _fetchAppliances(),   // no home selected yet -> full refresh
-    child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildTopBar(context, stats, alerts, hasHome),
-                        const SizedBox(height: 18),
-
-                        // Home switcher only makes sense once a home exists.
-                        if (hasHome) ...[
-                          _buildHomeSwitcher(),
+    return SafeArea(
+      child: Stack(
+        children: [
+          // ================= EVERYTHING SCROLLS TOGETHER =================
+          Positioned.fill(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                : RefreshIndicator(
+                    color: AppColors.primary,
+                    backgroundColor: AppColors.cardBg,
+                    onRefresh: () => _currentHomeId != null
+                        ? _fetchAppliances(homeId: _currentHomeId)
+                        : _fetchAppliances(),
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 90),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTopBar(context, stats, alerts, hasHome),
                           const SizedBox(height: 18),
-                        ],
-
-                        if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Text(_error!, style: AppText.caption),
-                          )
-                        else if (!hasHome) ...[
-                          // ================= NO HOME YET =================
-                          _buildRegisterHomeCard(),
-                          _buildDefaultHomePreview(),
-                          const SizedBox(height: 28),
-                          _buildServicesNearYou(),
-                        ] else ...[
-                          // ================= HAS HOME =================
-                          if (alerts.isNotEmpty) ...[
-                            _sectionHeader('ACTIVE ALERTS'),
+                          if (_error != null)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Text(_error!, style: AppText.caption),
+                            )
+                          else if (!hasHome) ...[
+                            // ================= NO HOME YET =================
+                            _buildRegisterHomeCard(),
+                            _buildDefaultHomePreview(),
+                            const SizedBox(height: 28),
+                            _buildServicesNearYou(),
+                          ] else ...[
+                            // ================= HAS HOME =================
+                            _buildBuildingsHeader(),
                             const SizedBox(height: 12),
-                            ...alerts.map(_buildAlertCard),
-                            const SizedBox(height: 4),
+                            _buildHomeSwitcher(),
+                            const SizedBox(height: 16),
+                            _buildOverviewCard(stats!),
+                            if (alerts.isNotEmpty) ...[
+                              const SizedBox(height: 20),
+                              _sectionHeader('ACTIVE ALERTS'),
+                              const SizedBox(height: 12),
+                              ...alerts.map(_buildAlertCard),
+                            ],
+                            const SizedBox(height: 22),
+                            _buildServicesNearYou(),
                           ],
-
-                          _sectionHeader('MY HOME'),
-                          const SizedBox(height: 4),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Text(
-                              '${stats!['devices']} devices across ${stats['rooms']} rooms',
-                              style: AppText.caption,
-                            ),
-                          ),
-                          _buildRoomsGrid(),
-                          const SizedBox(height: 12),
-                          _addRoomButton(),
-                          const SizedBox(height: 20),
-
-                          _buildStatsRow(stats),
-                          const SizedBox(height: 20),
-                          _buildServicesNearYou(),
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
-        ),
+          ),
 
-        // ================= FIXED FOOTER (search bar only) =================
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-          child: _buildBottomArea(),
+          // ================= FLOATING "+" BUTTON =================
+          if (!_loading)
+            Positioned(
+              right: 20,
+              bottom: 16,
+              child: _buildAddButton(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Round "+" button (floats bottom-right) -> Scan / Add manually sheet.
+  Widget _buildAddButton() {
+    return InkWell(
+      onTap: _openAddOptionsSheet,
+      borderRadius: BorderRadius.circular(28),
+      child: Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 10, offset: const Offset(0, 4)),
+          ],
         ),
-      ],
-    ),
-  );
-}
+        child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+      ),
+    );
+  }
 
   // Shown instead of the rooms/stats sections when the user has no
-  // registered home yet (skip-flow). Tapping "Register" opens the same
-  // AddressScreen ("Add Home") flow used everywhere else in the app —
-  // on success, _fetchAppliances() picks up the new home automatically
-  // and this card is replaced by the normal MY HOME / stats view.
+  // registered home yet (skip-flow).
   Widget _buildRegisterHomeCard() {
     return Container(
       width: double.infinity,
@@ -2701,9 +2661,9 @@ Widget build(BuildContext context) {
       ),
     );
   }
+
   // Shown below the Register card when a "Default" home already has
-  // scanned devices — reassures the user their scans weren't lost, and
-  // nudges them to register so the home becomes permanent.
+  // scanned devices.
   Widget _buildDefaultHomePreview() {
     final defaultHome = _defaultHome;
     if (defaultHome == null) return const SizedBox.shrink();
@@ -2806,250 +2766,555 @@ Widget build(BuildContext context) {
     );
   }
 
-  // Top bar — now shows a "City · N devices · N alerts" subtitle line under
-  // the greeting, and the trailing avatar shows the user's initials instead
-  // of a generic person icon.
-// Replacement for _buildTopBar() in home_tab.dart
-Widget _buildTopBar(BuildContext context, Map<String, int>? stats, List<Map<String, String>> alerts, bool hasHome) {
-  final trimmedName = widget.name.trim();
-  final hasName = trimmedName.isNotEmpty;
+  // Top bar — greeting + subtitle + initials avatar.
+  Widget _buildTopBar(BuildContext context, Map<String, int>? stats, List<Map<String, String>> alerts, bool hasHome) {
+    final trimmedName = widget.name.trim();
+    final hasName = trimmedName.isNotEmpty;
 
-  // 👈 No more hardcoded 'P' — falls back to a generic person icon when
-  // there's no real name yet.
-  final initials = hasName
-      ? trimmedName.split(RegExp(r'\s+')).map((w) => w[0]).take(2).join().toUpperCase()
-      : null;
+    final initials = hasName
+        ? trimmedName.split(RegExp(r'\s+')).map((w) => w[0]).take(2).join().toUpperCase()
+        : null;
 
-  final cityName = _currentAddress.isNotEmpty ? _currentAddress.split(',').first.trim() : '';
-  final subtitleParts = <String>[
-    if (cityName.isNotEmpty) cityName,
-    // 👈 Only show the device count once a real home exists — skip-flow
-    // users no longer see "0 devices".
-    if (hasHome && stats != null) '${stats['devices']} devices',
-    if (alerts.isNotEmpty) '${alerts.length} alert${alerts.length == 1 ? '' : 's'}',
-  ];
-  final subtitle = subtitleParts.join(' · ');
+    final cityName = _currentAddress.isNotEmpty ? _currentAddress.split(',').first.trim() : '';
+    final subtitleParts = <String>[
+      if (cityName.isNotEmpty) cityName,
+      if (hasHome && stats != null) '${stats['devices']} devices',
+      if (alerts.isNotEmpty) '${alerts.length} alert${alerts.length == 1 ? '' : 's'}',
+    ];
+    final subtitle = subtitleParts.join(' · ');
 
-  return Row(
-    children: [
-      Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: AppColors.primarySoft,
-          borderRadius: BorderRadius.circular(10),
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(Icons.home_rounded, color: AppColors.primary, size: 18),
         ),
-        child: const Icon(Icons.home_rounded, color: AppColors.primary, size: 18),
-      ),
-      const SizedBox(width: 10),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              hasName ? 'Good day, ${widget.name} 👋' : 'Good day 👋',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
-            ),
-            if (subtitle.isNotEmpty) ...[
-              const SizedBox(height: 2),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                subtitle,
+                hasName ? 'Good day, ${widget.name} 👋' : 'Good day 👋',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
               ),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
-      ),
-      InkWell(
-        onTap: widget.onProfileTap ?? () => _showProfileSheet(context),
-        borderRadius: BorderRadius.circular(20),
-        child: CircleAvatar(
-          radius: 17,
-          backgroundColor: AppColors.primary,
-          child: initials != null
-              ? Text(
-                  initials,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.bold),
-                )
-              : const Icon(Icons.person_rounded, color: AppColors.textPrimary, size: 16),
+        InkWell(
+          onTap: widget.onProfileTap ?? () => _showProfileSheet(context),
+          borderRadius: BorderRadius.circular(20),
+          child: CircleAvatar(
+            radius: 17,
+            backgroundColor: AppColors.primary,
+            child: initials != null
+                ? Text(
+                    initials,
+                    style: const TextStyle(
+                        color: AppColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.bold),
+                  )
+                : const Icon(Icons.person_rounded, color: AppColors.textPrimary, size: 16),
+          ),
         ),
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 
-Widget _buildHomeSwitcher() {
+  // =====================================================================
+  // NEW DESIGN — Buildings header, chips, overview card
+  // =====================================================================
+
+  // "Buildings                         Manage >"
+  Widget _buildBuildingsHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text('Buildings',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
+        InkWell(
+          onTap: widget.onProfileTap ?? () => _showProfileSheet(context), // has MY HOMES list
+          borderRadius: BorderRadius.circular(8),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Row(children: [
+              Text('Manage', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+              Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 18),
+            ]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Building chips: selected = gradient + check + little pointer underneath.
+  Widget _buildHomeSwitcher() {
     return SizedBox(
-      height: 36,
+      height: 56, // extra room for the triangle pointer
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _homes.length + 1,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
         itemBuilder: (context, index) {
           if (index == _homes.length) {
-            return InkWell(
-              onTap: _openAddHomeDialog,
-              borderRadius: BorderRadius.circular(18),
-              child: const SizedBox(
-                width: 36,
-                height: 36,
-                child: Icon(Icons.add, size: 20, color: AppColors.primary),
+            return Align(
+              alignment: Alignment.topCenter,
+              child: InkWell(
+                onTap: _openAddHomeDialog,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 52,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.primary),
+                  ),
+                  child: const Icon(Icons.add_rounded, color: AppColors.primary, size: 24),
+                ),
               ),
             );
           }
-          final isSelected = index == _selectedHomeIndex;
-          return ChoiceChip(
-            label: Text(_homeLabel(_homes[index], index)),
-            selected: isSelected,
-            onSelected: (_) {
+          final selected = index == _selectedHomeIndex;
+          return GestureDetector(
+            onTap: () {
               setState(() {
                 _selectedHomeIndex = index;
                 _serviceCounts.clear();
               });
               _prefetchServiceCounts();
             },
-            backgroundColor: AppColors.cardBg,
-            selectedColor: AppColors.primary,
-            labelStyle: isSelected ? AppText.chipSelected : AppText.chipUnselected,
-            side: BorderSide(color: isSelected ? AppColors.primary : AppColors.borderMuted),
+            child: Column(
+              children: [
+                Container(
+                  height: 46,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: selected
+                        ? const LinearGradient(colors: [Color(0xFF1E88FF), Color(0xFF1565D8)])
+                        : null,
+                    border: Border.all(color: selected ? AppColors.primary : AppColors.borderMuted),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.apartment_rounded,
+                          size: 22, color: selected ? Colors.white : AppColors.textSecondary),
+                      const SizedBox(width: 8),
+                      Text(_homeLabel(_homes[index], index),
+                          style: TextStyle(
+                              color: selected ? Colors.white : AppColors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                      if (selected) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 22,
+                          height: 22,
+                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                          child: const Icon(Icons.check_rounded, size: 15, color: Color(0xFF1565D8)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (selected)
+                  CustomPaint(size: const Size(14, 7), painter: _TrianglePainter(AppColors.primary)),
+              ],
+            ),
           );
         },
       ),
     );
   }
 
-  Widget _buildRoomsGrid() {
-    final rooms = _displayRooms;
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 1.2,
-      ),
-      itemCount: rooms.length,
-      itemBuilder: (context, index) {
-        final roomKey = rooms[index].key;
-        final displayName = rooms[index].value;
-        final items = _currentRooms[roomKey] ?? [];
-        final previewItems = items.take(2).toList();
-        final extraCount = items.length - previewItems.length;
+  // Big overview card: hero + rooms panel + add room + stat tiles.
+  Widget _buildOverviewCard(Map<String, int> stats) {
+    final name = _homeLabel(_currentHome!, _selectedHomeIndex);
 
-        return InkWell(
-          onTap: () => _openRoomDetail(roomKey, displayName),
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: AppDecor.flatCard(),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0F2347), Color(0xFF0A1428)],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ---- Hero: text on the left, building image fading in on the right ----
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            child: SizedBox(
+              width: double.infinity, // fill the card so the photo can sit at the right edge
+              height: 126,
+              child: Stack(
+                children: [
+                  // Building photo pinned to the top-right corner of the card.
+                  Positioned(
+                    right: -14,
+                    top: 0,
+                    height: 126,
+                    width: 230,
+                    child: ShaderMask(
+                      // soft fade on the left edge so the text stays readable
+                      shaderCallback: (r) => const LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [Colors.transparent, Colors.black],
+                        stops: [0.0, 0.35],
+                      ).createShader(r),
+                      blendMode: BlendMode.dstIn,
+                      child: Image.asset(
+                        'assets/images/house1.png',
+                        fit: BoxFit.contain,
+                        alignment: Alignment.topRight,
+                        errorBuilder: (_, _, _) => Align(
+                          alignment: Alignment.topRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 12, right: 24),
+                            child: Icon(Icons.apartment_rounded,
+                                size: 90, color: AppColors.primary.withValues(alpha: 0.35)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('SELECTED BUILDING',
+                          style: TextStyle(
+                              color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.8)),
+                      const SizedBox(height: 6),
+                      Text('$name overview',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      Text('${stats['devices']} devices across ${stats['rooms']} rooms',
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                    ],
+                  ),
+                ),
+                ],
+              ),
+            ),
+          ),
+
+          // ---- Rooms panel ----
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.borderSubtle),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-  children: [
-    Icon(_iconForRoom(roomKey), color: AppColors.primary, size: 20),
-    const SizedBox(width: 6),
-    Expanded(
-      child: Text(
-        displayName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
-      ),
-    ),
-    InkWell(
-      onTap: () => _confirmDeleteRoom(roomKey, displayName),
-      borderRadius: BorderRadius.circular(12),
-      child: const Padding(
-        padding: EdgeInsets.all(2),
-        child: Icon(Icons.delete_outline_rounded, size: 16, color: AppColors.textFaint),
-      ),
-    ),
-  ],
-),
-                const SizedBox(height: 4),
-                Text('${items.length} appliance${items.length == 1 ? '' : 's'}', style: AppText.faintCaption),
-                const SizedBox(height: 8),
-                // ---- Bullet-list of appliances (matches new design) ----
-                Expanded(
-                  child: previewItems.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'No appliances yet',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: AppColors.textDisabled, fontSize: 10.5),
-                          ),
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          children: [
-                            ...previewItems.map((item) {
-                              final product = item['product']?.toString() ?? '';
-                              final imageUrl = item['imageUrl']?.toString();
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
-                                child: Row(
-                                  children: [
-                                    if (imageUrl != null && imageUrl.isNotEmpty)
-                                      Container(
-                                        width: 16,
-                                        height: 16,
-                                        margin: const EdgeInsets.only(right: 5),
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(4),
-                                          color: AppColors.borderSubtle,
-                                        ),
-                                        clipBehavior: Clip.antiAlias,
-                                        child: Image.network(
-                                          imageUrl,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, _, _) => const Icon(
-                                              Icons.image_not_supported_rounded,
-                                              size: 10, color: AppColors.textDisabled),
-                                        ),
-                                      )
-                                    else
-                                      const Padding(
-                                        padding: EdgeInsets.only(right: 6),
-                                        child: Text('•', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
-                                      ),
-                                    Expanded(
-                                      child: Text(
-                                        product,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                            if (extraCount > 0)
-                              Text(
-                                '+$extraCount more',
-                                style: const TextStyle(
-                                    color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.w600),
-                              ),
-                          ],
-                        ),
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Rooms (${stats['rooms']})',
+                        style: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
+                    InkWell(
+                      onTap: _openAllRoomsSheet, // TODO: open full rooms list screen
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Row(children: [
+                          Text('View all', style: TextStyle(color: AppColors.primary, fontSize: 13)),
+                          Icon(Icons.chevron_right_rounded, color: AppColors.primary, size: 18),
+                        ]),
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 10),
+                _buildRoomsGrid(),
               ],
             ),
           ),
-        );
-      },
+          const SizedBox(height: 12),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: _addRoomButton(),
+          ),
+          const SizedBox(height: 12),
+
+          // ---- Stat tiles ----
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+            child: Row(
+              children: [
+                _statTile(Icons.warning_amber_rounded, AppColors.warning, '${stats['attention']}', 'Attention',
+                    filled: stats['attention']! > 0),
+                _statTile(Icons.verified_user_outlined, AppColors.success, '${stats['warranty']}', 'Warranty'),
+                _statTile(Icons.devices_other_rounded, AppColors.primary, '${stats['devices']}', 'Devices'),
+                _statTile(Icons.meeting_room_outlined, AppColors.primary, '${stats['rooms']}', 'Rooms'),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  // "Add New Room" — full-width outlined button below the rooms grid
-  // (previously a card inside the grid itself).
+  Widget _statTile(IconData icon, Color color, String value, String label,
+      {bool filled = false, VoidCallback? onTap}) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: filled ? 0.12 : 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: color.withValues(alpha: filled ? 0.5 : 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Icon(icon, color: color, size: 22),
+                    const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 16),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(value,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w700)),
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+ // ---------------------------------------------------------------------
+// CHANGE 1: REPLACE the existing `_buildRoomsGrid()` with this.
+// Home screen shows only the first 4 rooms, in smaller cards.
+// ---------------------------------------------------------------------
+static const int _maxRoomsOnHome = 4;
+ 
+Widget _buildRoomsGrid() {
+  final rooms = _displayRooms.take(_maxRoomsOnHome).toList();
+  return GridView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 2,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      mainAxisExtent: 112, // was 172
+    ),
+    itemCount: rooms.length,
+    itemBuilder: (context, index) {
+      return _roomCard(rooms[index].key, rooms[index].value);
+    },
+  );
+}
+
+// ---------------------------------------------------------------------
+// CHANGE 2: REPLACE the existing `_roomCard(...)` with this compact one.
+// Header (icon + name + count) and ONE preview line (+N on the right).
+// `onBeforeOpen` lets the "View all" sheet close itself before navigating.
+// ---------------------------------------------------------------------
+Widget _roomCard(String roomKey, String displayName, {VoidCallback? onBeforeOpen}) {
+  final items = _currentRooms[roomKey] ?? [];
+  final first = items.isNotEmpty ? items.first : null;
+  final extra = items.length - 1;
+ 
+  return InkWell(
+    onTap: () {
+      onBeforeOpen?.call();
+      _openRoomDetail(roomKey, displayName);
+    },
+    onLongPress: () => _confirmDeleteRoom(roomKey, displayName),
+    borderRadius: BorderRadius.circular(14),
+    child: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(_iconForRoom(roomKey), color: AppColors.primary, size: 17),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)),
+                    Text('${items.length} appliance${items.length == 1 ? '' : 's'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 10.5)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 15),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 7),
+            child: Divider(height: 1, color: AppColors.borderSubtle),
+          ),
+          if (first == null)
+            const Text('No appliances yet',
+                style: TextStyle(color: AppColors.textDisabled, fontSize: 10.5))
+          else
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(5),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: (first['imageUrl'] != null && first['imageUrl'].toString().isNotEmpty)
+                        ? Image.network(
+                            first['imageUrl'].toString(),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Icon(
+                                _iconForAppliance(first['product']?.toString() ?? ''),
+                                size: 14,
+                                color: AppColors.textFaint),
+                          )
+                        : Icon(_iconForAppliance(first['product']?.toString() ?? ''),
+                            size: 14, color: AppColors.textFaint),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(first['product']?.toString() ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5)),
+                ),
+                if (extra > 0)
+                  Text('+$extra',
+                      style: const TextStyle(
+                          color: AppColors.primary, fontSize: 11.5, fontWeight: FontWeight.w700)),
+              ],
+            ),
+        ],
+      ),
+    ),
+  );
+}
+// ---------------------------------------------------------------------
+// CHANGE 3a: ADD this new method (anywhere inside _HomeTabState).
+// Bottom sheet that lists EVERY room.
+// ---------------------------------------------------------------------
+void _openAllRoomsSheet() {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: AppColors.cardBg,
+    isScrollControlled: true,
+    shape: AppDecor.sheetShape,
+    builder: (sheetContext) {
+      final rooms = _displayRooms;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('All rooms (${rooms.length})', style: AppText.dialogTitle),
+                  InkWell(
+                    onTap: () => Navigator.pop(sheetContext),
+                    borderRadius: BorderRadius.circular(20),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close_rounded, color: AppColors.textSecondary, size: 22),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Text('Tap to open · long-press to delete', style: AppText.faintCaption),
+              const SizedBox(height: 14),
+              Flexible(
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    mainAxisExtent: 112,
+                  ),
+                  itemCount: rooms.length,
+                  itemBuilder: (context, i) => _roomCard(
+                    rooms[i].key,
+                    rooms[i].value,
+                    onBeforeOpen: () => Navigator.pop(sheetContext), // close sheet, then open room
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+  // "Add New Room" — full-width outlined button below the rooms grid.
   Widget _addRoomButton() {
     return SizedBox(
       width: double.infinity,
@@ -3064,49 +3329,6 @@ Widget _buildHomeSwitcher() {
         label: const Text('Add New Room',
             style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
       ),
-    );
-  }
-
-  // Stats row — "Attention" (actionable) leads and gets a bolder/emphasized
-  // treatment when > 0, instead of giving all four counters equal weight.
-  Widget _buildStatsRow(Map<String, int> stats) {
-    Widget statBox(String value, String label, Color color, {bool emphasized = false}) {
-      return Expanded(
-        child: Container(
-          padding: EdgeInsets.symmetric(vertical: emphasized ? 14 : 10),
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            color: emphasized ? color.withValues(alpha: 0.1) : AppColors.cardBg,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withValues(alpha: emphasized ? 0.6 : 0.25), width: emphasized ? 1.4 : 1),
-          ),
-          child: Column(
-            children: [
-              Text(value,
-                  style: TextStyle(
-                      color: color, fontSize: emphasized ? 20 : 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 2),
-              Text(label,
-                  style: TextStyle(
-                      color: emphasized ? color : AppColors.textMuted,
-                      fontSize: 10,
-                      fontWeight: emphasized ? FontWeight.w600 : FontWeight.normal),
-                  textAlign: TextAlign.center),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final needsAttention = stats['attention']! > 0;
-
-    return Row(
-      children: [
-        statBox('${stats['attention']}', 'Attention', AppColors.warning, emphasized: needsAttention),
-        statBox('${stats['warranty']}', 'Warranty OK', AppColors.success),
-        statBox('${stats['devices']}', 'Devices', AppColors.textMuted),
-        statBox('${stats['rooms']}', 'Rooms', AppColors.textMuted),
-      ],
     );
   }
 
@@ -3142,7 +3364,6 @@ Widget _buildHomeSwitcher() {
               ),
             ],
           ),
-          // ---- "Book Local Repair" action (matches new design) ----
           if (isDanger) ...[
             const SizedBox(height: 10),
             Align(
@@ -3166,73 +3387,30 @@ Widget _buildHomeSwitcher() {
       ),
     );
   }
+}
 
-  // Wraps the search bar + separate "+" button row.
-   // Wraps the search bar + separate "+" button row + footer branding.
-  Widget _buildBottomArea() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(child: _buildAskZhiniRow()),
-            const SizedBox(width: 10),
-            InkWell(
-              onTap: _openAddOptionsSheet,
-              borderRadius: BorderRadius.circular(28),
-              child: Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 10, offset: const Offset(0, 4)),
-                  ],
-                ),
-                child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
+// Tiny triangle under the selected building chip.
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+  _TrianglePainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
   }
 
-  // The "Ask ZHINI" pill search bar. The "+" add button now sits OUTSIDE
-  // it as its own circular button (see _buildBottomArea) and opens the
-  // same labeled action sheet as everywhere else (Scan / Add Appliance)
-  // instead of jumping straight into the manual-entry dialog, so there is
-  // one consistent Add flow across the app.
-Widget _buildAskZhiniRow() {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    decoration: BoxDecoration(
-      color: AppColors.cardBg,
-      borderRadius: BorderRadius.circular(30),
-      border: Border.all(color: AppColors.primaryBorder.withValues(alpha: 0.5)),
-      boxShadow: [
-        BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4)),
-      ],
-    ),
-    child: Row(
-      children: [
-        const Icon(Icons.auto_awesome, color: AppColors.primary, size: 18),
-        const SizedBox(width: 10),
-        const Expanded(
-          child: Text(
-            'Ask ZHINI anything about your home…',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-          ),
-        ),
-        const Icon(Icons.mic_none_rounded, color: AppColors.textMuted, size: 20),
-      ],
-    ),
-  );
-}
+  @override
+  bool shouldRepaint(covariant _TrianglePainter old) => old.color != color;
 }
 
+// =======================================================================
+// ROOM DETAIL SCREEN
+// =======================================================================
 class _RoomDetailScreen extends StatefulWidget {
   final String roomKey;
   final String roomName;
@@ -3264,8 +3442,8 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
   late List<Map<String, dynamic>> _items;
   bool _deleting = false;
 
-  // serviceKey ("brand|product|tier") -> fetched provider list, cached so
-  // re-opening the same appliance's booking sheet doesn't re-hit the API.
+  // "brand|product|tier" -> fetched provider list, cached so re-opening the
+  // same appliance's booking sheet doesn't re-hit the API.
   final Map<String, List<Map<String, dynamic>>> _serviceCache = {};
 
   @override
@@ -3304,20 +3482,12 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
     if (widget.homeId == null || _deleting) return;
     setState(() => _deleting = true);
     try {
-      final response = await http.delete(
-        Uri.parse(ApiConfig.productDeleteUrl(widget.homeId!)),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'roomName': widget.roomKey,
-          'product': product,
-        }),
+      final response = await ApiClient.delete(
+        ApiConfig.productDeleteUrl(widget.homeId!),
+        body: {'roomName': widget.roomKey, 'product': product},
       );
 
       debugPrint('🗑️ Delete product status: ${response.statusCode}');
-      debugPrint('🗑️ Delete product body: ${response.body}');
 
       if (!mounted) return;
 
@@ -3359,7 +3529,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
     final deviceId = (item['deviceId'] ?? item['_id'])?.toString();
     if (deviceId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('இந்த item-க்கு deviceId இல்ல, edit முடியாது.')),
+        const SnackBar(content: Text('This item has no deviceId, so it cannot be edited.')),
       );
       return;
     }
@@ -3377,15 +3547,15 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
           shape: AppDecor.dialogShape,
           title: const Text('Edit Appliance', style: AppText.dialogTitle),
           content: Column(
-  mainAxisSize: MainAxisSize.min,
-  children: [
-    AppDialogField(controller: productController, hint: 'Product name'),
-    const SizedBox(height: 10),
-    AppDialogField(controller: brandController, hint: 'Brand'),
-    const SizedBox(height: 10),
-    AppDialogField(controller: warrantyController, hint: 'Warranty (e.g. 2 Years)'),
-  ],
-),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppDialogField(controller: productController, hint: 'Product name'),
+              const SizedBox(height: 10),
+              AppDialogField(controller: brandController, hint: 'Brand'),
+              const SizedBox(height: 10),
+              AppDialogField(controller: warrantyController, hint: 'Warranty (e.g. 2 Years)'),
+            ],
+          ),
           actions: [
             TextButton(
               onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
@@ -3406,14 +3576,17 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                         brand: brandController.text.trim().isNotEmpty
                             ? brandController.text.trim()
                             : null,
-                            warranty: warrantyController.text.trim().isNotEmpty ? warrantyController.text.trim() : null,
+                        warranty: warrantyController.text.trim().isNotEmpty
+                            ? warrantyController.text.trim()
+                            : null,
                       );
                       if (dialogContext.mounted) Navigator.pop(dialogContext);
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(result['success'] == true
-                            ? 'Appliance updated ✅'
-                            : (result['message']?.toString() ?? 'Update failed'))),
+                        SnackBar(
+                            content: Text(result['success'] == true
+                                ? 'Appliance updated ✅'
+                                : (result['message']?.toString() ?? 'Update failed'))),
                       );
                       if (result['success'] == true) {
                         setState(() {
@@ -3425,7 +3598,8 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                     },
               child: isSaving
                   ? const SizedBox(
-                      width: 16, height: 16,
+                      width: 16,
+                      height: 16,
                       child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
                   : const Text('Save', style: TextStyle(color: AppColors.textPrimary)),
             ),
@@ -3436,12 +3610,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // BOOK SERVICE PROVIDER — appears on every appliance card. The button's
-  // color/label/tier follow the appliance's warranty status:
-  //   under warranty  -> green "Book authorized service" -> Tier 1
-  //   expired/unknown -> red   "Find repair near me"      -> Tier 2/3
-  // Hits the SAME /getNearbyService endpoint the "Services near you"
-  // section on HomeTab uses, so the backend logic is fully reused.
+  // BOOK SERVICE PROVIDER — button color/label/tier follow warranty status.
   // ---------------------------------------------------------------------
   bool _isItemUnderWarranty(Map<String, dynamic> item) {
     final expiry = WarrantyUtils.parseExpiry(
@@ -3451,8 +3620,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
     return expiry != null && expiry.isAfter(DateTime.now());
   }
 
-  // Short, human pill text for the card badge — "8 months left",
-  // "Expired 12 days ago", or a neutral fallback when no date parses.
+  // Short pill text — "8 months left", "Expired 12 days ago", or a fallback.
   String _warrantyStatusText(Map<String, dynamic> item) {
     final expiry = WarrantyUtils.parseExpiry(
       item['warranty']?.toString(),
@@ -3471,6 +3639,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
     }
     return '$daysDiff day${daysDiff == 1 ? '' : 's'} left';
   }
+
   Future<List<Map<String, dynamic>>> _fetchNearbyProviders(
     Map<String, dynamic> item,
     bool isUnderWarranty,
@@ -3481,22 +3650,14 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
     if (_serviceCache.containsKey(cacheKey)) return _serviceCache[cacheKey]!;
 
     try {
-      final response = await http.post(
-        Uri.parse(ApiConfig.nearbyServiceUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'brand': brand,
-          'product': product,
-          'pincode': widget.pincode,
-          'isUnderWarranty': isUnderWarranty,
-        }),
-      );
+      final response = await ApiClient.post(ApiConfig.nearbyServiceUrl, body: {
+        'brand': brand,
+        'product': product,
+        'pincode': widget.pincode,
+        'isUnderWarranty': isUnderWarranty,
+      });
 
       debugPrint('🛠️ Nearby service status: ${response.statusCode}');
-      debugPrint('🛠️ Nearby service body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -3513,9 +3674,6 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
     }
     return [];
   }
-
-// Nearby-services fetch — always uses live GPS lat/long. No pincode
-  // fallback anymore; "Services near you" is current-location-only.
 
   Future<void> _callNumber(String phone) async {
     final uri = Uri(scheme: 'tel', path: phone);
@@ -3545,9 +3703,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // CREATE SERVICE TICKET — hits POST /createServiceTicket. Required
-  // fields on the backend: customerName, cust_number, address,
-  // providerMobile. description + availableTime are optional context.
+  // CREATE SERVICE TICKET — POST /createServiceTicket.
   // ---------------------------------------------------------------------
   Future<bool> _submitServiceTicket({
     required Map<String, dynamic> provider,
@@ -3571,24 +3727,17 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
     final warrantyNote = isUnderWarranty ? 'Under warranty' : 'Out of warranty';
 
     try {
-      final response = await http.post(
-        Uri.parse(ApiConfig.createServiceTicketUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'customerName': widget.name.isNotEmpty ? widget.name : 'Customer',
-          'cust_number': ApiConfig.stripCountryCode(widget.mobileNumber),
-          'address': widget.address,
-          'description': '$label — $warrantyNote. Room: ${widget.roomName}.',
-          'providerMobile': providerMobile,
-          if (availableTime != null && availableTime.trim().isNotEmpty) 'availableTime': availableTime.trim(),
-        }),
-      );
+      final response = await ApiClient.post(ApiConfig.createServiceTicketUrl, body: {
+        'customerName': widget.name.isNotEmpty ? widget.name : 'Customer',
+        'cust_number': ApiConfig.stripCountryCode(widget.mobileNumber),
+        'address': widget.address,
+        'description': '$label — $warrantyNote. Room: ${widget.roomName}.',
+        'providerMobile': providerMobile,
+        if (availableTime != null && availableTime.trim().isNotEmpty)
+          'availableTime': availableTime.trim(),
+      });
 
       debugPrint('🎫 Create ticket status: ${response.statusCode}');
-      debugPrint('🎫 Create ticket body: ${response.body}');
 
       if (!mounted) return false;
 
@@ -3615,8 +3764,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
     }
   }
 
-  // Small confirm dialog — lets the customer optionally note a preferred
-  // time slot before the ticket is created against the chosen provider.
+  // Confirm dialog — optional preferred time slot before ticket creation.
   void _openBookingDialog(Map<String, dynamic> provider, Map<String, dynamic> item, bool isUnderWarranty) {
     final timeController = TextEditingController();
     bool isSubmitting = false;
@@ -3840,10 +3988,9 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
             ),
           );
         },
-        // Standard extended FAB with an accessible text label, instead of
-        // a small custom icon+caption stack.
         icon: const Icon(Icons.qr_code_scanner_rounded, color: AppColors.textPrimary, size: 20),
-        label: const Text('Add appliance', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+        label: const Text('Add appliance',
+            style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
       ),
       body: _items.isEmpty
           ? const Center(
@@ -3884,8 +4031,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // ---- Thumbnail with a small status badge
-                                // pinned to its corner, like a notification dot.
+                                // Thumbnail with a small status badge in its corner.
                                 Stack(
                                   clipBehavior: Clip.none,
                                   children: [
@@ -3928,9 +4074,6 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                                   ],
                                 ),
                                 const SizedBox(width: 14),
-                                // ---- Tappable body opens the card's
-                                // details/overflow rather than exposing
-                                // three tiny icon buttons up front. ----
                                 Expanded(
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(10),
@@ -3950,8 +4093,6 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                                                       fontSize: 15,
                                                       fontWeight: FontWeight.w600)),
                                             ),
-                                            // Single overflow menu replaces the
-                                            // three separate tiny icon buttons.
                                             PopupMenuButton<String>(
                                               padding: EdgeInsets.zero,
                                               icon: const Icon(Icons.more_vert_rounded,
@@ -3978,7 +4119,8 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                                                   child: Row(children: [
                                                     Icon(Icons.build_rounded, size: 16, color: AppColors.primary),
                                                     SizedBox(width: 8),
-                                                    Text('Find service', style: TextStyle(color: AppColors.textPrimary)),
+                                                    Text('Find service',
+                                                        style: TextStyle(color: AppColors.textPrimary)),
                                                   ]),
                                                 ),
                                                 const PopupMenuItem(
@@ -3994,9 +4136,10 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                                           ],
                                         ),
                                         const SizedBox(height: 3),
-                                        Text(brand, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                                        Text(brand,
+                                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                                         const SizedBox(height: 8),
-                                        // ---- Warranty status pill ----
+                                        // Warranty status pill
                                         Row(
                                           children: [
                                             Container(
@@ -4054,10 +4197,9 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            Divider(color: AppColors.borderSubtle, height: 1),
+                            const Divider(color: AppColors.borderSubtle, height: 1),
                             const SizedBox(height: 12),
-                            // ---- Book Service Provider — solid for danger,
-                            // outlined for a healthy warranty ----
+                            // Book Service Provider — solid for expired, outlined for healthy.
                             SizedBox(
                               width: double.infinity,
                               child: isUnderWarranty
@@ -4070,7 +4212,8 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                                       ),
                                       icon: Icon(Icons.shield_outlined, size: 15, color: accent),
                                       label: Text('Book authorized service',
-                                          style: TextStyle(color: accent, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                                          style: TextStyle(
+                                              color: accent, fontSize: 12.5, fontWeight: FontWeight.w600)),
                                     )
                                   : ElevatedButton.icon(
                                       onPressed: () => _openServiceBookingSheet(item),
@@ -4089,8 +4232,7 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
                           ],
                         ),
                       ),
-                      // ---- Left accent strip — the signature touch that
-                      // makes warranty status readable at a glance. ----
+                      // Left accent strip — warranty status at a glance.
                       Positioned(
                         left: 0,
                         top: 0,
@@ -4105,6 +4247,10 @@ class _RoomDetailScreenState extends State<_RoomDetailScreen> {
     );
   }
 }
+
+// =======================================================================
+// SERVICE CATEGORY SHEET
+// =======================================================================
 class _ServiceCategorySheet extends StatefulWidget {
   final String label;
   final Future<List<Map<String, dynamic>>> Function() fetchServices;
@@ -4188,7 +4334,7 @@ class _ServiceCategorySheetState extends State<_ServiceCategorySheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ---- Header: title + top-right X close button ----
+          // Header: title + top-right X close button
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

@@ -12,6 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'services/device_id_service.dart';
 import 'dart:io'; 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'services/api_client.dart';
 
 class AddressScreen extends StatefulWidget {
   final String mobileNumber;
@@ -242,7 +243,7 @@ Future<void> _useCurrentLocationAndAddHome() async {
     if (widget.isAddingHome) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      Navigator.pop(context, {'address': fullAddress, 'pincode': pincode});
+      Navigator.pop(context, {'address': fullAddress, 'pincode': pincode, 'name': name});
       return;
     }
 
@@ -358,7 +359,7 @@ Future<String?> _createNewHomeRecord({
   try {
     final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
     final deviceId = await DeviceIdService.getDeviceId();
-    final fcmToken = await FirebaseMessaging.instance.getToken();
+    final fcmToken = await ApiClient.safeFcmToken();
 
     if (authToken == null) {
       debugPrint('❌ No Firebase auth token — user not signed in?');

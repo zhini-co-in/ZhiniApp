@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:country_code_picker/country_code_picker.dart';
 import 'otp_screen.dart';
+import 'package:country_flags/country_flags.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -24,9 +25,6 @@ class _LoginScreenState extends State<LoginScreen> {
   // Short, inline error shown directly below the mobile number field.
   String? _errorText;
 
-  // Secondary text colour — raised from white38 for better contrast on the
-  // dark background while still reading as secondary. Reuse this everywhere
-  // the same level of text appears in the app.
   static const Color _secondaryText = Color(0xB3FFFFFF); // white @ 70%
   static const Color _labelText = Color(0xE6FFFFFF); // white @ 90%
   static const Color _errorColor = Color(0xFFFF5A5A);
@@ -37,8 +35,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // Rebuild on every keystroke so the "Send OTP" button's enabled/disabled
-    // state always reflects the current input (see _isPhoneValid below).
     _phoneController.addListener(_onPhoneChanged);
   }
 
@@ -62,6 +58,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendOtp() async {
+    // Guard: ignore double taps while a request is already running.
+    if (_isLoading) return;
+
     if (!_isPhoneValid) {
       setState(() => _errorText = 'Enter a valid mobile number');
       return;
@@ -74,42 +73,52 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final fullPhoneNumber = '$_selectedDialCode$_digits';
 
-    await FirebaseAuth.instance.verifyPhoneNumber(
-      phoneNumber: fullPhoneNumber,
-      timeout: const Duration(seconds: 60),
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: fullPhoneNumber,
+        timeout: const Duration(seconds: 60),
 
-      verificationCompleted: (PhoneAuthCredential credential) async {
-        await FirebaseAuth.instance.signInWithCredential(credential);
-      },
+        // FIX: Do NOT sign in here. Android auto-retrieves the SMS and calls
+        // this callback, which used to consume the OTP before the user typed
+        // it -> "session-expired" / "OTP expired" on the OTP screen.
+        // OtpScreen verifies the code manually instead.
+        verificationCompleted: (PhoneAuthCredential credential) async {},
 
-      verificationFailed: (FirebaseAuthException e) {
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-          // Keep it short and human — the raw Firebase message is far too long.
-          _errorText = _friendlyError(e.code);
-        });
-      },
+        verificationFailed: (FirebaseAuthException e) {
+          debugPrint('verifyPhoneNumber failed: ${e.code} - ${e.message}');
+          if (!mounted) return;
+          setState(() {
+            _isLoading = false;
+            _errorText = _friendlyError(e.code);
+          });
+        },
 
-      codeSent: (String verificationId, int? resendToken) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => OtpScreen(
-              verificationId: verificationId,
-              phoneNumber: fullPhoneNumber,
-              isServiceProfessional: _isServiceProfessional,
+        codeSent: (String verificationId, int? resendToken) {
+          if (!mounted) return;
+          setState(() => _isLoading = false);
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => OtpScreen(
+                verificationId: verificationId,
+                phoneNumber: fullPhoneNumber,
+                isServiceProfessional: _isServiceProfessional,
+                resendToken: resendToken,
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
 
-      codeAutoRetrievalTimeout: (String verificationId) {
-        // Optional: handle timeout if needed
-      },
-    );
+        codeAutoRetrievalTimeout: (String verificationId) {},
+      );
+    } catch (e) {
+      debugPrint('verifyPhoneNumber error: $e');
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorText = "Couldn't send OTP. Please try again.";
+      });
+    }
   }
 
   String _friendlyError(String code) {
@@ -153,7 +162,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   const SizedBox(height: 60),
 
-                  // Larger logo for better visibility.
                   Image.asset(
                     'assets/Zhini_Icon1.png',
                     width: 112,
@@ -162,7 +170,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 40),
 
-                  // Centered to balance with the centered logo.
                   const Text(
                     "Your home's AI genie\nstarts here",
                     textAlign: TextAlign.center,
@@ -188,8 +195,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 32),
 
-                  // Persistent field label (stays visible above the field,
-                  // unlike a hint that disappears once typing starts).
                   const Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
@@ -200,57 +205,71 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 8),
 
-                                   // Phone number input row with country code picker
+                  // Phone number input row with country code picker
                   IntrinsicHeight(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                                                                        Container(
-                          width: 110, // slightly wider to fit the larger flag
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF16243A),
-                            border: Border.all(
-                              color: _errorText != null
-                                  ? _errorColor
-                                  : Colors.blue.shade300,
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Center(
-                            child: CountryCodePicker(
-                              onChanged: (country) {
-                                setState(() {
-                                  _selectedDialCode = country.dialCode ?? '+91';
-                                  final d = _digits;
-                                  if (d.length > _maxDigits) {
-                                    _phoneController.text =
-                                        d.substring(0, _maxDigits);
-                                    _phoneController.selection =
-                                        TextSelection.collapsed(
-                                            offset: _phoneController.text.length);
-                                  }
-                                  _errorText = null;
-                                });
-                              },
-                              initialSelection: 'IN',
-                              favorite: const ['+91', 'IN', '+1', 'US', '+44', 'GB'],
-                              showCountryOnly: false,
-                              showOnlyCountryWhenClosed: false,
-                              alignLeft: false,
-                              showDropDownButton: true,
-                              padding: EdgeInsets.zero,
-                              flagWidth: 28, // bigger, clearer flag icon
-                              textStyle: const TextStyle(
-                                  color: Colors.white, fontSize: 16),
-                              dialogTextStyle:
-                                  const TextStyle(color: Colors.black),
-                              searchStyle: const TextStyle(color: Colors.black),
-                              backgroundColor: const Color(0xFF16243A),
-                              dialogBackgroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
+                        Container(
+  width: 140,
+  decoration: BoxDecoration(
+    color: const Color(0xFF16243A),
+    border: Border.all(
+      color: _errorText != null ? _errorColor : Colors.blue.shade300,
+    ),
+    borderRadius: BorderRadius.circular(8),
+  ),
+  padding: const EdgeInsets.symmetric(horizontal: 4),
+  child: Center(
+    child: CountryCodePicker(
+      onChanged: (country) {
+        setState(() {
+          _selectedDialCode = country.dialCode ?? '+91';
+          final d = _digits;
+          if (d.length > _maxDigits) {
+            _phoneController.text = d.substring(0, _maxDigits);
+            _phoneController.selection =
+                TextSelection.collapsed(offset: _phoneController.text.length);
+          }
+          _errorText = null;
+        });
+      },
+      initialSelection: 'IN',
+      favorite: const ['+91', 'IN', '+1', 'US', '+44', 'GB'],
+      showCountryOnly: false,
+      showOnlyCountryWhenClosed: false,
+      alignLeft: false,
+      padding: EdgeInsets.zero,
+      textStyle: const TextStyle(color: Colors.white, fontSize: 16),
+      dialogTextStyle: const TextStyle(color: Colors.black),
+      searchStyle: const TextStyle(color: Colors.black),
+      backgroundColor: const Color(0xFF16243A),
+      dialogBackgroundColor: Colors.white,
+      builder: (country) {
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (country?.code != null)
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: CountryFlag.fromCountryCode(
+            country!.code!,
+            width: 32,
+            height: 22,
+          ),
+        ),
+      const SizedBox(width: 8),
+      Text(
+        country?.dialCode ?? '+91',
+        style: const TextStyle(color: Colors.white, fontSize: 16),
+      ),
+      const Icon(Icons.arrow_drop_down, color: Colors.white70),
+    ],
+  );
+},
+    ),
+  ),
+),
                         const SizedBox(width: 12),
                         Expanded(
                           child: TextField(
@@ -374,8 +393,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Send OTP button — disabled until the number is valid,
-                  // loading spinner shown after tap (existing _isLoading state).
+                  // Send OTP button
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
