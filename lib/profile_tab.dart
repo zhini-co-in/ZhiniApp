@@ -80,6 +80,7 @@ class ProfileTab extends StatefulWidget {
   final ProfileStats stats;
   final AmcPlan? amcPlan;
   final ScanRequest? onScanTap;
+  final ValueChanged<String>? onNameChanged;
 
   const ProfileTab({
     super.key,
@@ -92,6 +93,7 @@ class ProfileTab extends StatefulWidget {
     this.stats = const ProfileStats(),
     this.amcPlan,
     this.onScanTap,
+    this.onNameChanged,
   });
 
   @override
@@ -100,7 +102,16 @@ class ProfileTab extends StatefulWidget {
 
 class _ProfileTabState extends State<ProfileTab> {
   final _homeBox = Hive.box<HomeModel>('homes');
+  static const String _referralMessage =
+    "Hey! I've been using ZHINI to track all my home appliances, warranties, and find repair services in one place. Try it out 👉 https://play.google.com/store/apps/details?id=com.zhini.mobile";
+
   late String _displayName = widget.name;
+
+  @override
+  void didUpdateWidget(covariant ProfileTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.name != widget.name) _displayName = widget.name;
+  }
 
   int _totalDevices(List<HomeModel> homes) {
     int total = 0;
@@ -193,6 +204,7 @@ void _openEditProfileDialog() {
 
                       if (homeId == null) {
                         setState(() => _displayName = value);
+                        widget.onNameChanged?.call(value);
                         if (dialogContext.mounted) Navigator.pop(dialogContext);
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -212,6 +224,7 @@ void _openEditProfileDialog() {
 
                       if (result['success'] == true) {
                         setState(() => _displayName = value);
+                        widget.onNameChanged?.call(value);
                       }
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(result['success'] == true
@@ -399,6 +412,9 @@ ScaffoldMessenger.of(context).showSnackBar(
                       );
                       if (dialogContext.mounted) Navigator.pop(dialogContext);
                       if (!mounted) return;
+                      if (result['success'] == true) {
+  await _refreshHomes();   // 👈 add this
+}
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(result['success'] == true
                             ? 'Address updated successfully ✅'
@@ -453,7 +469,7 @@ ScaffoldMessenger.of(context).showSnackBar(
 
   void _openReferSheet() {
     const referralMessage =
-        "Hey! I've been using ZHINI to track all my home appliances, warranties, and find repair services in one place. Try it out 👉 https://zhini.app/download";
+        "Hey! I've been using ZHINI to track all my home appliances, warranties, and find repair services in one place. Try it out 👉 https://play.google.com/store/apps/details?id=com.zhini.mobile";
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1339,14 +1355,27 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
                 ],
               ),
             ),
-            if (isSelected)
-              Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle))
-            else
-              InkWell(
-                onTap: () => _openEditAddressDialog(home),
-                borderRadius: BorderRadius.circular(20),
-                child: const Icon(Icons.chevron_right_rounded, color: AppColors.textFaint),
-              ),
+            InkWell(
+  onTap: () => _openEditAddressDialog(home),
+  borderRadius: BorderRadius.circular(20),
+  child: Padding(
+    padding: const EdgeInsets.all(4),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isSelected) ...[
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+        ],
+        const Icon(Icons.edit_outlined, color: AppColors.primary, size: 18),
+      ],
+    ),
+  ),
+),
           ],
         ),
       );

@@ -2,7 +2,7 @@ name: mobile_application
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.6+26100502
+version: 1.0.9+26100703
 
 environment:
   sdk: ^3.11.5
@@ -41,6 +41,8 @@ dependencies:
   firebase_crashlytics: ^4.3.10
   flutter_local_notifications: ^22.3.1
   country_flags: ^3.0.0
+  in_app_update: ^4.2.3
+  webview_flutter: ^4.9.0
 
 
 dev_dependencies:

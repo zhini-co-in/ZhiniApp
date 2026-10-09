@@ -13,6 +13,8 @@ import 'service_provider_dashboard.dart';
 import 'login_screen.dart';
 import 'services/log_service.dart';
 import 'services/api_client.dart';
+import 'package:flutter/gestures.dart';
+import 'webview_screen.dart';
 // Phase 3:
 // import 'services/push_service.dart';
 
@@ -55,10 +57,25 @@ class _OtpScreenState extends State<OtpScreen> {
   static const Color _secondaryText = Color(0xB3FFFFFF); // white @ 70%
   static const Color _labelText = Color(0xE6FFFFFF); // white @ 90%
   static const Color _errorColor = Color(0xFFFF5A5A);
+    static const String _termsUrl = 'https://atom8itsolutions.com/Zhini/term';
+  static const String _privacyUrl = 'https://atom8itsolutions.com/Zhini/privacy';
+
+  late final TapGestureRecognizer _termsTap;
+  late final TapGestureRecognizer _privacyTap;
+
+    void _openWeb(String url) {
+    FocusScope.of(context).unfocus();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => WebViewScreen(url: url)),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
+        _termsTap = TapGestureRecognizer()..onTap = () => _openWeb(_termsUrl);
+    _privacyTap = TapGestureRecognizer()..onTap = () => _openWeb(_privacyUrl);
     _verificationId = widget.verificationId;
     _resendToken = widget.resendToken;
     _startTimer();
@@ -434,11 +451,13 @@ class _OtpScreenState extends State<OtpScreen> {
     return match?.group(0) ?? '';
   }
 
-  @override
+    @override
   void dispose() {
     _timer?.cancel();
     _otpController.dispose();
     _otpFocus.dispose();
+    _termsTap.dispose();
+    _privacyTap.dispose();
     super.dispose();
   }
 
@@ -696,17 +715,22 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 24),
 
-              const Text.rich(
+                            Text.rich(
                 TextSpan(
                   text: 'By continuing you agree to our ',
-                  style: TextStyle(color: _secondaryText, fontSize: 12),
+                  style: const TextStyle(color: _secondaryText, fontSize: 12),
                   children: [
                     TextSpan(
-                        text: 'Terms', style: TextStyle(color: Colors.blue)),
-                    TextSpan(text: ' and '),
+                      text: 'Terms',
+                      style: const TextStyle(color: Colors.blue),
+                      recognizer: _termsTap,
+                    ),
+                    const TextSpan(text: ' and '),
                     TextSpan(
-                        text: 'Privacy policy.',
-                        style: TextStyle(color: Colors.blue)),
+                      text: 'Privacy policy.',
+                      style: const TextStyle(color: Colors.blue),
+                      recognizer: _privacyTap,
+                    ),
                   ],
                 ),
                 textAlign: TextAlign.center,

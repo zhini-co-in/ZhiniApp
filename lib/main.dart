@@ -7,6 +7,7 @@ import 'splash_screen.dart';
 import 'services/log_service.dart';      // Phase 2
 //import 'services/push_service.dart';   // Phase 3
 import 'firebase_options.dart';
+import 'update_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +24,7 @@ void main() async {
   await Hive.openBox('session');
 
   runApp(const MyApp());
+  UpdateService.checkForUpdate();
 }
 
 class MyApp extends StatelessWidget {

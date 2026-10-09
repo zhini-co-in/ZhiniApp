@@ -58,10 +58,10 @@ class HomeTab extends StatefulWidget {
   });
 
   @override
-  State<HomeTab> createState() => _HomeTabState();
-}
+  State<HomeTab> createState() => HomeTabState();
+}   // ✅ add this closing brace
 
-class _HomeTabState extends State<HomeTab> {
+class HomeTabState extends State<HomeTab> {
   bool _loading = true;
   String? _error;
   final _homeBox = Hive.box<HomeModel>('homes');
@@ -178,6 +178,12 @@ class _HomeTabState extends State<HomeTab> {
   void initState() {
     super.initState();
     _fetchAppliances();
+    _prefetchServiceCounts();
+  }
+  Future<void> refresh() async {
+    await _fetchAppliances();
+    if (!mounted) return;
+    setState(() => _serviceCounts.clear());
     _prefetchServiceCounts();
   }
 
@@ -2169,7 +2175,7 @@ if (isRegisterFlow) {
   // ---------------------------------------------------------------------
   void _openReferFriendSheet(BuildContext context) {
     const referralMessage =
-        "Hey! I've been using ZHINI to track all my home appliances, warranties, and find repair services in one place. Try it out 👉 https://zhini.app/download";
+        "Hey! I've been using ZHINI to track all my home appliances, warranties, and find repair services in one place. Try it out 👉 https://play.google.com/store/apps/details?id=com.zhini.mobile";
 
     showDialog(
       context: context,
@@ -2669,8 +2675,12 @@ if (isRegisterFlow) {
     if (defaultHome == null) return const SizedBox.shrink();
 
     final rooms = (defaultHome['rooms'] as Map<String, List<Map<String, dynamic>>>?) ?? {};
-    final allDevices = <Map<String, dynamic>>[];
-    rooms.forEach((_, items) => allDevices.addAll(items));
+    final allDevices = <MapEntry<String, Map<String, dynamic>>>[];
+rooms.forEach((roomKey, items) {
+  for (final it in items) {
+    allDevices.add(MapEntry(roomKey, it));
+  }
+});
 
     if (allDevices.isEmpty) return const SizedBox.shrink();
 
@@ -2703,54 +2713,95 @@ if (isRegisterFlow) {
             style: AppText.faintCaption,
           ),
           const SizedBox(height: 12),
-          ...allDevices.take(5).map((item) {
-            final product = item['product']?.toString() ?? 'Appliance';
-            final brand = item['brand']?.toString() ?? '';
-            final label = brand.isNotEmpty && brand.toUpperCase() != 'N/A' ? '$brand $product' : product;
-            final imageUrl = item['imageUrl']?.toString();
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: AppColors.borderSubtle,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: (imageUrl != null && imageUrl.isNotEmpty)
-                        ? Image.network(
-                            imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) =>
-                                Icon(_iconForAppliance(product), size: 14, color: AppColors.textFaint),
-                          )
-                        : Icon(_iconForAppliance(product), size: 14, color: AppColors.textFaint),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-          if (allDevices.length > 5)
-            Text(
-              '+${allDevices.length - 5} more',
-              style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600),
+          ...allDevices.take(5).map((entry) {
+  final roomKey = entry.key;
+  final item = entry.value;
+  final product = item['product']?.toString() ?? 'Appliance';
+  final brand = item['brand']?.toString() ?? '';
+  final label = brand.isNotEmpty && brand.toUpperCase() != 'N/A' ? '$brand $product' : product;
+  final imageUrl = item['imageUrl']?.toString();
+  return InkWell(
+    onTap: () => _openDefaultRoomDetail(roomKey),   // 👈 clickable now
+    borderRadius: BorderRadius.circular(8),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: AppColors.borderSubtle,
+              borderRadius: BorderRadius.circular(6),
             ),
+            clipBehavior: Clip.antiAlias,
+            child: (imageUrl != null && imageUrl.isNotEmpty)
+                ? Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        Icon(_iconForAppliance(product), size: 14, color: AppColors.textFaint),
+                  )
+                : Icon(_iconForAppliance(product), size: 14, color: AppColors.textFaint),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.textFaint, size: 18),
+        ],
+      ),
+    ),
+  );
+}),
+          if (allDevices.length > 5)
+  InkWell(
+    onTap: () => _openDefaultRoomDetail(allDevices.first.key),
+    child: Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        '+${allDevices.length - 5} more',
+        style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+    ),
+  ),
         ],
       ),
     );
   }
+
+  // Opens the room detail screen for a room that lives in the "Default" home.
+// (_openRoomDetail uses the *selected* home, which isn't the Default home
+// in the skip-flow, so we pass the Default home's data explicitly.)
+void _openDefaultRoomDetail(String roomKey) {
+  final dh = _defaultHome;
+  if (dh == null) return;
+  final rooms = (dh['rooms'] as Map<String, List<Map<String, dynamic>>>?) ?? {};
+  final displayName =
+      roomKey.isNotEmpty ? '${roomKey[0].toUpperCase()}${roomKey.substring(1)}' : roomKey;
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => _RoomDetailScreen(
+        roomKey: roomKey,
+        roomName: displayName,
+        items: rooms[roomKey] ?? [],
+        iconForAppliance: _iconForAppliance,
+        mobileNumber: widget.mobileNumber,
+        address: dh['address']?.toString() ?? widget.address,
+        pincode: dh['pincode']?.toString() ?? widget.pincode,
+        name: widget.name,
+        homeId: dh['id']?.toString(),
+      ),
+    ),
+  ).then((_) => _fetchAppliances());
+}
 
   // Section divider/header, e.g. "── ACTIVE ALERTS ──"
   Widget _sectionHeader(String title) {
@@ -4278,6 +4329,7 @@ class _ServiceCategorySheetState extends State<_ServiceCategorySheet> {
     super.initState();
     _load();
   }
+  // Called by MainShell when the Home tab is tapped.
 
   Future<void> _load() async {
     setState(() {

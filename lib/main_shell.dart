@@ -39,6 +39,8 @@ class _Slot {
 }
 
 class _MainShellState extends State<MainShell> {
+  final _homeTabKey = GlobalKey<HomeTabState>();
+  late String _name = widget.name;
   int _currentIndex = _Slot.home;
 
   // Whether the user currently has at least one registered home. Starts
@@ -74,8 +76,13 @@ class _MainShellState extends State<MainShell> {
       );
       return;
     }
-    setState(() => _currentIndex = index);
+   final switchingToHome = index == _Slot.home;   // 👈 add
+  setState(() => _currentIndex = index);
+
+  if (switchingToHome) {
+    _homeTabKey.currentState?.refresh();         // 👈 add
   }
+}
 
   // Called by HomeTab whenever its own "does the user have a home yet"
   // status changes (after its fetch completes, after a home is
@@ -112,10 +119,11 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final homeTab = HomeTab(
+      key: _homeTabKey,
       mobileNumber: widget.mobileNumber,
       address: widget.address,
       pincode: widget.pincode,
-      name: widget.name,
+      name: _name,
       onScanTap: _goToScan,
       onProfileTap: () => _switchTab(_Slot.profile),
       onHomeStatusChanged: _onHomeStatusChanged,
@@ -125,7 +133,7 @@ class _MainShellState extends State<MainShell> {
       mobileNumber: widget.mobileNumber,
       address: widget.address,
       pincode: widget.pincode,
-      name: widget.name,
+      name: _name,
       onScanTap: _goToScan,
     );
 
@@ -133,15 +141,16 @@ class _MainShellState extends State<MainShell> {
       mobileNumber: widget.mobileNumber,
       address: widget.address,
       pincode: widget.pincode,
-      name: widget.name,
+      name: _name,
     );
 
     final profileTab = ProfileTab(
       mobileNumber: widget.mobileNumber,
       address: widget.address,
       pincode: widget.pincode,
-      name: widget.name,
+      name: _name,
       onScanTap: _goToScan,
+      onNameChanged: (newName) => setState(() => _name = newName),
     );
 
     // Only build ScanTab when it's actually the visible slot — same as
@@ -152,7 +161,7 @@ class _MainShellState extends State<MainShell> {
             mobileNumber: widget.mobileNumber,
             address: _scanAddress,
             pincode: _scanPincode,
-            name: widget.name,
+            name: _name,
             homeId: _scanHomeId,
             onBack: () => _switchTab(_Slot.home),
             onHomeCreated: (newId) {
