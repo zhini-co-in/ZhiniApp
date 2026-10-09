@@ -74,7 +74,14 @@ class HomeTabState extends State<HomeTab> {
 
   // Rooms created locally via "Add Room" that don't have any appliances in
   // the backend yet, scoped to the currently selected home.
-  final Map<String, String> _localExtraRooms = {};
+    // Locally-created empty rooms, stored PER HOME (key = homeId).
+  final Map<String, Map<String, String>> _localExtraRoomsByHome = {};
+
+  String get _homeScopeKey => _currentHomeId ?? 'idx_$_selectedHomeIndex';
+
+  // Always points to the extra rooms of the CURRENTLY selected home only.
+  Map<String, String> get _localExtraRooms =>
+      _localExtraRoomsByHome.putIfAbsent(_homeScopeKey, () => {});
 
   // Hidden placeholder room used by AddressScreen to force home creation at
   // signup time (before the user has scanned any real appliance). This
@@ -507,8 +514,9 @@ class HomeTabState extends State<HomeTab> {
                 } else {
                   _homes.add(updated);
                 }
-                final updatedRooms = updated['rooms'] as Map<String, List<Map<String, dynamic>>>;
-                _localExtraRooms.removeWhere((key, _) => updatedRooms.containsKey(key));
+                                final updatedRooms = updated['rooms'] as Map<String, List<Map<String, dynamic>>>;
+                _localExtraRoomsByHome[homeId]
+                    ?.removeWhere((key, _) => updatedRooms.containsKey(key));
               });
               await _homeBox.clear();
               for (final h in _homes) {
@@ -551,10 +559,15 @@ class HomeTabState extends State<HomeTab> {
               }
 
               // Only drop a local-extra room once the backend actually has it.
-              final selectedRooms = _homes.isNotEmpty
-                  ? (_homes[_selectedHomeIndex]['rooms'] as Map<String, List<Map<String, dynamic>>>)
-                  : <String, List<Map<String, dynamic>>>{};
-              _localExtraRooms.removeWhere((key, _) => selectedRooms.containsKey(key));
+                            // Only drop a local-extra room once the backend actually has it
+              // (checked for every home separately).
+              for (final h in _homes) {
+                final hid = h['id']?.toString();
+                if (hid == null) continue;
+                final hRooms = h['rooms'] as Map<String, List<Map<String, dynamic>>>;
+                _localExtraRoomsByHome[hid]
+                    ?.removeWhere((key, _) => hRooms.containsKey(key));
+              }
 
               _loading = false;
             });
@@ -894,7 +907,6 @@ class HomeTabState extends State<HomeTab> {
     Map<String, dynamic>? selectedType;
     final nameController = TextEditingController();
     String createdDisplay = '';
-    final Set<String> addedQuickDevices = {};
 
     showDialog(
       context: context,
@@ -1219,78 +1231,58 @@ class HomeTabState extends State<HomeTab> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 18),
-                  const Text("What's in this room? Add devices now",
+                                    const SizedBox(height: 18),
+                  const Text("Suggested devices for this room",
                       style: TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 10),
+                  // Suggestions only: not tappable.
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: [
-                      ...devices.map((d) {
-                        final label = d['label'] as String;
-                        final icon = d['icon'] as IconData;
-                        final isAdded = addedQuickDevices.contains(label);
-                        return InkWell(
-                          onTap: () => setDialogState(() {
-                            if (isAdded) {
-                              addedQuickDevices.remove(label);
-                            } else {
-                              addedQuickDevices.add(label);
-                            }
-                          }),
+                    children: devices.map((d) {
+                      final label = d['label'] as String;
+                      final icon = d['icon'] as IconData;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardBgAlt,
                           borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: isAdded ? AppColors.primarySoft : AppColors.cardBgAlt,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: isAdded ? AppColors.primary : AppColors.borderSubtle),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(icon, size: 14, color: isAdded ? AppColors.primary : AppColors.textSecondary),
-                                const SizedBox(width: 6),
-                                Text(label,
-                                    style: TextStyle(
-                                        color: isAdded ? AppColors.primary : AppColors.textSecondary, fontSize: 12.5)),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
-                      InkWell(
-                        onTap: () {
-                          Navigator.pop(dialogContext);
-                          widget.onScanTap?.call(
-                            homeId: _currentHomeId,
-                            address: _currentAddress,
-                            pincode: _currentPincode,
-                            knownRooms: _displayRooms.map((e) => e.value).toList(),
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.primarySoft,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: AppColors.primary),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.qr_code_scanner_rounded, size: 14, color: AppColors.primary),
-                              SizedBox(width: 6),
-                              Text('Scan any', style: TextStyle(color: AppColors.primary, fontSize: 12.5)),
-                            ],
-                          ),
+                          border: Border.all(color: AppColors.borderSubtle),
                         ),
-                      ),
-                    ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(icon, size: 14, color: AppColors.textSecondary),
+                            const SizedBox(width: 6),
+                            Text(label,
+                                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5)),
+                          ],
+                        ),
+                      );
+                    }).toList(),
                   ),
                   const SizedBox(height: 20),
+
+                  // Add manually (above the scan button)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        _openManualAddDialog(initialRoom: createdDisplay);
+                      },
+                      icon: const Icon(Icons.edit_note_rounded, size: 18, color: AppColors.primary),
+                      label: const Text('Add manually',
+                          style: TextStyle(color: AppColors.primary, fontSize: 14, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
@@ -1938,11 +1930,11 @@ if (isRegisterFlow) {
   }
 
   // Manual entry form — product / brand / warranty / room, no camera needed.
-  void _openManualAddDialog() {
+    void _openManualAddDialog({String? initialRoom}) {
     final productController = TextEditingController();
     final brandController = TextEditingController();
     final warrantyController = TextEditingController();
-    String selectedRoom = 'Hall';
+    String selectedRoom = initialRoom ?? 'Hall';
     bool isCustomRoom = false;
     bool isSubmitting = false;
 

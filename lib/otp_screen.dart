@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'address_screen.dart';
@@ -13,7 +14,6 @@ import 'service_provider_dashboard.dart';
 import 'login_screen.dart';
 import 'services/log_service.dart';
 import 'services/api_client.dart';
-import 'package:flutter/gestures.dart';
 import 'webview_screen.dart';
 // Phase 3:
 // import 'services/push_service.dart';
@@ -22,7 +22,7 @@ class OtpScreen extends StatefulWidget {
   final String verificationId;
   final String phoneNumber;
   final bool isServiceProfessional;
-  final int? resendToken; // NEW: passed from login screen
+  final int? resendToken; // passed from login screen
 
   const OtpScreen({
     super.key,
@@ -57,13 +57,15 @@ class _OtpScreenState extends State<OtpScreen> {
   static const Color _secondaryText = Color(0xB3FFFFFF); // white @ 70%
   static const Color _labelText = Color(0xE6FFFFFF); // white @ 90%
   static const Color _errorColor = Color(0xFFFF5A5A);
-    static const String _termsUrl = 'https://atom8itsolutions.com/Zhini/term';
-  static const String _privacyUrl = 'https://atom8itsolutions.com/Zhini/privacy';
+
+  static const String _termsUrl = 'https://atom8itsolutions.com/Zhini/term';
+  static const String _privacyUrl =
+      'https://atom8itsolutions.com/Zhini/privacy';
 
   late final TapGestureRecognizer _termsTap;
   late final TapGestureRecognizer _privacyTap;
 
-    void _openWeb(String url) {
+  void _openWeb(String url) {
     FocusScope.of(context).unfocus();
     Navigator.push(
       context,
@@ -74,7 +76,7 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   void initState() {
     super.initState();
-        _termsTap = TapGestureRecognizer()..onTap = () => _openWeb(_termsUrl);
+    _termsTap = TapGestureRecognizer()..onTap = () => _openWeb(_termsUrl);
     _privacyTap = TapGestureRecognizer()..onTap = () => _openWeb(_privacyUrl);
     _verificationId = widget.verificationId;
     _resendToken = widget.resendToken;
@@ -136,7 +138,7 @@ class _OtpScreenState extends State<OtpScreen> {
     }
   }
 
-  // "Paste" button — reads the clipboard and fills all 6 boxes.
+  // "Paste" helper — reads the clipboard and fills all 6 boxes.
   Future<void> _pasteFromClipboard() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final digits = (data?.text ?? '').replaceAll(RegExp(r'\D'), '');
@@ -451,7 +453,7 @@ class _OtpScreenState extends State<OtpScreen> {
     return match?.group(0) ?? '';
   }
 
-    @override
+  @override
   void dispose() {
     _timer?.cancel();
     _otpController.dispose();
@@ -508,35 +510,34 @@ class _OtpScreenState extends State<OtpScreen> {
           // Invisible input on top: receives typing, paste (long-press),
           // autofill and backspace.
           Positioned.fill(
-  child: TextField(
-    controller: _otpController,
-    focusNode: _otpFocus,
-    enabled: !_isVerifying,
-    keyboardType: TextInputType.text,        // number -> text
-    autofillHints: const [AutofillHints.oneTimeCode],
-    showCursor: false,
-    enableSuggestions: true,                 // false -> true
-    autocorrect: false,
-    // maxLength remove pannunga
-    inputFormatters: [
-      OtpExtractFormatter(),                 // new
-      FilteringTextInputFormatter.digitsOnly,
-      LengthLimitingTextInputFormatter(_otpLength),
-    ],
-    style: const TextStyle(color: Colors.transparent, fontSize: 18), // 1 -> 18
-    cursorColor: Colors.transparent,
-    decoration: const InputDecoration(
-      counterText: '',
-      border: InputBorder.none,
-      enabledBorder: InputBorder.none,
-      focusedBorder: InputBorder.none,
-      disabledBorder: InputBorder.none,
-      contentPadding: EdgeInsets.zero,
-      isCollapsed: true,
-    ),
-    onChanged: _handleOtpChanged,
-  ),
-),
+            child: TextField(
+              controller: _otpController,
+              focusNode: _otpFocus,
+              enabled: !_isVerifying,
+              keyboardType: TextInputType.text,
+              autofillHints: const [AutofillHints.oneTimeCode],
+              showCursor: false,
+              enableSuggestions: true,
+              autocorrect: false,
+              inputFormatters: [
+                OtpExtractFormatter(),
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(_otpLength),
+              ],
+              style: const TextStyle(color: Colors.transparent, fontSize: 18),
+              cursorColor: Colors.transparent,
+              decoration: const InputDecoration(
+                counterText: '',
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                isCollapsed: true,
+              ),
+              onChanged: _handleOtpChanged,
+            ),
+          ),
         ],
       ),
     );
@@ -598,12 +599,12 @@ class _OtpScreenState extends State<OtpScreen> {
               const SizedBox(height: 32),
 
               const Align(
-  alignment: Alignment.centerLeft,
-  child: Text(
-    'Enter OTP',
-    style: TextStyle(color: _labelText, fontSize: 14),
-  ),
-),
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Enter OTP',
+                  style: TextStyle(color: _labelText, fontSize: 14),
+                ),
+              ),
 
               const SizedBox(height: 12),
 
@@ -715,7 +716,7 @@ class _OtpScreenState extends State<OtpScreen> {
 
               const SizedBox(height: 24),
 
-                            Text.rich(
+              Text.rich(
                 TextSpan(
                   text: 'By continuing you agree to our ',
                   style: const TextStyle(color: _secondaryText, fontSize: 12),
@@ -736,11 +737,61 @@ class _OtpScreenState extends State<OtpScreen> {
                 textAlign: TextAlign.center,
               ),
 
+              const SizedBox(height: 24),
+
+              // Divider + shield icon
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      color: Colors.blue.withOpacity(0.25),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: const [
+                        Icon(Icons.shield,
+                            color: Color(0xFF16243A), size: 42),
+                        Icon(Icons.shield_outlined,
+                            color: Colors.blue, size: 42),
+                        Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child:
+                              Icon(Icons.lock, color: Colors.blue, size: 16),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      color: Colors.blue.withOpacity(0.25),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              const Text(
+                'Your data & documents are protected',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
               const SizedBox(height: 4),
 
               const Text(
-                'Your data will never be sold.',
-                style: TextStyle(color: _secondaryText, fontSize: 12),
+                'Your information stays private and is never sold.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: _secondaryText, fontSize: 13),
               ),
 
               const SizedBox(height: 24),
@@ -751,6 +802,7 @@ class _OtpScreenState extends State<OtpScreen> {
     );
   }
 }
+
 class OtpExtractFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
