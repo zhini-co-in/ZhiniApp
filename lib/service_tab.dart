@@ -14,7 +14,6 @@ import 'constants/api_config.dart';
 import 'theme/app_theme.dart';
 import 'widgets/service_provider_card.dart';
 import 'services/api_client.dart';
-
 // ---------------------------------------------------------------------
 // ADD THIS to lib/constants/api_config.dart (if not already present):
 //
@@ -799,6 +798,7 @@ class _ServiceTabState extends State<ServiceTab> {
   void _openQuickBookSheet(Map<String, dynamic> category) {
     final type = category['type'] as String;
     final label = category['label'] as String;
+    final providersFuture = _fetchProvidersFor(type);
 
     showModalBottomSheet(
       context: context,
@@ -807,7 +807,7 @@ class _ServiceTabState extends State<ServiceTab> {
       shape: AppDecor.sheetShape,
       builder: (sheetContext) {
         return FutureBuilder<List<Map<String, dynamic>>>(
-          future: _fetchProvidersFor(type),
+          future: providersFuture,
           builder: (context, snapshot) {
             final loading = snapshot.connectionState == ConnectionState.waiting;
             final providers = snapshot.data ?? [];
@@ -872,16 +872,17 @@ class _ServiceTabState extends State<ServiceTab> {
     try {
       final locationQuery = await _buildGpsLocationQuery();
 
-      final response = await http.post(
-        Uri.parse(
-          '${ApiConfig.homeServicesUrl}'
-          '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
-          '&pincode=${widget.pincode}'
-          '$locationQuery',
-        ),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
-      if (response.statusCode == 200) {
+      final response = await ApiClient.post(
+  '${ApiConfig.homeServicesUrl}'
+  '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
+  '&pincode=${widget.pincode}'
+  '$locationQuery',
+);
+
+debugPrint('🔧 Quick book sheet ($serviceType) status: ${response.statusCode}');
+debugPrint('🔧 Quick book sheet ($serviceType) body: ${response.body}');
+
+if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
           final raw = data['data'];

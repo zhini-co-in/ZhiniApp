@@ -16,6 +16,7 @@ import 'widgets/room_selector_chips.dart';
 import 'widgets/service_provider_card.dart';
 import 'package:geolocator/geolocator.dart';
 import 'widgets/scan_shutter_button.dart';
+import 'widgets/zhini_thinking_view.dart';
 
 class ScanTab extends StatefulWidget {
   final String mobileNumber;
@@ -218,33 +219,34 @@ void _startLiveCountdown() {
   }
 
   // User pressed OK — only now is the photo sent to the backend AI.
-  Future<void> _confirmReview() async {
-    if (_aiThinking) return;
-    _reviewTimer?.cancel();
-    setState(() {
-      _reviewing = false;
-      _aiThinking = true;
-    });
-    try {
-      final ok = await _identifyWithAi();
-      if (!mounted) return;
-      if (!ok) {
-        setState(() => _aiThinking = false);
-        _startLiveCountdown(); // back to camera
-        return;
-      }
-      final services = await _fetchNearbyServices();
-      if (!mounted) return;
-      await _cameraController?.pausePreview();
-      setState(() {
-        _nearbyServices = services;
-        _servicePage = 0;
-        _showDetectedCard = true;
-      });
-    } finally {
-      if (mounted) setState(() => _aiThinking = false);
+ Future<void> _confirmReview() async {
+  if (_aiThinking) return;
+  _reviewTimer?.cancel();
+  setState(() {
+    _reviewing = false;
+    _aiThinking = true;
+  });
+  await _cameraController?.pausePreview(); // camera background la run aagaadhu
+  try {
+    final ok = await _identifyWithAi();
+    if (!mounted) return;
+    if (!ok) {
+      setState(() => _aiThinking = false);
+      await _cameraController?.resumePreview(); // illana freeze aagum
+      _startLiveCountdown();
+      return;
     }
+    final services = await _fetchNearbyServices();
+    if (!mounted) return;
+    setState(() {
+      _nearbyServices = services;
+      _servicePage = 0;
+      _showDetectedCard = true;
+    });
+  } finally {
+    if (mounted) setState(() => _aiThinking = false);
   }
+}
 
   // Sends _lastCapturedImage to the AI endpoint and fills product/brand.
   // Returns true only if a valid product was identified.
@@ -824,23 +826,8 @@ if (!_reviewing && !_aiThinking)
           ),
 
         // Identifying overlay
-        if (_aiThinking)
-          Positioned.fill(
-            child: Container(
-              color: Colors.black54,
-              child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: AppColors.primary),
-                    SizedBox(height: 14),
-                    Text('Identifying appliance…',
-                        style: TextStyle(color: Colors.white, fontSize: 14)),
-                  ],
-                ),
-              ),
-            ),
-          ),
+                // ZHINI thinking screen
+        if (_aiThinking) const Positioned.fill(child: ZhiniThinkingView()),
       ],
     );
   }

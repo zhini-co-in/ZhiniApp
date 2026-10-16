@@ -27,9 +27,6 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-// Internal slot indices used by IndexedStack (NOT the same order as the
-// visible bottom-nav buttons — Scan sits visually in the middle but is
-// slot 1 here since it needs the extra _scanXxx state below).
 class _Slot {
   static const home = 0;
   static const scan = 1;
@@ -43,15 +40,19 @@ class _MainShellState extends State<MainShell> {
   late String _name = widget.name;
   int _currentIndex = _Slot.home;
 
-  // Whether the user currently has at least one registered home. Starts
-  // as an optimistic guess based on widget.homeId and gets corrected by
-  // HomeTab via onHomeStatusChanged once it finishes its own fetch.
   bool _hasHome = false;
 
+  // Values used when ScanTab is opened.
   String? _scanHomeId;
   String _scanAddress = '';
   String _scanPincode = '';
   List<String>? _scanKnownRooms;
+
+  // The home currently SELECTED inside HomeTab (kept in sync via
+  // onSelectedHomeChanged). Used by the bottom-nav Scan button.
+  String? _selectedHomeId;
+  String _selectedAddress = '';
+  String _selectedPincode = '';
 
   @override
   void initState() {
@@ -60,15 +61,14 @@ class _MainShellState extends State<MainShell> {
     _scanAddress = widget.address;
     _scanPincode = widget.pincode;
     _scanKnownRooms = null;
-    // Always start gated. widget.homeId can be non-null even in the
-    // skip-flow (backend creates a home record with just the hidden
-    // __setup__ room), so it isn't reliable proof of a REAL home.
-    // HomeTab.onHomeStatusChanged corrects this within one frame.
+
+    _selectedHomeId = widget.homeId;
+    _selectedAddress = widget.address;
+    _selectedPincode = widget.pincode;
+
     _hasHome = false;
   }
 
-  // Devices / Service tabs are gated behind having a registered home —
-  // tapping them before that just shows a snackbar instead of switching.
   void _switchTab(int index) {
     if (!_hasHome && (index == _Slot.devices || index == _Slot.service)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -76,37 +76,39 @@ class _MainShellState extends State<MainShell> {
       );
       return;
     }
-   final switchingToHome = index == _Slot.home;   // 👈 add
-  setState(() => _currentIndex = index);
+    final switchingToHome = index == _Slot.home;
+    setState(() => _currentIndex = index);
 
-  if (switchingToHome) {
-    _homeTabKey.currentState?.refresh();         // 👈 add
+    if (switchingToHome) {
+      _homeTabKey.currentState?.refresh();
+    }
   }
-}
 
-  // Called by HomeTab whenever its own "does the user have a home yet"
-  // status changes (after its fetch completes, after a home is
-  // added/removed, etc).
   void _onHomeStatusChanged(bool hasHome) {
     if (hasHome == _hasHome) return;
     setState(() {
       _hasHome = hasHome;
-      // If home got removed/never existed and user is sitting on a
-      // gated tab, bounce them back to Home.
       if (!hasHome && (_currentIndex == _Slot.devices || _currentIndex == _Slot.service)) {
         _currentIndex = _Slot.home;
       }
     });
   }
 
-  // Shared by every tab's "+" / "Scan" buttons (Home, Devices, Profile all
-  // take an onScanTap of this exact shape).
+  // HomeTab tells us which home is selected. No setState needed — we only
+  // read these values when the Scan button is tapped.
+  void _onSelectedHomeChanged(String? homeId, String address, String pincode) {
+    _selectedHomeId = homeId;
+    _selectedAddress = address;
+    _selectedPincode = pincode;
+  }
+
   void _goToScan({
     String? homeId,
     required String address,
     required String pincode,
     List<String>? knownRooms,
   }) {
+    debugPrint('📷 _goToScan homeId=$homeId address=$address pincode=$pincode');
     setState(() {
       _scanHomeId = homeId;
       _scanAddress = address;
@@ -127,6 +129,7 @@ class _MainShellState extends State<MainShell> {
       onScanTap: _goToScan,
       onProfileTap: () => _switchTab(_Slot.profile),
       onHomeStatusChanged: _onHomeStatusChanged,
+      onSelectedHomeChanged: _onSelectedHomeChanged,
     );
 
     final devicesTab = DevicesTab(
@@ -153,11 +156,9 @@ class _MainShellState extends State<MainShell> {
       onNameChanged: (newName) => setState(() => _name = newName),
     );
 
-    // Only build ScanTab when it's actually the visible slot — same as
-    // your original SizedBox.shrink() placeholder pattern, so ScanTab's
-    // camera doesn't stay initialized in the background on other tabs.
     final scanSlot = _currentIndex == _Slot.scan
         ? ScanTab(
+            key: ValueKey('scan_${_scanHomeId}_$_scanAddress'),
             mobileNumber: widget.mobileNumber,
             address: _scanAddress,
             pincode: _scanPincode,
@@ -178,11 +179,11 @@ class _MainShellState extends State<MainShell> {
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          homeTab,       // _Slot.home    = 0
-          scanSlot,      // _Slot.scan    = 1
-          devicesTab,    // _Slot.devices = 2
-          serviceTab,    // _Slot.service = 3
-          profileTab,    // _Slot.profile = 4
+          homeTab,
+          scanSlot,
+          devicesTab,
+          serviceTab,
+          profileTab,
         ],
       ),
       bottomNavigationBar: _buildBottomNavBar(),
@@ -190,9 +191,6 @@ class _MainShellState extends State<MainShell> {
   }
 
   Widget _buildBottomNavBar() {
-    // Devices/Service are fully hidden (not just dimmed) until the user
-    // has a registered home — skip-flow users only see Home/Profile +
-    // the center Scan button.
     final items = <Widget>[
       _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
       if (_hasHome)
@@ -252,17 +250,15 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
-  // Center raised "Scan" button — always uses the CURRENT home's context
-  // (widget.homeId / widget.address / widget.pincode), not whatever the
-  // last _goToScan() call left behind, so tapping it directly from the
-  // nav bar always scans into the home the user is actually in.
+  // Center Scan button — uses the home SELECTED in HomeTab (not the
+  // login-time widget.homeId).
   Widget _scanButton() {
     final selected = _currentIndex == _Slot.scan;
     return InkWell(
       onTap: () => _goToScan(
-        homeId: widget.homeId,
-        address: widget.address,
-        pincode: widget.pincode,
+        homeId: _selectedHomeId ?? widget.homeId,
+        address: _selectedAddress.isNotEmpty ? _selectedAddress : widget.address,
+        pincode: _selectedPincode.isNotEmpty ? _selectedPincode : widget.pincode,
       ),
       borderRadius: BorderRadius.circular(30),
       child: Container(

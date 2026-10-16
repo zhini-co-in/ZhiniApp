@@ -1,5 +1,5 @@
 class ApiConfig {
-  static const String baseUrl = 'https://zhini.atom8itsolutions.com'; // unnoda machine IP, localhost illa (phone-la run panna)
+  static const String baseUrl = 'https://zhini.atom8itsolutions.com'; 
   //static const String baseUrl = 'https://crucial-purifier-canopener.ngrok-free.dev';
 
 

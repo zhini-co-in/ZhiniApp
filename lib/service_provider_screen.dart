@@ -1,17 +1,26 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'constants/api_config.dart';
 import 'service_provider_dashboard.dart';
 import 'login_screen.dart';
+import 'services/api_client.dart';
+import 'services/device_id_service.dart';
 
 class ServiceProviderOnboardingScreen extends StatefulWidget {
   final String mobileNumber;
 
+  // true na backend la user (home) record illa. Submit pannum bodhu
+  // mudhalla user-ah create pannitu, appuram provider create pannum.
+  final bool createUserFirst;
+
   const ServiceProviderOnboardingScreen({
     super.key,
     required this.mobileNumber,
+    this.createUserFirst = false,
   });
 
   @override
@@ -45,6 +54,10 @@ class _ServiceProviderOnboardingScreenState
   double _workingRangeKm = 1;
   bool _isSubmitting = false;
 
+  // User record already created in this session (retry la thirumba create
+  // aagaama irukka).
+  bool _userCreated = false;
+
   String get _plainMobile => ApiConfig.stripCountryCode(widget.mobileNumber);
 
   String get _referralCode {
@@ -54,16 +67,16 @@ class _ServiceProviderOnboardingScreenState
     return '$firstName${DateTime.now().year}';
   }
 
-@override
-void dispose() {
-  _pageController.dispose();
-  _nameController.dispose();
-  _addressController.dispose();
-  _pincodeController.dispose();   // ✅
-  _gstinController.dispose();
-  _othersController.dispose();
-  super.dispose();
-}
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _nameController.dispose();
+    _addressController.dispose();
+    _pincodeController.dispose();
+    _gstinController.dispose();
+    _othersController.dispose();
+    super.dispose();
+  }
 
   Future<void> _logout() async {
     final confirm = await showDialog<bool>(
@@ -78,7 +91,8 @@ void dispose() {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white60)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -129,9 +143,9 @@ void dispose() {
       return;
     }
     if (_pincodeController.text.trim().length != 6) {
-  _showSnack('Please enter a valid 6-digit pincode');
-  return;
-}
+      _showSnack('Please enter a valid 6-digit pincode');
+      return;
+    }
     if (_selectedAppliances.isEmpty) {
       _showSnack('Please select at least one skill');
       return;
@@ -152,12 +166,80 @@ void dispose() {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  // ---------------- Create user (background) ----------------
+
+  /// Backend la user (home) record create pannum. Idhu dhaan user + authToken
+  /// DB la save pannum. Success na homeId return pannum, fail na null.
+  Future<String?> _createUserRecord() async {
+    try {
+      final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (authToken == null) {
+        debugPrint('❌ No Firebase auth token — user not signed in?');
+        return null;
+      }
+      final deviceId = await DeviceIdService.getDeviceId();
+      final fcmToken = await ApiClient.safeFcmToken();
+
+      final pincode = _pincodeController.text.trim();
+      final fullAddress = '${_addressController.text.trim()} - $pincode';
+
+      final response = await http.post(
+        Uri.parse(ApiConfig.createHomeUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          'x-auth-token': authToken,
+          'x-device-id': deviceId,
+        },
+        body: jsonEncode({
+          'name': _nameController.text.trim(),
+          'mobile': _plainMobile,
+          'address': fullAddress,
+          'pincode': pincode,
+          'PlatformInfo': {
+            'device': {
+              'deviceId': deviceId,
+              'fcmToken': fcmToken,
+              'os': Platform.isAndroid ? 'android' : 'ios',
+            },
+          },
+        }),
+      );
+
+      debugPrint('🏠 Create user status: ${response.statusCode}');
+      debugPrint('🏠 Create user body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return data['data']['homeId']?.toString();
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Create user error: $e');
+    }
+    return null;
+  }
+
   // ---------------- Submit ----------------
 
   Future<void> _submit() async {
     setState(() => _isSubmitting = true);
 
     try {
+      // Step A: user record illa na mudhalla adhai create pannu.
+      if (widget.createUserFirst && !_userCreated) {
+        final homeId = await _createUserRecord();
+        if (homeId == null) {
+          if (mounted) {
+            _showSnack('Could not create your account. Please try again.');
+          }
+          return; // finally block _isSubmitting reset pannum
+        }
+        _userCreated = true;
+      }
+
+      // Step B: service provider create.
       final finalExpertise =
           _selectedAppliances.where((e) => e != 'Others').toList();
       if (_selectedAppliances.contains('Others')) {
@@ -170,7 +252,7 @@ void dispose() {
 
       final uri = Uri.parse(ApiConfig.createServiceProviderUrl);
       final request = http.MultipartRequest('POST', uri)
-        ..headers['ngrok-skip-browser-warning'] = 'true'
+        ..headers.addAll(await ApiClient.authHeaders())
         ..fields['name'] = _nameController.text.trim()
         ..fields['mobile'] = _plainMobile
         ..fields['address'] = _addressController.text.trim()
@@ -256,7 +338,8 @@ void dispose() {
         ),
         body: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -308,17 +391,17 @@ void dispose() {
               decoration: _fieldDecoration('e.g. Chennai — T. Nagar, Adyar'),
             ),
             const SizedBox(height: 20),
-_label('Pincode'),
-const SizedBox(height: 8),
-TextField(
-  controller: _pincodeController,
-  keyboardType: TextInputType.number,
-  maxLength: 6,
-  style: const TextStyle(color: Colors.white, fontSize: 16),
-  decoration: _fieldDecoration('e.g. 600045').copyWith(
-    counterText: '', // hides the 0/6 counter
-  ),
-),
+            _label('Pincode'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _pincodeController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+              decoration: _fieldDecoration('e.g. 600045').copyWith(
+                counterText: '', // hides the 0/6 counter
+              ),
+            ),
             const SizedBox(height: 20),
             _label('Skills (select all that apply)'),
             const SizedBox(height: 10),
@@ -345,7 +428,8 @@ TextField(
                   backgroundColor: const Color(0xFF13253F),
                   labelStyle: TextStyle(
                     color: isSelected ? Colors.white : Colors.white70,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    fontWeight:
+                        isSelected ? FontWeight.w600 : FontWeight.normal,
                   ),
                   side: BorderSide(
                     color: isSelected ? Colors.blue : Colors.blue.shade300,
@@ -398,10 +482,12 @@ TextField(
                     ? const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.add_a_photo, color: Colors.blue, size: 26),
+                          Icon(Icons.add_a_photo,
+                              color: Colors.blue, size: 26),
                           SizedBox(height: 4),
                           Text('Add photo',
-                              style: TextStyle(color: Colors.white60, fontSize: 11)),
+                              style: TextStyle(
+                                  color: Colors.white60, fontSize: 11)),
                         ],
                       )
                     : ClipRRect(
@@ -416,7 +502,9 @@ TextField(
               child: Text(
                 '${_workingRangeKm.round()} km',
                 style: const TextStyle(
-                    color: Colors.blue, fontSize: 32, fontWeight: FontWeight.bold),
+                    color: Colors.blue,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold),
               ),
             ),
             Slider(
@@ -554,9 +642,11 @@ TextField(
             ? const SizedBox(
                 height: 20,
                 width: 20,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                child: CircularProgressIndicator(
+                    color: Colors.white, strokeWidth: 2),
               )
-            : Text(text, style: const TextStyle(color: Colors.white, fontSize: 16)),
+            : Text(text,
+                style: const TextStyle(color: Colors.white, fontSize: 16)),
       ),
     );
   }
@@ -625,9 +715,8 @@ class _StepCard extends StatelessWidget {
   }
 }
 
-/// The small dot + connecting-line progress indicator at the top,
-/// matching the reference screenshot: completed = green, current =
-/// elongated blue pill, upcoming = grey outline.
+/// The small dot + connecting-line progress indicator at the top:
+/// completed = green, current = elongated blue pill, upcoming = grey outline.
 class _StepDots extends StatelessWidget {
   final int currentStep;
   final int totalSteps;

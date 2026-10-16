@@ -88,9 +88,10 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorText = null;
     });
 
-    final fullPhoneNumber = '$_selectedDialCode$_digits';
+        final fullPhoneNumber = '$_selectedDialCode$_digits';
 
     try {
+
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: fullPhoneNumber,
         timeout: const Duration(seconds: 60),
@@ -129,13 +130,13 @@ class _LoginScreenState extends State<LoginScreen> {
         codeAutoRetrievalTimeout: (String verificationId) {},
       );
     } catch (e) {
-      debugPrint('verifyPhoneNumber error: $e');
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _errorText = "Couldn't send OTP. Please try again.";
-      });
-    }
+  debugPrint('verifyPhoneNumber error: $e');
+  if (!mounted) return;
+  setState(() {
+    _isLoading = false;
+    _errorText = "Couldn't send OTP [${e.toString()}]";
+  });
+}
   }
 
   String _friendlyError(String code) {
@@ -148,10 +149,10 @@ class _LoginScreenState extends State<LoginScreen> {
         return 'No internet connection. Please try again.';
       case 'quota-exceeded':
         return 'Service busy. Please try again in a while.';
-      default:
-        return "Couldn't send OTP. Please try again.";
-    }
+       default:
+      return "Couldn't send OTP [$code]. Please try again.";
   }
+}
 
   @override
   void dispose() {

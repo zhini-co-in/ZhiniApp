@@ -45,6 +45,7 @@ class HomeTab extends StatefulWidget {
   final ScanRequest? onScanTap;
   final VoidCallback? onProfileTap;
   final ValueChanged<bool>? onHomeStatusChanged;
+    final void Function(String? homeId, String address, String pincode)? onSelectedHomeChanged;
 
   const HomeTab({
     super.key,
@@ -55,6 +56,7 @@ class HomeTab extends StatefulWidget {
     this.onScanTap,
     this.onProfileTap,
     this.onHomeStatusChanged,
+    this.onSelectedHomeChanged,
   });
 
   @override
@@ -188,7 +190,10 @@ class HomeTabState extends State<HomeTab> {
     _prefetchServiceCounts();
   }
   Future<void> refresh() async {
-    await _fetchAppliances();
+    while (_fetchInFlight) {
+  await Future.delayed(const Duration(milliseconds: 100));
+}
+await _fetchAppliances();
     if (!mounted) return;
     setState(() => _serviceCounts.clear());
     _prefetchServiceCounts();
@@ -295,25 +300,11 @@ class HomeTabState extends State<HomeTab> {
 
   // "Services near you        View all >"
   Widget _servicesHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text('Services near you',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
-        InkWell(
-          onTap: _openAllRoomsSheet, // TODO: open a screen with all service categories
-          borderRadius: BorderRadius.circular(8),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: Row(children: [
-              Text('View all', style: TextStyle(color: AppColors.primary, fontSize: 13)),
-              Icon(Icons.chevron_right_rounded, color: AppColors.primary, size: 18),
-            ]),
-          ),
-        ),
-      ],
-    );
-  }
+  return const Text(
+    'Services near you',
+    style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600),
+  );
+}
 
   Widget _buildServicesNearYou() {
     return Column(
@@ -411,6 +402,11 @@ class HomeTabState extends State<HomeTab> {
   Future<void> _fetchAppliances({String? homeId}) async {
     final isSingleHomeRefresh = homeId != null;
 
+        // Remember the selected home BEFORE the cache replaces _homes.
+    final selectedIdBefore = _currentHomeId;
+    final selectedAddressBefore = _currentHome?['address']?.toString().trim().toLowerCase();
+    final selectedPincodeBefore = _currentHome?['pincode']?.toString().trim();
+
     // Skip if a full refresh is already running.
     if (!isSingleHomeRefresh) {
       if (_fetchInFlight) return;
@@ -420,8 +416,13 @@ class HomeTabState extends State<HomeTab> {
     // Show cache instantly — full refresh only.
     if (!isSingleHomeRefresh) {
       if (_homeBox.isNotEmpty && mounted) {
-        setState(() {
+                setState(() {
           _homes = _homeBox.values.map((h) => h.toMap()).toList();
+          if (selectedIdBefore != null) {
+            final i = _homes.indexWhere((h) => h['id']?.toString() == selectedIdBefore);
+            if (i != -1) _selectedHomeIndex = i;
+          }
+          if (_selectedHomeIndex >= _homes.length) _selectedHomeIndex = 0;
           _loading = false;
         });
       } else {
@@ -532,10 +533,9 @@ class HomeTabState extends State<HomeTab> {
             await _homeBox.add(HomeModel.fromMap(h));
           }
 
-          final previousSelectedHome = _currentHome;
-          final previousSelectedId = previousSelectedHome?['id']?.toString();
-          final previousAddress = previousSelectedHome?['address']?.toString().trim().toLowerCase();
-          final previousPincode = previousSelectedHome?['pincode']?.toString().trim();
+                    final previousSelectedId = selectedIdBefore;
+          final previousAddress = selectedAddressBefore;
+          final previousPincode = selectedPincodeBefore;
           final previousHomesSnapshot = List<Map<String, dynamic>>.from(_homes);
 
           if (mounted) {
@@ -698,6 +698,9 @@ class HomeTabState extends State<HomeTab> {
   String? get _currentHomeId => _currentHome?['id']?.toString();
   String get _currentAddress => _currentHome?['address']?.toString() ?? widget.address;
   String get _currentPincode => _currentHome?['pincode']?.toString() ?? widget.pincode;
+    void _notifySelectedHome() {
+    widget.onSelectedHomeChanged?.call(_currentHomeId, _currentAddress, _currentPincode);
+  }
 
   String _homeLabel(Map<String, dynamic> home, int index) {
     final address = home['address']?.toString() ?? '';
@@ -1387,11 +1390,13 @@ if (isRegisterFlow) {
     if (ok && mounted) {
       await _fetchAppliances(homeId: existingDefaultId);
       if (!mounted) return;
-      setState(() {
+            setState(() {
         final idx = _homes.indexWhere((h) => h['id']?.toString() == existingDefaultId);
         if (idx != -1) _selectedHomeIndex = idx;
         _serviceCounts.clear();
       });
+      await SessionManager.updateHomeId(existingDefaultId);
+      _notifySelectedHome();
       _prefetchServiceCounts();
     }
     return;
@@ -1417,6 +1422,9 @@ if (isRegisterFlow) {
     return;
   }
 
+    while (_fetchInFlight) {
+    await Future.delayed(const Duration(milliseconds: 100));
+  }
   await _fetchAppliances();
   if (!mounted) return;
   setState(() {
@@ -1424,6 +1432,8 @@ if (isRegisterFlow) {
     _selectedHomeIndex = idx != -1 ? idx : _homes.length - 1;
     _serviceCounts.clear();
   });
+  await SessionManager.updateHomeId(newHomeId);
+  _notifySelectedHome();
   _prefetchServiceCounts();
 
   if (mounted) {
@@ -2514,9 +2524,10 @@ if (isRegisterFlow) {
     final alerts = _loading ? <Map<String, String>>[] : _computeAlerts();
     // No registered home yet (skip-flow) — rooms/stats grid don't apply.
     final hasHome = !_loading && _hasRegisteredHome;
-    if (!_loading) {
+        if (!_loading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onHomeStatusChanged?.call(hasHome);
+        _notifySelectedHome();
       });
     }
 
@@ -2933,13 +2944,17 @@ void _openDefaultRoomDetail(String roomKey) {
           }
           final selected = index == _selectedHomeIndex;
           return GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedHomeIndex = index;
-                _serviceCounts.clear();
-              });
-              _prefetchServiceCounts();
-            },
+            onTap: () async {
+  setState(() {
+    _selectedHomeIndex = index;
+    _serviceCounts.clear();
+  });
+  final hid = _homes[index]['id']?.toString();
+  if (hid != null && hid.isNotEmpty) {
+    await SessionManager.updateHomeId(hid);
+  }
+  _prefetchServiceCounts();
+},
             child: Column(
               children: [
                 Container(

@@ -233,13 +233,13 @@ class _OtpScreenState extends State<OtpScreen> {
         .setUserIdentifier(widget.phoneNumber.hashCode.toString());
   }
 
+  // ---------------------------------------------------------------------
+  // ALWAYS check the normal user (home) record first.
+  //   - User exists  -> provider tick? provider flow : MainShell
+  //   - User missing -> provider tick? provider form (user is created in the
+  //                     background on submit) : AddressScreen
+  // ---------------------------------------------------------------------
   Future<void> _checkExistingUserAndNavigate() async {
-    // Service providers go through their own check + flow.
-    if (widget.isServiceProfessional) {
-      await _checkExistingProviderAndNavigate();
-      return;
-    }
-
     final plainMobile = ApiConfig.stripCountryCode(widget.phoneNumber);
     final url = '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile';
     debugPrint('🔍 Checking existing user: $url');
@@ -285,6 +285,14 @@ class _OtpScreenState extends State<OtpScreen> {
             );
 
             if (!mounted) return;
+
+            // User already exists. If provider was ticked, continue to
+            // the provider check / onboarding.
+            if (widget.isServiceProfessional) {
+              await _checkExistingProviderAndNavigate();
+              return;
+            }
+
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
@@ -302,8 +310,25 @@ class _OtpScreenState extends State<OtpScreen> {
         }
       }
 
-      // No existing record found — treat as a new user.
+      // No existing user record found.
       if (!mounted) return;
+
+      if (widget.isServiceProfessional) {
+        // Provider tick pannirundha user Address screen kaattaama direct-ah
+        // provider form ku po. User record provider form submit aagum bodhu
+        // background la create aagum (createUserFirst).
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ServiceProviderOnboardingScreen(
+              mobileNumber: widget.phoneNumber,
+              createUserFirst: true,
+            ),
+          ),
+        );
+        return;
+      }
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -322,6 +347,7 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   // Checks if this mobile already has a service provider profile.
+  // Only called AFTER the user record exists.
   Future<void> _checkExistingProviderAndNavigate() async {
     final plainMobile = ApiConfig.stripCountryCode(widget.phoneNumber);
     final url = ApiConfig.getServiceProviderUrl(plainMobile);
