@@ -73,6 +73,9 @@ class HomeTabState extends State<HomeTab> {
   // Each entry: { id, address, pincode, members: [{name, mobile}], rooms: {roomKey: [items]} }
   List<Map<String, dynamic>> _homes = [];
   int _selectedHomeIndex = 0;
+  // Name entered while registering (replaces "Guest" until app restarts).
+String? _nameOverride;
+String get _displayName => _nameOverride ?? widget.name;
 
   // Rooms created locally via "Add Room" that don't have any appliances in
   // the backend yet, scoped to the currently selected home.
@@ -182,6 +185,7 @@ class HomeTabState extends State<HomeTab> {
 
   // serviceType -> provider count, shown as "X nearby" on each category card.
   final Map<String, int> _serviceCounts = {};
+  Future<String?>? _gpsQueryCache;
 
   @override
   void initState() {
@@ -195,6 +199,7 @@ class HomeTabState extends State<HomeTab> {
 }
 await _fetchAppliances();
     if (!mounted) return;
+    _gpsQueryCache = null;
     setState(() => _serviceCounts.clear());
     _prefetchServiceCounts();
   }
@@ -256,7 +261,16 @@ await _fetchAppliances();
 
   // Silent GPS fetch — returns null (caller shows "no results") if location
   // can't be resolved at all.
-  Future<String?> _buildGpsLocationQuery() async {
+    Future<String?> _buildGpsLocationQuery() {
+    final future = _gpsQueryCache ??= _resolveGpsLocationQuery();
+    // Don't cache a failure, so the next call can retry.
+    future.then((v) {
+      if (v == null) _gpsQueryCache = null;
+    });
+    return future;
+  }
+
+  Future<String?> _resolveGpsLocationQuery() async {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return null;
@@ -270,9 +284,18 @@ await _fetchAppliances();
         return null;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
-      );
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+      } catch (_) {
+        position = await Geolocator.getLastKnownPosition();
+      }
+      if (position == null) return null;
       return '&latitude=${position.latitude}&longitude=${position.longitude}';
     } catch (e) {
       debugPrint('❌ Location fetch error (home services): $e');
@@ -889,7 +912,7 @@ await _fetchAppliances();
           mobileNumber: widget.mobileNumber,
           address: _currentAddress,
           pincode: _currentPincode,
-          name: widget.name,
+          name: _displayName,
           homeId: _currentHomeId,
         ),
       ),
@@ -1212,7 +1235,10 @@ await _fetchAppliances();
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text('$homeLabel — ${widget.name.isNotEmpty ? widget.name : "You"}', style: AppText.faintCaption),
+                  Text(
+  '$homeLabel — ${(_displayName.isNotEmpty && _displayName.toLowerCase() != 'guest') ? _displayName : "You"}',
+  style: AppText.faintCaption,
+),
                   const SizedBox(height: 10),
                   dots(),
                   const SizedBox(height: 16),
@@ -1382,12 +1408,23 @@ if (isRegisterFlow) {
   final newAddress = result['address'] ?? '';
   final newPincode = result['pincode'] ?? '';
   if (newAddress.isEmpty) return;
-
+final newName = (result['name'] ?? '').toString().trim();
+if (newName.isNotEmpty) setState(() => _nameOverride = newName);
   // ---------- UPDATE the Default (Guest) home ----------
   if (existingDefaultId != null) {
     debugPrint('✏️ Updating Default home $existingDefaultId -> $newAddress');
     final ok = await _submitAddressUpdate(existingDefaultId, newAddress, newPincode);
     if (ok && mounted) {
+      if (newName.isNotEmpty) {
+  setState(() => _nameOverride = newName);
+  await SessionManager.saveSession(
+    mobileNumber: widget.mobileNumber,
+    address: newAddress,
+    pincode: newPincode,
+    name: newName,
+    homeId: existingDefaultId,
+  );
+}
       await _fetchAppliances(homeId: existingDefaultId);
       if (!mounted) return;
             setState(() {
@@ -1407,7 +1444,7 @@ if (isRegisterFlow) {
   final newHomeId = await _createNewHomeRecord(
     address: newAddress,
     pincode: newPincode,
-    name: widget.name,
+    name: newName.isNotEmpty ? newName : _displayName,
     homeName: newAddress.split(',').first.trim().isNotEmpty
         ? newAddress.split(',').first.trim()
         : 'Home ${_homes.length + 1}',
@@ -2106,7 +2143,7 @@ if (isRegisterFlow) {
       String? homeIdToUse = _currentHomeId;
       if (homeIdToUse == null) {
         final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
-          'name': widget.name,
+          'name': _displayName,
           'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
           'address': _currentAddress,
           'homeName': _currentAddress.split(',').first.trim(),
@@ -2142,7 +2179,7 @@ if (isRegisterFlow) {
       request.fields['pincode'] = _currentPincode;
       request.fields['warranty'] = warranty.isNotEmpty ? warranty : 'N/A';
       request.fields['roomName'] = room;
-      request.fields['name'] = widget.name;
+      request.fields['name'] = _displayName;
 
       final streamed = await request.send();
       final response = await http.Response.fromStream(streamed);
@@ -2355,7 +2392,7 @@ if (isRegisterFlow) {
                       radius: 24,
                       backgroundColor: AppColors.primary,
                       child: Text(
-                        widget.name.isNotEmpty ? widget.name[0].toUpperCase() : 'P',
+                        _displayName.isNotEmpty ? _displayName[0].toUpperCase() : 'G',
                         style: const TextStyle(fontSize: 20, color: AppColors.textPrimary, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -2365,7 +2402,7 @@ if (isRegisterFlow) {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.name.isNotEmpty ? widget.name : 'Petchirajan',
+                            _displayName.isNotEmpty ? _displayName : 'Guest',
                             style: const TextStyle(color: AppColors.textPrimary, fontSize: 16.5, fontWeight: FontWeight.w600),
                           ),
                           Text(
@@ -2799,7 +2836,7 @@ void _openDefaultRoomDetail(String roomKey) {
         mobileNumber: widget.mobileNumber,
         address: dh['address']?.toString() ?? widget.address,
         pincode: dh['pincode']?.toString() ?? widget.pincode,
-        name: widget.name,
+        name: _displayName,
         homeId: dh['id']?.toString(),
       ),
     ),
@@ -2822,14 +2859,17 @@ void _openDefaultRoomDetail(String roomKey) {
 
   // Top bar — greeting + subtitle + initials avatar.
   Widget _buildTopBar(BuildContext context, Map<String, int>? stats, List<Map<String, String>> alerts, bool hasHome) {
-    final trimmedName = widget.name.trim();
-    final hasName = trimmedName.isNotEmpty;
+    final trimmedName = _displayName.trim();
+final hasName = trimmedName.isNotEmpty && trimmedName.toLowerCase() != 'guest';
 
     final initials = hasName
         ? trimmedName.split(RegExp(r'\s+')).map((w) => w[0]).take(2).join().toUpperCase()
         : null;
 
-    final cityName = _currentAddress.isNotEmpty ? _currentAddress.split(',').first.trim() : '';
+    final cityName = (_currentAddress.isNotEmpty &&
+        _currentAddress.trim().toLowerCase() != 'default')
+    ? _currentAddress.split(',').first.trim()
+    : '';
     final subtitleParts = <String>[
       if (cityName.isNotEmpty) cityName,
       if (hasHome && stats != null) '${stats['devices']} devices',
@@ -2853,7 +2893,7 @@ void _openDefaultRoomDetail(String roomKey) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                hasName ? 'Good day, ${widget.name} 👋' : 'Good day 👋',
+                hasName ? 'Good day, $trimmedName 👋' : 'Good day 👋',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),

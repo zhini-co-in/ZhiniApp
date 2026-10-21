@@ -40,11 +40,13 @@ class ServiceTab extends StatefulWidget {
 }
 
 class _ServiceTabState extends State<ServiceTab> {
-  static const List<Map<String, dynamic>> _quickBookCategories = [
+    static const List<Map<String, dynamic>> _quickBookCategories = [
     {'label': 'Electrician', 'type': 'electrician', 'icon': Icons.electrical_services_rounded},
     {'label': 'Plumber', 'type': 'plumber', 'icon': Icons.plumbing_rounded},
     {'label': 'AC Service', 'type': 'AC service', 'icon': Icons.ac_unit_rounded},
-    {'label': 'Appliance repair', 'type': 'appliance repair', 'icon': Icons.build_rounded},
+    {'label': 'Carpenter', 'type': 'carpenter', 'icon': Icons.carpenter_rounded},
+    {'label': 'Painter', 'type': 'painter', 'icon': Icons.format_paint_rounded},
+    {'label': 'Pest Control', 'type': 'pest control', 'icon': Icons.pest_control_rounded},
   ];
 
   bool _loading = true;
@@ -68,6 +70,14 @@ class _ServiceTabState extends State<ServiceTab> {
     super.initState();
     _fetchTickets();
     _prefetchQuickBookCounts();
+  }
+  @override
+  void didUpdateWidget(covariant ServiceTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pincode != widget.pincode) {
+      setState(() => _quickBookCounts.clear());
+      _prefetchQuickBookCounts();
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -95,6 +105,14 @@ class _ServiceTabState extends State<ServiceTab> {
       debugPrint('❌ Location fetch error (service tab): $e');
       return '';
     }
+  }
+    // Saved pincode irundha adhu; illana (Default home) live GPS.
+  Future<String> _locationQuery() async {
+    final pincode = widget.pincode.trim();
+    if (pincode.isNotEmpty) {
+      return '&pincode=${Uri.encodeQueryComponent(pincode)}';
+    }
+    return _buildGpsLocationQuery();
   }
 
   // ---------------------------------------------------------------------
@@ -193,27 +211,41 @@ class _ServiceTabState extends State<ServiceTab> {
     }
   }
 
-  void _prefetchQuickBookCounts() async {
-    final locationQuery = await _buildGpsLocationQuery();
+   void _prefetchQuickBookCounts() async {
+    final locationQuery = await _locationQuery();
+
+    if (locationQuery.isEmpty) {
+      if (mounted) {
+        setState(() {
+          for (final cat in _quickBookCategories) {
+            _quickBookCounts[cat['type'] as String] = 0;
+          }
+        });
+      }
+      return;
+    }
 
     final futures = _quickBookCategories.map((cat) async {
       final type = cat['type'] as String;
       try {
         final response = await ApiClient.post(
-  '${ApiConfig.homeServicesUrl}'
-  '?serviceType=${Uri.encodeQueryComponent(type)}'   // _fetchProvidersFor la `serviceType`
-  '&pincode=${widget.pincode}'
-  '$locationQuery',
-);
+          '${ApiConfig.homeServicesUrl}'
+          '?serviceType=${Uri.encodeQueryComponent(type)}'
+          '$locationQuery',
+        );
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           if (data['success'] == true && data['data'] != null) {
             final raw = data['data'];
             final list = raw is List ? raw : [raw];
             if (mounted) setState(() => _quickBookCounts[type] = list.length);
+            return;
           }
         }
-      } catch (_) {}
+        if (mounted) setState(() => _quickBookCounts[type] = 0);
+      } catch (_) {
+        if (mounted) setState(() => _quickBookCounts[type] = 0);
+      }
     });
     await Future.wait(futures);
   }
@@ -819,7 +851,12 @@ class _ServiceTabState extends State<ServiceTab> {
                 children: [
                   Text(label, style: AppText.dialogTitle),
                   const SizedBox(height: 4),
-                  Text('Near pincode ${widget.pincode}', style: AppText.caption),
+                  Text(
+  widget.pincode.trim().isNotEmpty
+      ? 'Near pincode ${widget.pincode}'
+      : 'Near your current location',
+  style: AppText.caption,
+),
                   const SizedBox(height: 16),
                   if (loading)
                     const Padding(
@@ -870,14 +907,14 @@ class _ServiceTabState extends State<ServiceTab> {
 
   Future<List<Map<String, dynamic>>> _fetchProvidersFor(String serviceType) async {
     try {
-      final locationQuery = await _buildGpsLocationQuery();
+            final locationQuery = await _locationQuery();
+      if (locationQuery.isEmpty) return [];
 
       final response = await ApiClient.post(
-  '${ApiConfig.homeServicesUrl}'
-  '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
-  '&pincode=${widget.pincode}'
-  '$locationQuery',
-);
+        '${ApiConfig.homeServicesUrl}'
+        '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
+        '$locationQuery',
+      );
 
 debugPrint('🔧 Quick book sheet ($serviceType) status: ${response.statusCode}');
 debugPrint('🔧 Quick book sheet ($serviceType) body: ${response.body}');

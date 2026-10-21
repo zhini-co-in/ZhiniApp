@@ -17,7 +17,7 @@ class AddressScreen extends StatefulWidget {
   final String mobileNumber;
 
   // true na this screen "Add Home" flow-la irundhu open aagirukku (HomeTab
-  // -> Add another home). Andha mode-la:
+  // -> Add another home / Register). Andha mode-la:
   //   - top-right "Skip" ku pathila "Back" arrow varum.
   //   - "Register" button "Add Home" nu maarum, Navigator.pop pannum.
   final bool isAddingHome;
@@ -44,8 +44,14 @@ class _AddressScreenState extends State<AddressScreen> {
   final TextEditingController _cityController = TextEditingController();
 
   bool _isSaving = false; // save & continue in progress
-  bool _isSkipping = false; // skip-with-location in progress
+  bool _isSkipping = false; // auto default-home creation in progress
   bool _isFetchingLocation = false; // "use current location" autofill in progress
+  bool _autoFailed = false; // auto default-home creation failed -> show Retry
+
+  // New user signup (not Add Home, not service provider): no form is shown.
+  // We directly create a "Default" home and go to the home screen.
+  bool get _autoDefault =>
+      !widget.isAddingHome && !widget.isServiceProfessional;
 
   // Drives the Register/Add Home button's enabled state.
   bool get _isFormValid =>
@@ -64,6 +70,11 @@ class _AddressScreenState extends State<AddressScreen> {
       _pincodeController,
     ]) {
       c.addListener(_onFieldChanged);
+    }
+
+    // New user: auto-create the Default home as soon as this screen opens.
+    if (_autoDefault) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _skip());
     }
   }
 
@@ -98,6 +109,23 @@ class _AddressScreenState extends State<AddressScreen> {
     return Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
+  }
+
+  // Only asks for location permission (no GPS fix, so it's fast).
+  // Never throws and never blocks the user — HomeTab asks again when it
+  // actually needs GPS for the nearby services.
+  Future<void> _requestLocationPermissionSilently() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        await Geolocator.requestPermission();
+      }
+    } catch (e) {
+      debugPrint('Location permission request error: $e');
+    }
   }
 
   /// Reverse-geocodes a [Position] into address / city / pincode.
@@ -244,14 +272,21 @@ class _AddressScreenState extends State<AddressScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // SKIP — creates a "Default" home from GPS permission check.
-  // (Hidden when the user ticked "service provider", see build().)
+  // AUTO DEFAULT HOME — new user OTP verify aana udane call aagum.
+  // Creates a "Default" home (empty pincode) and opens the home screen.
+  // Nearby services will use live GPS lat/long because pincode is empty.
+  // The user adds a real address later via Register / Add Home in HomeTab.
   // ---------------------------------------------------------------------
 
   Future<void> _skip() async {
-    setState(() => _isSkipping = true);
+    if (_isSkipping) return;
+    setState(() {
+      _isSkipping = true;
+      _autoFailed = false;
+    });
     try {
-      await _determinePosition();
+      // Ask for location permission, but never block the user if denied.
+      await _requestLocationPermissionSilently();
 
       const defaultAddress = 'Default';
       const defaultPincode = '';
@@ -270,6 +305,10 @@ class _AddressScreenState extends State<AddressScreen> {
         name: defaultName,
       );
 
+      if (defaultHomeId == null) {
+        throw Exception('Could not set up your account. Please try again.');
+      }
+
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -285,6 +324,7 @@ class _AddressScreenState extends State<AddressScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      setState(() => _autoFailed = true);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
       );
@@ -370,6 +410,35 @@ class _AddressScreenState extends State<AddressScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Normal new-user signup: no form, just a loader while the Default home
+    // is created. If it fails, show a Retry button.
+    if (_autoDefault) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0A1628),
+        body: Center(
+          child: _autoFailed
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Could not set up your account.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue),
+                      onPressed: _skip,
+                      child: const Text('Retry',
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                  ],
+                )
+              : const CircularProgressIndicator(color: Colors.blue),
+        ),
+      );
+    }
+
     final bool anyActionInProgress = _isSaving || _isSkipping;
 
     return Scaffold(
@@ -501,6 +570,8 @@ class _AddressScreenState extends State<AddressScreen> {
             ),
 
             // "Add Home" flow — Back button on the LEFT.
+            // (Service provider flow has no Skip / Back: they must create a
+            // real user first.)
             if (widget.isAddingHome)
               Positioned(
                 top: 8,
@@ -512,30 +583,6 @@ class _AddressScreenState extends State<AddressScreen> {
                   icon: const Icon(Icons.arrow_back_rounded,
                       color: Colors.white60),
                   tooltip: 'Back',
-                ),
-              )
-            // Normal signup flow — "Skip" on the RIGHT. Hidden for service
-            // providers (they must create a real user first).
-            else if (!widget.isServiceProfessional)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: TextButton(
-                  onPressed: anyActionInProgress ? null : _skip,
-                  child: _isSkipping
-                      ? const SizedBox(
-                          height: 16,
-                          width: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white60,
-                          ),
-                        )
-                      : const Text(
-                          'Skip',
-                          style:
-                              TextStyle(color: Colors.white60, fontSize: 15),
-                        ),
                 ),
               ),
           ],
