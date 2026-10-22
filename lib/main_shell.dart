@@ -190,90 +190,111 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
-  Widget _buildBottomNavBar() {
-    final items = <Widget>[
-      _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
-      if (_hasHome)
-        _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
-      _scanButton(),
-      if (_hasHome)
-        _navItem(icon: Icons.build_rounded, label: 'Service', slot: _Slot.service),
-      _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        border: Border(top: BorderSide(color: AppColors.borderSubtle, width: 1)),
-      ),
-      child: SafeArea(
-        child: SizedBox(
-          height: 62,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: items,
-          ),
+Widget _buildBottomNavBar() {
+  return Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.06),
+          blurRadius: 12,
+          offset: const Offset(0, -2),
         ),
-      ),
-    );
-  }
-
-  Widget _navItem({
-    required IconData icon,
-    required String label,
-    required int slot,
-  }) {
-    final selected = _currentIndex == slot;
-    final color = selected ? AppColors.primary : AppColors.textMuted;
-
-    return InkWell(
-      onTap: () => _switchTab(slot),
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      ],
+    ),
+    child: SafeArea(
+      top: false,
+      child: SizedBox(
+        height: 68,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            Icon(icon, size: 22, color: color),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10.5,
-                color: color,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
+            _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
+            _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
+            _addDeviceButton(),
+            _navItem(icon: Icons.build_rounded, label: 'Services', slot: _Slot.service),
+            _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
-  // Center Scan button — uses the home SELECTED in HomeTab (not the
-  // login-time widget.homeId).
-  Widget _scanButton() {
-    final selected = _currentIndex == _Slot.scan;
-    return InkWell(
-      onTap: () => _goToScan(
-        homeId: _selectedHomeId ?? widget.homeId,
-        address: _selectedAddress.isNotEmpty ? _selectedAddress : widget.address,
-        pincode: _selectedPincode.isNotEmpty ? _selectedPincode : widget.pincode,
+Widget _navItem({
+  required IconData icon,
+  required String label,
+  required int slot,
+}) {
+  final selected = _currentIndex == slot;
+  final color = selected ? const Color(0xFF2B7BFF) : const Color(0xFF9AA5B5);
+
+  return InkWell(
+    onTap: () => _switchTab(slot),
+    borderRadius: BorderRadius.circular(12),
+    child: SizedBox(
+      width: 64,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 22, color: color),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              color: color,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            ),
+          ),
+        ],
       ),
-      borderRadius: BorderRadius.circular(30),
-      child: Container(
-        width: 46,
-        height: 46,
-        margin: const EdgeInsets.only(bottom: 4),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : AppColors.primary.withValues(alpha: 0.9),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(color: AppColors.primary.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4)),
-          ],
-        ),
-        child: const Icon(Icons.qr_code_scanner_rounded, color: Colors.white, size: 22),
+    ),
+  );
+}
+
+// Center big + = Add Device (like the design)
+Widget _addDeviceButton() {
+  return GestureDetector(
+    onTap: () => _goToScan(
+      homeId: _selectedHomeId ?? widget.homeId,
+      address: _selectedAddress.isNotEmpty ? _selectedAddress : widget.address,
+      pincode: _selectedPincode.isNotEmpty ? _selectedPincode : widget.pincode,
+    ),
+    child: SizedBox(
+      width: 64,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 44, // was 52
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFF2B7BFF),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF2B7BFF).withValues(alpha: 0.35),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Add Device',
+            style: TextStyle(
+              fontSize: 9.5,
+              color: Color(0xFF2B7BFF),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

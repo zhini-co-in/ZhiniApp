@@ -4,41 +4,65 @@ import 'package:flutter/material.dart';
 /// APP THEME — the "CSS" of the app.
 ///
 /// Every color, text style, and reusable decoration lives here instead of
-/// being hardcoded inside individual widgets/dialogs. Widgets should
-/// reference `AppColors.*`, `AppText.*`, `AppDecor.*` instead of literal
-/// Color(0x...) / TextStyle(...) values, the same way you'd reference CSS
-/// classes/variables instead of inline styles.
+/// being hardcoded inside individual widgets/dialogs. Change a value here
+/// and every screen that uses it changes.
+///
+///  * Dark palette  -> dialogs, sheets, room detail, etc.
+///  * Light palette -> new Home screen (names start with `light`)
 /// ---------------------------------------------------------------------
 
 class AppColors {
   AppColors._();
 
+  // ───────────── MAIN PALETTE (used by ALL screens) ─────────────
+  // Every screen/dialog/sheet that uses these names now follows the
+  // light Home look. Change a value here -> whole app changes.
+
   // Backgrounds
-  static const Color scaffoldBg = Color(0xFF0A1628);
-  static const Color cardBg = Color(0xFF0F2038);
-  static const Color cardBgAlt = Color(0xFF16294A);
-  static const Color memberAvatarBg = Color(0xFF1E3A8A);
+  static const Color scaffoldBg = Color(0xFFF5F8FF);
+  static const Color cardBg = Colors.white;
+  static const Color cardBgAlt = Color(0xFFEEF3FC);
+  static const Color memberAvatarBg = Color(0xFFDCE8FF);
 
   // Brand / accents
-  static const Color primary = Colors.blue;
-  static Color primaryBorder = Colors.blue.shade300;
-  static Color primarySoft = Colors.blue.withValues(alpha: 0.15);
-  static Color primaryFaint = Colors.blue.withValues(alpha: 0.05);
+  static const Color primary = Color(0xFF2B7BFF);
+  static const Color primaryBorder = Color(0xFF8FBAFF);
+  static const Color primarySoft = Color(0x262B7BFF); // 15%
+  static const Color primaryFaint = Color(0x0D2B7BFF); // 5%
+  static const Color onPrimary = Colors.white; // text/icons ON a blue button
 
   // Status colors
-  static const Color success = Colors.greenAccent;
-  static const Color warning = Colors.orangeAccent;
-  static const Color danger = Colors.redAccent;
+  static const Color success = Color(0xFF22C55E);
+  static const Color warning = Color(0xFFF59E0B);
+  static const Color danger = Color(0xFFEF4444);
   static const Color star = Colors.amber;
 
   // Text
-  static const Color textPrimary = Colors.white;
-  static const Color textSecondary = Colors.white70;
-  static const Color textMuted = Colors.white54;
-  static const Color textFaint = Colors.white38;
-  static const Color textDisabled = Colors.white24;
-  static const Color borderSubtle = Colors.white10;
-  static const Color borderMuted = Colors.white24;
+  static const Color textPrimary = Color(0xFF0F1C3F);
+  static const Color textSecondary = Color(0xFF4A5A7A);
+  static const Color textMuted = Color(0xFF7A8BA8);
+  static const Color textFaint = Color(0xFF9AA5B5);
+  static const Color textDisabled = Color(0xFFB0BACE);
+  static const Color borderSubtle = Color(0xFFE8EEF8);
+  static const Color borderMuted = Color(0xFFE0E7F5);
+
+  // ───────────── LIGHT THEME (Home screen) ─────────────
+  static const Color lightBg = scaffoldBg;
+  static const Color lightSurface = Colors.white;
+  static const Color lightPrimary = Color(0xFF2B7BFF);
+  static const Color lightSuccess = Color(0xFF22C55E);
+  static const Color lightPurple = Color(0xFF8B5CF6);
+  static const Color lightWarning = Color(0xFFF59E0B);
+
+  static const Color lightTextDark = Color(0xFF0F1C3F);
+  static const Color lightTextBody = Color(0xFF3D4F6F);
+  static const Color lightTextSoft = Color(0xFF4A5A7A);
+  static const Color lightTextMuted = Color(0xFF7A8BA8);
+  static const Color lightHint = Color(0xFF9AA5B5);
+  static const Color lightChevron = Color(0xFFB0BACE);
+
+  static const Color lightBorder = Color(0xFFE8EEF8);
+  static const Color lightBorderStrong = Color(0xFFE0E7F5);
 
   // Card border by warranty/alert status
   static Color statusColor(String status) {
@@ -60,11 +84,26 @@ class AppColors {
 class AppText {
   AppText._();
 
+  // ───────────── DARK ─────────────
   static const TextStyle sectionHeader = TextStyle(
-    color: Colors.blue,
+    color: AppColors.primary,
     fontSize: 11,
     fontWeight: FontWeight.w700,
     letterSpacing: 1.2,
+  );
+
+  /// Small uppercase label, e.g. "ROOM NAME", "COMMON ROOMS".
+  static const TextStyle label = TextStyle(
+    color: AppColors.primary,
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0.8,
+  );
+  static const TextStyle labelMuted = TextStyle(
+    color: AppColors.textMuted,
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0.8,
   );
 
   static const TextStyle dialogTitle = TextStyle(
@@ -88,12 +127,52 @@ class AppText {
   static const TextStyle chipSelected = TextStyle(color: AppColors.textPrimary, fontSize: 12);
   static const TextStyle chipUnselected = TextStyle(color: AppColors.textSecondary, fontSize: 12);
 
-  static const TextStyle button = TextStyle(color: AppColors.textPrimary, fontSize: 16);
-  static const TextStyle linkAction = TextStyle(color: Colors.blue, fontSize: 12);
+  static const TextStyle button = TextStyle(color: AppColors.onPrimary, fontSize: 16);
+  static const TextStyle linkAction = TextStyle(color: AppColors.primary, fontSize: 12);
+  static const TextStyle cancelAction = TextStyle(color: AppColors.textMuted);
+
+  // ───────────── LIGHT ─────────────
+  static const TextStyle lightSectionTitle = TextStyle(
+    color: AppColors.lightTextDark,
+    fontSize: 17,
+    fontWeight: FontWeight.w700,
+  );
+  static const TextStyle lightCardTitle = TextStyle(
+    color: AppColors.lightTextDark,
+    fontSize: 13.5,
+    fontWeight: FontWeight.w700,
+  );
+  static const TextStyle lightCaption = TextStyle(
+    color: AppColors.lightTextMuted,
+    fontSize: 11.5,
+  );
+  static const TextStyle lightLink = TextStyle(
+    color: AppColors.lightPrimary,
+    fontSize: 13.5,
+    fontWeight: FontWeight.w600,
+  );
+  static const TextStyle lightSuccessCaption = TextStyle(
+    color: AppColors.lightSuccess,
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+  );
+  static const TextStyle lightHeroTitle = TextStyle(
+    color: AppColors.lightTextDark,
+    fontSize: 26,
+    fontWeight: FontWeight.w800,
+    height: 1.15,
+  );
+  static const TextStyle lightHeroSubtitle = TextStyle(
+    color: AppColors.lightTextBody,
+    fontSize: 13,
+    height: 1.35,
+  );
 }
 
 class AppDecor {
   AppDecor._();
+
+  // ───────────── DARK ─────────────
 
   /// Standard rounded dialog shape (16px), used by every AlertDialog.
   static RoundedRectangleBorder dialogShape = RoundedRectangleBorder(
@@ -105,16 +184,14 @@ class AppDecor {
     borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
   );
 
-  /// The blue-bordered translucent card used for service-provider cards,
-  /// add-option tiles, etc.
+  /// Blue-bordered translucent card.
   static BoxDecoration outlinedCard({double radius = 10}) => BoxDecoration(
         color: AppColors.primaryFaint,
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: AppColors.primaryBorder.withValues(alpha: 0.4)),
       );
 
-  /// The flat dark card used for room tiles / stat boxes, with an optional
-  /// status-colored border.
+  /// Flat dark card, with optional status-colored border.
   static BoxDecoration flatCard({Color borderColor = AppColors.borderSubtle, double radius = 16}) =>
       BoxDecoration(
         color: AppColors.cardBg,
@@ -125,7 +202,7 @@ class AppDecor {
   static InputBorder fieldBorder({bool focused = false}) => OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: focused
-            ? const BorderSide(color: Colors.blue, width: 2)
+            ? const BorderSide(color: AppColors.primary, width: 2)
             : BorderSide(color: AppColors.primaryBorder),
       );
 
@@ -135,5 +212,48 @@ class AppDecor {
         hintStyle: AppText.fieldHint,
         enabledBorder: fieldBorder(),
         focusedBorder: fieldBorder(focused: true),
+      );
+
+  /// Full-width blue filled button (dialog "Continue", "Create room"...).
+  static ButtonStyle primaryButton = ElevatedButton.styleFrom(
+    backgroundColor: AppColors.primary,
+    padding: const EdgeInsets.symmetric(vertical: 13),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+  );
+
+  /// Full-width blue outlined button.
+  static ButtonStyle primaryOutlinedButton = OutlinedButton.styleFrom(
+    side: const BorderSide(color: AppColors.primary),
+    padding: const EdgeInsets.symmetric(vertical: 13),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+  );
+
+  // ───────────── LIGHT ─────────────
+
+  static const LinearGradient lightHeaderGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Color(0xFF4BA3F0),
+      Color(0xFF7EC0F8),
+      Color(0xFFB8DFFC),
+      Color(0xFFEAF6FF),
+      Color(0xFFF5F8FF),
+    ],
+    stops: [0.0, 0.25, 0.5, 0.75, 1.0],
+  );
+
+  /// White card with soft border — rooms, services, stats, info cards.
+  static BoxDecoration lightCard({double radius = 16, Color? borderColor}) => BoxDecoration(
+        color: AppColors.lightSurface,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: borderColor ?? AppColors.lightBorder),
+      );
+
+  /// Small tinted square behind an icon.
+  static BoxDecoration lightIconBox({Color color = AppColors.lightPrimary, double radius = 10}) =>
+      BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(radius),
       );
 }
