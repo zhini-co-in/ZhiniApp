@@ -40,13 +40,13 @@ class ServiceTab extends StatefulWidget {
 }
 
 class _ServiceTabState extends State<ServiceTab> {
-    static const List<Map<String, dynamic>> _quickBookCategories = [
-    {'label': 'Electrician', 'type': 'electrician', 'icon': Icons.electrical_services_rounded},
-    {'label': 'Plumber', 'type': 'plumber', 'icon': Icons.plumbing_rounded},
-    {'label': 'AC Service', 'type': 'AC service', 'icon': Icons.ac_unit_rounded},
-    {'label': 'Carpenter', 'type': 'carpenter', 'icon': Icons.carpenter_rounded},
-    {'label': 'Painter', 'type': 'painter', 'icon': Icons.format_paint_rounded},
-    {'label': 'Pest Control', 'type': 'pest control', 'icon': Icons.pest_control_rounded},
+      static const List<Map<String, dynamic>> _quickBookCategories = [
+    {'label': 'Electrician', 'type': 'electrician', 'icon': Icons.bolt_rounded, 'color': Color(0xFFFF9800)},
+    {'label': 'Plumber', 'type': 'plumber', 'icon': Icons.build_rounded, 'color': Color(0xFF1E6BFF)},
+    {'label': 'AC Service', 'type': 'AC service', 'icon': Icons.ac_unit_rounded, 'color': Color(0xFF2196F3)},
+    {'label': 'Carpenter', 'type': 'carpenter', 'icon': Icons.hardware_rounded, 'color': Color(0xFF7C4DFF)},
+    {'label': 'Painter', 'type': 'painter', 'icon': Icons.format_paint_rounded, 'color': Color(0xFFE91E63)},
+    {'label': 'Pest Control', 'type': 'pest control', 'icon': Icons.pest_control_rounded, 'color': Color(0xFF00A86B)},
   ];
 
   bool _loading = true;
@@ -1202,10 +1202,11 @@ if (response.statusCode == 200) {
       ),
       itemCount: _quickBookCategories.length,
       itemBuilder: (context, i) {
-        final cat = _quickBookCategories[i];
-        final type = cat['type'] as String;
-        final count = _quickBookCounts[type];
-        return InkWell(
+  final cat = _quickBookCategories[i];
+  final type = cat['type'] as String;
+  final count = _quickBookCounts[type];
+  final color = cat['color'] as Color;
+  return InkWell(
           onTap: () => _openQuickBookSheet(cat),
           borderRadius: BorderRadius.circular(14),
           child: Container(
@@ -1214,10 +1215,14 @@ if (response.statusCode == 200) {
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(10)),
-                  child: Icon(cat['icon'] as IconData, color: AppColors.primary, size: 18),
-                ),
+  width: 40,
+  height: 40,
+  decoration: BoxDecoration(
+    color: color.withValues(alpha: 0.12),
+    borderRadius: BorderRadius.circular(12),
+  ),
+  child: Icon(cat['icon'] as IconData, color: color, size: 22),
+),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(

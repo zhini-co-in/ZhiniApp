@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'service_ticket_card.dart';
 import 'services/ticket_service.dart';
 import 'billing_screen.dart';
@@ -99,8 +100,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   DateTime? _handoverTime;
   bool _updating = false;
 
-  static const _bg = Color(0xFF0A1628);
-  static const _card = Color(0xFF0F2038);
+  static const _bg = AppColors.scaffoldBg;
+  static const _card = AppColors.cardBg;
   static const _accent = Color(0xFF2E7DFF);
   static const _amber = Color(0xFFFFB020);
   static const _green = Color(0xFF35D48A);
@@ -284,7 +285,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
       decoration: BoxDecoration(
         color: _card,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppColors.borderSubtle),
       ),
       child: Row(
         children: [
@@ -308,7 +309,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
                 Text(widget.ticket.issue,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
               ],
             ),
           ),
@@ -316,10 +317,10 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Icon(Icons.location_on_rounded, color: Colors.white38, size: 14),
+              const Icon(Icons.location_on_rounded, color: AppColors.textFaint, size: 14),
               const SizedBox(height: 2),
               Text('${widget.ticket.distanceKm.toStringAsFixed(1)} km',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                  style: const TextStyle(color: AppColors.textFaint, fontSize: 11)),
             ],
           ),
         ],
@@ -362,7 +363,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
                   shape: BoxShape.circle,
                   color: isDone ? _green : (isCurrent ? _accent : _card),
                   border: Border.all(
-                    color: isDone ? _green : (isCurrent ? _accent : Colors.white24),
+                    color: isDone ? _green : (isCurrent ? _accent : AppColors.textDisabled),
                     width: 2,
                   ),
                 ),
@@ -372,7 +373,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
               Text(
                 labels[dotIndex],
                 style: TextStyle(
-                  color: isCurrent ? Colors.white : Colors.white38,
+                  color: isCurrent ? Colors.white : AppColors.textFaint,
                   fontSize: 10.5,
                   fontWeight: isCurrent ? FontWeight.w700 : FontWeight.normal,
                 ),
@@ -482,7 +483,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
               decoration: BoxDecoration(
                 color: _card,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white10),
+                border: Border.all(color: AppColors.borderSubtle),
               ),
               child: Row(
                 children: [
@@ -491,7 +492,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
                   Expanded(
                     child: Text(
                       'Handover: ${_formatDateTime(_handoverTime!)}',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
                     ),
                   ),
                   TextButton(
@@ -505,7 +506,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
           ],
           const SizedBox(height: 20),
           const Text('Current progress',
-              style: TextStyle(color: Colors.white54, fontSize: 12.5, fontWeight: FontWeight.w600)),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12.5, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -556,7 +557,7 @@ Future<void> _confirmComplete() async {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
@@ -635,7 +636,7 @@ Future<void> _confirmComplete() async {
         Text(title,
             style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 12.5, height: 1.4)),
+        Text(subtitle, style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5, height: 1.4)),
       ],
     );
   }
@@ -679,11 +680,11 @@ Future<void> _confirmComplete() async {
                             color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 3),
                     Text(subtitle,
-                        style: const TextStyle(color: Colors.white54, fontSize: 11.5, height: 1.3)),
+                        style: const TextStyle(color: AppColors.textMuted, fontSize: 11.5, height: 1.3)),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Colors.white24),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.textDisabled),
             ],
           ),
         ),
@@ -708,17 +709,17 @@ Future<void> _confirmComplete() async {
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: selected ? color : Colors.white10, width: selected ? 1.4 : 1),
+            border: Border.all(color: selected ? color : AppColors.borderSubtle, width: selected ? 1.4 : 1),
           ),
           child: Column(
             children: [
-              Icon(icon, color: selected ? color : Colors.white38, size: 20),
+              Icon(icon, color: selected ? color : AppColors.textFaint, size: 20),
               const SizedBox(height: 6),
               Text(
                 label,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: selected ? color : Colors.white54,
+                  color: selected ? color : AppColors.textMuted,
                   fontSize: 11.5,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
                 ),

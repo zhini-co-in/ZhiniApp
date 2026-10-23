@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:country_code_picker/country_code_picker.dart';
@@ -6,6 +7,7 @@ import 'otp_screen.dart';
 import 'package:country_flags/country_flags.dart';
 import 'package:flutter/gestures.dart';
 import 'webview_screen.dart';
+import 'widgets/zhini_logo.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,8 +29,8 @@ class _LoginScreenState extends State<LoginScreen> {
   // Short, inline error shown directly below the mobile number field.
   String? _errorText;
 
-  static const Color _secondaryText = Color(0xB3FFFFFF); // white @ 70%
-  static const Color _labelText = Color(0xE6FFFFFF); // white @ 90%
+  static const Color _secondaryText = AppColors.textSecondary; // white @ 70%
+  static const Color _labelText = AppColors.textPrimary; // white @ 90%
   static const Color _errorColor = Color(0xFFFF5A5A);
   static const String _termsUrl = 'https://atom8itsolutions.com/Zhini/term';
   static const String _privacyUrl =
@@ -166,7 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: AppColors.scaffoldBg,
       resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: LayoutBuilder(
@@ -183,11 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 24), // min top gap
                       const Spacer(flex: 1), // extra space on tall phones
 
-                      Image.asset(
-                        'assets/Zhini_Icon1.png',
-                        width: 110,
-                        height: 110,
-                      ),
+                      const ZhiniLogo(size: 110),
 
                       const SizedBox(height: 28), // logo -> heading
 
@@ -195,7 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         "Your home's AI genie\nstarts here",
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Colors.white,
+                          color: AppColors.textPrimary,
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
                           height: 1.3,
@@ -234,11 +232,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             Container(
                               width: 140,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF16243A),
+                                color: AppColors.cardBgAlt,
                                 border: Border.all(
                                   color: _errorText != null
                                       ? _errorColor
-                                      : Colors.blue.shade300,
+                                      : AppColors.primaryBorder,
                                 ),
                                 borderRadius: BorderRadius.circular(8),
                               ),
@@ -276,13 +274,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                   alignLeft: false,
                                   padding: EdgeInsets.zero,
                                   textStyle: const TextStyle(
-                                      color: Colors.white, fontSize: 16),
-                                  dialogTextStyle:
-                                      const TextStyle(color: Colors.black),
-                                  searchStyle:
-                                      const TextStyle(color: Colors.black),
-                                  backgroundColor: const Color(0xFF16243A),
-                                  dialogBackgroundColor: Colors.white,
+    color: AppColors.textPrimary, fontSize: 16),
+dialogTextStyle:
+    const TextStyle(color: AppColors.textPrimary),
+searchStyle:
+    const TextStyle(color: AppColors.textPrimary),
+backgroundColor: AppColors.cardBgAlt,
+dialogBackgroundColor: AppColors.cardBg,
                                   builder: (country) {
                                     return Row(
                                       mainAxisSize: MainAxisSize.min,
@@ -301,11 +299,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                         Text(
                                           country?.dialCode ?? '+91',
                                           style: const TextStyle(
-                                              color: Colors.white,
+                                              color: AppColors.textPrimary,
                                               fontSize: 16),
                                         ),
                                         const Icon(Icons.arrow_drop_down,
-                                            color: Colors.white70),
+                                            color: AppColors.textSecondary),
                                       ],
                                     );
                                   },
@@ -322,15 +320,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                   LengthLimitingTextInputFormatter(_maxDigits),
                                 ],
                                 style: const TextStyle(
-                                    color: Colors.white, fontSize: 16),
+                                    color: AppColors.textPrimary, fontSize: 16),
                                 decoration: InputDecoration(
                                   counterText: '',
                                   hintText: 'Enter number',
                                   hintStyle:
-                                      const TextStyle(color: Colors.white54),
+                                      const TextStyle(color: AppColors.textMuted),
                                   suffixIcon: _isPhoneValid
                                       ? const Icon(Icons.check_circle,
-                                          color: Colors.greenAccent, size: 20)
+                                          color: AppColors.success, size: 20)
                                       : null,
                                   contentPadding: const EdgeInsets.symmetric(
                                       horizontal: 16, vertical: 16),
@@ -339,7 +337,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     borderSide: BorderSide(
                                       color: _errorText != null
                                           ? _errorColor
-                                          : Colors.blue.shade300,
+                                          : AppColors.primaryBorder,
                                     ),
                                   ),
                                   focusedBorder: OutlineInputBorder(
@@ -347,14 +345,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                     borderSide: BorderSide(
                                       color: _errorText != null
                                           ? _errorColor
-                                          : Colors.blue,
+                                          : AppColors.primary,
                                       width: 2,
                                     ),
                                   ),
                                   disabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
                                     borderSide: const BorderSide(
-                                        color: Colors.white24),
+                                        color: AppColors.textDisabled),
                                   ),
                                 ),
                               ),
@@ -409,9 +407,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             width: 24,
                             child: Checkbox(
                               value: _isServiceProfessional,
-                              activeColor: Colors.blue,
-                              checkColor: Colors.white,
-                              side: const BorderSide(color: Colors.white70),
+                              activeColor: AppColors.primary,
+                              checkColor: AppColors.onPrimary,
+                              side: const BorderSide(color: AppColors.textSecondary),
                               onChanged: (value) {
                                 setState(() {
                                   _isServiceProfessional = value ?? false;
@@ -445,8 +443,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           onPressed:
                               (_isLoading || !_isPhoneValid) ? null : _sendOtp,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            disabledBackgroundColor: const Color(0xFF3A4556),
+                            backgroundColor: AppColors.primary,
+                            disabledBackgroundColor: AppColors.cardBgAlt,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -457,7 +455,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   height: 20,
                                   width: 20,
                                   child: CircularProgressIndicator(
-                                    color: Colors.white,
+                                    color: AppColors.onPrimary,
                                     strokeWidth: 2,
                                   ),
                                 )
@@ -465,8 +463,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   'Send OTP',
                                   style: TextStyle(
                                     color: _isPhoneValid
-                                        ? Colors.white
-                                        : Colors.white54,
+    ? AppColors.onPrimary
+    : AppColors.textMuted,
                                     fontSize: 16,
                                   ),
                                 ),
@@ -483,13 +481,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           children: [
                             TextSpan(
                               text: 'Terms',
-                              style: const TextStyle(color: Colors.blue),
+                              style: const TextStyle(color: AppColors.primary),
                               recognizer: _termsTap,
                             ),
                             const TextSpan(text: ' and '),
                             TextSpan(
                               text: 'Privacy policy.',
-                              style: const TextStyle(color: Colors.blue),
+                              style: const TextStyle(color: AppColors.primary),
                               recognizer: _privacyTap,
                             ),
                           ],
@@ -505,7 +503,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Expanded(
                             child: Container(
                               height: 1,
-                              color: Colors.blue.withOpacity(0.25),
+                              color: AppColors.primary.withValues(alpha: 0.25),
                             ),
                           ),
                           Padding(
@@ -515,11 +513,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               alignment: Alignment.center,
                               children: const [
                                 Icon(Icons.shield_outlined,
-                                    color: Colors.blue, size: 40),
+                                    color: AppColors.primary, size: 40),
                                 Padding(
                                   padding: EdgeInsets.only(top: 2),
                                   child: Icon(Icons.lock,
-                                      color: Colors.blue, size: 16),
+                                      color: AppColors.primary, size: 16),
                                 ),
                               ],
                             ),
@@ -527,7 +525,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Expanded(
                             child: Container(
                               height: 1,
-                              color: Colors.blue.withOpacity(0.25),
+                              color: AppColors.primary.withValues(alpha: 0.25),
                             ),
                           ),
                         ],
@@ -539,7 +537,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         'Your data & documents are protected',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Colors.white,
+                          color: AppColors.textPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),

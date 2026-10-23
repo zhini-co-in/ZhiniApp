@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'theme/app_theme.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -82,7 +83,7 @@ class _ServiceProviderOnboardingScreenState
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF0A1628),
+        backgroundColor: AppColors.scaffoldBg,
         title: const Text('Log out?', style: TextStyle(color: Colors.white)),
         content: const Text(
           'You will need to verify your mobile number again.',
@@ -313,15 +314,15 @@ class _ServiceProviderOnboardingScreenState
         }
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFF0A1628),
+        backgroundColor: AppColors.scaffoldBg,
         appBar: AppBar(
-          backgroundColor: const Color(0xFF0A1628),
+          backgroundColor: AppColors.scaffoldBg,
           elevation: 0,
           automaticallyImplyLeading: false,
           leading: _currentStep == 0
               ? null
               : IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white70),
+                  icon: const Icon(Icons.arrow_back, color: AppColors.textSecondary),
                   onPressed: () => _goToStep(_currentStep - 1),
                 ),
           title: const Text(
@@ -330,7 +331,7 @@ class _ServiceProviderOnboardingScreenState
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.logout, color: Colors.white70),
+              icon: const Icon(Icons.logout, color: AppColors.textSecondary),
               onPressed: _logout,
               tooltip: 'Log out',
             ),
@@ -425,9 +426,9 @@ class _ServiceProviderOnboardingScreenState
                   showCheckmark: false,
                   surfaceTintColor: Colors.transparent,
                   selectedColor: Colors.blue,
-                  backgroundColor: const Color(0xFF13253F),
+                  backgroundColor: AppColors.cardBgAlt,
                   labelStyle: TextStyle(
-                    color: isSelected ? Colors.white : Colors.white70,
+                    color: isSelected ? Colors.white : AppColors.textSecondary,
                     fontWeight:
                         isSelected ? FontWeight.w600 : FontWeight.normal,
                   ),
@@ -513,7 +514,7 @@ class _ServiceProviderOnboardingScreenState
               max: 50,
               divisions: 49,
               activeColor: Colors.blue,
-              inactiveColor: Colors.white24,
+              inactiveColor: AppColors.textDisabled,
               label: '${_workingRangeKm.round()} km',
               onChanged: (value) => setState(() => _workingRangeKm = value),
             ),
@@ -565,7 +566,7 @@ class _ServiceProviderOnboardingScreenState
                   SizedBox(height: 6),
                   Text(
                     'Job management · Invoice generation · Customer history',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                 ],
               ),
@@ -575,7 +576,7 @@ class _ServiceProviderOnboardingScreenState
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF13253F),
+                color: AppColors.cardBgAlt,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.blue.shade300),
               ),
@@ -600,7 +601,7 @@ class _ServiceProviderOnboardingScreenState
                   const Text(
                     'Earn ₹200 when a colleague joins and completes first job',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                   ),
                 ],
               ),
@@ -621,7 +622,7 @@ class _ServiceProviderOnboardingScreenState
 
   Widget _label(String text) => Text(
         text,
-        style: const TextStyle(color: Colors.white70, fontSize: 14),
+        style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
       );
 
   Widget _primaryButton(String text,
@@ -654,7 +655,7 @@ class _ServiceProviderOnboardingScreenState
   InputDecoration _fieldDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Colors.white38),
+      hintStyle: const TextStyle(color: AppColors.textFaint),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -687,7 +688,7 @@ class _StepCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F2038),
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
@@ -705,7 +706,7 @@ class _StepCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             stepLabel,
-            style: const TextStyle(color: Colors.white38, fontSize: 12),
+            style: const TextStyle(color: AppColors.textFaint, fontSize: 12),
           ),
           const SizedBox(height: 18),
           Expanded(child: child),
@@ -741,7 +742,7 @@ class _StepDots extends StatelessWidget {
                 : (isCurrent ? Colors.blue : Colors.transparent),
             border: isCurrent || isCompleted
                 ? null
-                : Border.all(color: Colors.white24),
+                : Border.all(color: AppColors.textDisabled),
             borderRadius: BorderRadius.circular(4),
           ),
         ),
@@ -753,7 +754,7 @@ class _StepDots extends StatelessWidget {
             width: 20,
             height: 2,
             margin: const EdgeInsets.symmetric(horizontal: 4),
-            color: i < currentStep ? Colors.greenAccent : Colors.white24,
+            color: i < currentStep ? Colors.greenAccent : AppColors.textDisabled,
           ),
         );
       }

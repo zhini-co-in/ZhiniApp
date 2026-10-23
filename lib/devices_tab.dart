@@ -19,6 +19,7 @@ import 'widgets/service_provider_card.dart';
 import 'home_tab.dart' show ScanRequest;
 import 'package:url_launcher/url_launcher.dart';
 import 'services/api_client.dart';
+import 'utils/devices_filter_bus.dart';
 
 class DevicesTab extends StatefulWidget {
   final String mobileNumber;
@@ -74,6 +75,9 @@ class _DeviceEntry {
   bool get isExpired => expiry != null && !expiry!.isAfter(DateTime.now());
   bool get warrantyUnknown => expiry == null;
 
+  // Expired OR expiring within 30 days
+  bool get isAttention => expiry != null && expiry!.difference(DateTime.now()).inDays <= 30;
+
   // Backend may optionally send `lastServiceDate` / `nextServiceDue` /
   // `serviceDue`. If none of those are present we simply don't flag the
   // device as service-due instead of guessing.
@@ -109,10 +113,14 @@ class _DevicesTabState extends State<DevicesTab> {
   final FocusNode _searchFocus = FocusNode();
 
   String _query = '';
-  String _activeTab = 'All'; // All, Warranty, Expired, Service
+  String _activeTab = 'All'; // All, Warranty, Attention, Expired, Service
   final Set<String> _quickFilters = {}; // 'expired','service','healthy'
   String? _roomFilter;
   final List<String> _recentSearches = [];
+
+  // Id of the home currently shown (set in build). Used by the scan buttons
+  // so new devices are added to THIS home instead of creating a new one.
+  String? _currentHomeIdCache;
 
   static const List<Map<String, String>> _categories = [
     {'label': 'AC', 'key': 'ac'},
@@ -131,10 +139,36 @@ class _DevicesTabState extends State<DevicesTab> {
     _searchController.addListener(() {
       setState(() => _query = _searchController.text);
     });
+    devicesFilterRequest.addListener(_onFilterRequest);
+    _consumeFilterRequest(initial: true); // request came before this tab was created
+  }
+
+  void _onFilterRequest() => _consumeFilterRequest();
+
+  void _consumeFilterRequest({bool initial = false}) {
+    final f = devicesFilterRequest.value;
+    if (f == null) return;
+    devicesFilterRequest.value = null; // consume
+
+    void apply() {
+      _activeTab = f;
+      _quickFilters.clear();
+      _roomFilter = null;
+      _categoryFilter = null;
+    }
+
+    if (initial) {
+      apply();
+    } else {
+      _searchController.clear();
+      _searchFocus.unfocus();
+      if (mounted) setState(apply);
+    }
   }
 
   @override
   void dispose() {
+    devicesFilterRequest.removeListener(_onFilterRequest);
     _searchController.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -145,14 +179,20 @@ class _DevicesTabState extends State<DevicesTab> {
   // -----------------------------------------------------------------
   Map<String, dynamic>? _findCurrentHome(List<HomeModel> homes) {
     if (homes.isEmpty) return null;
-    for (final h in homes) {
-      final map = h.toMap();
+    final maps = homes.map((h) => h.toMap()).toList();
+
+    for (final map in maps) {
       final addr = map['address']?.toString() ?? '';
       if (addr.isNotEmpty && widget.address.isNotEmpty && addr == widget.address) {
         return map;
       }
     }
-    return homes.first.toMap();
+    // Fallback: first registered home — skip the "Default" placeholder.
+    for (final map in maps) {
+      final addr = map['address']?.toString().trim().toLowerCase() ?? '';
+      if (addr != 'default') return map;
+    }
+    return maps.first;
   }
 
   List<_DeviceEntry> _flatten(Map<String, dynamic>? home) {
@@ -190,6 +230,8 @@ class _DevicesTabState extends State<DevicesTab> {
     switch (_activeTab) {
       case 'Warranty':
         return e.isUnderWarranty;
+      case 'Attention':
+        return e.isAttention;
       case 'Expired':
         return e.isExpired;
       case 'Service':
@@ -248,6 +290,14 @@ class _DevicesTabState extends State<DevicesTab> {
     setState(() {});
   }
 
+  void _requestScan() {
+    widget.onScanTap?.call(
+      homeId: _currentHomeIdCache,
+      address: widget.address,
+      pincode: widget.pincode,
+    );
+  }
+
   Future<void> _callNumber(String phone) async {
     final uri = Uri(scheme: 'tel', path: phone);
     try {
@@ -266,11 +316,11 @@ class _DevicesTabState extends State<DevicesTab> {
   Future<List<Map<String, dynamic>>> _fetchNearbyProviders(_DeviceEntry e) async {
     try {
       final response = await ApiClient.post(ApiConfig.nearbyServiceUrl, body: {
-  'brand': e.brand,
-  'product': e.product,
-  'pincode': e.pincode,
-  'isUnderWarranty': e.isUnderWarranty,
-});
+        'brand': e.brand,
+        'product': e.product,
+        'pincode': e.pincode,
+        'isUnderWarranty': e.isUnderWarranty,
+      });
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -279,14 +329,13 @@ class _DevicesTabState extends State<DevicesTab> {
           return rawList.map((x) => Map<String, dynamic>.from(x as Map)).toList();
         }
       }
-    } catch (e) {
-      debugPrint('❌ Nearby service fetch error: $e');
+    } catch (err) {
+      debugPrint('❌ Nearby service fetch error: $err');
     }
     return [];
   }
 
   void _openServiceSheet(_DeviceEntry e) {
-    final accent = e.isUnderWarranty ? AppColors.success : AppColors.danger;
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.cardBg,
@@ -350,7 +399,6 @@ class _DevicesTabState extends State<DevicesTab> {
                         },
                       ),
                     ),
-                  Text('$accent', style: const TextStyle(fontSize: 0)), // keep accent referenced
                 ],
               ),
             );
@@ -469,7 +517,8 @@ class _DevicesTabState extends State<DevicesTab> {
                     },
               child: isSaving
                   ? const SizedBox(
-                      width: 16, height: 16,
+                      width: 16,
+                      height: 16,
                       child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
                   : const Text('Save', style: TextStyle(color: AppColors.textPrimary)),
             ),
@@ -488,12 +537,12 @@ class _DevicesTabState extends State<DevicesTab> {
     if (ok != true || e.homeId == null) return;
     try {
       final response = await ApiClient.delete(
-  ApiConfig.productDeleteUrl(e.homeId!),
-  body: {'roomName': e.roomKey, 'product': e.product},
-);
+        ApiConfig.productDeleteUrl(e.homeId!),
+        body: {'roomName': e.roomKey, 'product': e.product},
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
-        setState(() {}); // Hive box listener (below) will refresh once HomeTab re-fetches.
+        setState(() {}); // Hive box listener will refresh once HomeTab re-fetches.
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${e.product} removed ✅')));
       } else {
         ScaffoldMessenger.of(context)
@@ -516,6 +565,7 @@ class _DevicesTabState extends State<DevicesTab> {
       valueListenable: _homeBox.listenable(),
       builder: (context, box, _) {
         final home = _findCurrentHome(box.values.toList());
+        _currentHomeIdCache = home?['id']?.toString();
         final allDevices = _flatten(home);
         final filtered = _applyAllFilters(allDevices);
         final city = (home?['address']?.toString() ?? widget.address).split(',').first.trim();
@@ -539,7 +589,7 @@ class _DevicesTabState extends State<DevicesTab> {
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
                     child: _searchActive
                         ? _buildSearchMode(allDevices, filtered)
-                        : _buildDashboard(allDevices, home),
+                        : _buildDashboard(allDevices),
                   ),
                 ),
               ],
@@ -566,11 +616,7 @@ class _DevicesTabState extends State<DevicesTab> {
           ),
         ),
         InkWell(
-          onTap: () => widget.onScanTap?.call(
-            homeId: null,
-            address: widget.address,
-            pincode: widget.pincode,
-          ),
+          onTap: _requestScan,
           borderRadius: BorderRadius.circular(8),
           child: const Padding(
             padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -648,7 +694,7 @@ class _DevicesTabState extends State<DevicesTab> {
     );
   }
 
-  // ---------------- SEARCH MODE (Image 1) ----------------
+  // ---------------- SEARCH MODE ----------------
   Widget _buildSearchMode(List<_DeviceEntry> all, List<_DeviceEntry> filtered) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -681,7 +727,7 @@ class _DevicesTabState extends State<DevicesTab> {
   }
 
   Widget _buildTabsRow() {
-    const tabs = ['All', 'Warranty', 'Expired', 'Service'];
+    const tabs = ['All', 'Warranty', 'Attention', 'Expired', 'Service'];
     return SizedBox(
       height: 34,
       child: ListView.separated(
@@ -920,7 +966,8 @@ class _DevicesTabState extends State<DevicesTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('${e.brand.isNotEmpty ? '${e.brand} ' : ''}${e.product}',
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text('${e.roomName} · ${e.purchasedYear}', style: AppText.caption),
@@ -948,7 +995,8 @@ class _DevicesTabState extends State<DevicesTab> {
         children: [
           const Icon(Icons.search_off_rounded, size: 40, color: AppColors.textFaint),
           const SizedBox(height: 14),
-          const Text('No appliance found', style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+          const Text('No appliance found',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text(
             q.isNotEmpty ? '"$q" is not registered in your home yet.' : 'Try a different search or filter.',
@@ -959,11 +1007,7 @@ class _DevicesTabState extends State<DevicesTab> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () => widget.onScanTap?.call(
-                homeId: null,
-                address: widget.address,
-                pincode: widget.pincode,
-              ),
+              onPressed: _requestScan,
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: AppColors.primary),
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1015,12 +1059,16 @@ class _DevicesTabState extends State<DevicesTab> {
     );
   }
 
-  // ---------------- DASHBOARD MODE (Image 2) ----------------
-  Widget _buildDashboard(List<_DeviceEntry> all, Map<String, dynamic>? home) {
+  // ---------------- DASHBOARD MODE ----------------
+  Widget _buildDashboard(List<_DeviceEntry> all) {
     final warrantyOk = all.where((e) => e.isUnderWarranty).length;
-    final attention = all.where((e) => e.isExpired || (!e.warrantyUnknown && e.expiry!.difference(DateTime.now()).inDays <= 30)).toList();
-    final serviceDue = all.where((e) => e.isServiceDue && !attention.contains(e)).toList();
-    final healthy = all.where((e) => !attention.contains(e) && !serviceDue.contains(e)).toList();
+    final attentionCount = all.where((e) => e.isAttention).length;
+
+    // List follows the active pill
+    final visible = all.where(_matchesTab).toList();
+    final attention = visible.where((e) => e.isAttention).toList();
+    final serviceDue = visible.where((e) => e.isServiceDue && !e.isAttention).toList();
+    final healthy = visible.where((e) => !e.isAttention && !e.isServiceDue).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1032,70 +1080,50 @@ class _DevicesTabState extends State<DevicesTab> {
             children: [
               _dashPill('All ${all.length}', _activeTab == 'All', () => setState(() => _activeTab = 'All')),
               const SizedBox(width: 8),
-              _dashPill('Attention ${attention.length}', false, () => setState(() {
-                    _searchFocus.requestFocus();
-                    _quickFilters
-                      ..clear()
-                      ..add('expired');
-                  })),
+              _dashPill('Attention $attentionCount', _activeTab == 'Attention',
+                  () => setState(() => _activeTab = 'Attention')),
               const SizedBox(width: 8),
-              _dashPill('Warranty $warrantyOk', _activeTab == 'Warranty', () => setState(() => _activeTab = 'Warranty')),
+              _dashPill('Warranty $warrantyOk', _activeTab == 'Warranty',
+                  () => setState(() => _activeTab = 'Warranty')),
             ],
           ),
-        ),
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            _statBox('${all.length}', 'Total', AppColors.textMuted),
-            _statBox('$warrantyOk', 'Warranty', AppColors.success),
-            _statBox('${attention.length}', 'Attention', AppColors.danger),
-            _statBox('${serviceDue.length}', 'Svc due', AppColors.warning),
-          ],
         ),
         if (attention.isNotEmpty) ...[
           const SizedBox(height: 22),
           _sectionHeader('⚠ NEEDS ATTENTION'),
           const SizedBox(height: 10),
-          ...attention.map((e) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'attention'))),
+          ...attention.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'attention'))),
         ],
         if (serviceDue.isNotEmpty) ...[
           const SizedBox(height: 22),
           _sectionHeader('🔧 SERVICE DUE'),
           const SizedBox(height: 10),
-          ...serviceDue.map((e) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'service'))),
+          ...serviceDue.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'service'))),
         ],
         if (healthy.isNotEmpty) ...[
           const SizedBox(height: 22),
           _sectionHeader('✓ HEALTHY DEVICES'),
           const SizedBox(height: 10),
-          ...healthy.map((e) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'healthy'))),
+          ...healthy.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'healthy'))),
         ],
         if (all.isEmpty) ...[
           const SizedBox(height: 40),
-          Center(
+          const Center(
             child: Column(
               children: [
-                const Icon(Icons.devices_other_rounded, size: 40, color: AppColors.textFaint),
-                const SizedBox(height: 10),
-                const Text('No appliances yet', style: TextStyle(color: AppColors.textMuted)),
+                Icon(Icons.devices_other_rounded, size: 40, color: AppColors.textFaint),
+                SizedBox(height: 10),
+                Text('No appliances yet', style: TextStyle(color: AppColors.textMuted)),
               ],
             ),
           ),
+        ] else if (visible.isEmpty) ...[
+          const SizedBox(height: 40),
+          const Center(child: Text('No devices in this filter', style: TextStyle(color: AppColors.textMuted))),
         ],
-        const SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: () => widget.onScanTap?.call(homeId: home?['id']?.toString(), address: widget.address, pincode: widget.pincode),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              side: BorderSide(color: AppColors.primaryBorder.withValues(alpha: 0.6)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            icon: const Icon(Icons.qr_code_scanner_rounded, color: AppColors.primary, size: 18),
-            label: const Text('Scan and add another appliance', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
-          ),
-        ),
       ],
     );
   }
@@ -1112,29 +1140,10 @@ class _DevicesTabState extends State<DevicesTab> {
     );
   }
 
-  Widget _statBox(String value, String label, Color color) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          children: [
-            Text(value, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 2),
-            Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 10), textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _sectionHeader(String title) {
-    return Text(title, style: const TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8));
+    return Text(title,
+        style: const TextStyle(
+            color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8));
   }
 
   Widget _buildDashCard(_DeviceEntry e, String variant) {
@@ -1148,7 +1157,9 @@ class _DevicesTabState extends State<DevicesTab> {
         accent = e.isExpired ? AppColors.danger : AppColors.warning;
         rightLabel = e.ageLabel;
         rightIcon = e.isExpired ? Icons.build_rounded : Icons.shield_outlined;
-        final days = e.isExpired ? DateTime.now().difference(e.expiry!).inDays : e.expiry!.difference(DateTime.now()).inDays;
+        final days = e.isExpired
+            ? DateTime.now().difference(e.expiry!).inDays
+            : e.expiry!.difference(DateTime.now()).inDays;
         badges = [
           _pill(e.isExpired ? 'Warranty expired' : 'Expires in $days days', accent),
           const SizedBox(width: 6),
@@ -1162,7 +1173,8 @@ class _DevicesTabState extends State<DevicesTab> {
         badges = [
           _pill('Service due', AppColors.warning),
           const SizedBox(width: 6),
-          _pill(e.isUnderWarranty ? 'Warranty active' : 'Warranty expired', e.isUnderWarranty ? AppColors.success : AppColors.danger),
+          _pill(e.isUnderWarranty ? 'Warranty active' : 'Warranty expired',
+              e.isUnderWarranty ? AppColors.success : AppColors.danger),
         ];
         break;
       default:
@@ -1170,7 +1182,8 @@ class _DevicesTabState extends State<DevicesTab> {
         rightLabel = e.ageLabel;
         rightIcon = Icons.chevron_right_rounded;
         badges = [
-          _pill(e.warrantyUnknown ? 'No warranty data' : 'Warranty active', e.warrantyUnknown ? AppColors.textMuted : AppColors.success),
+          _pill(e.warrantyUnknown ? 'No warranty data' : 'Warranty active',
+              e.warrantyUnknown ? AppColors.textMuted : AppColors.success),
         ];
     }
 
@@ -1201,7 +1214,9 @@ class _DevicesTabState extends State<DevicesTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(e.product, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  Text(e.product,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text('${e.roomName} · Purchased ${e.purchasedYear}', style: AppText.caption),

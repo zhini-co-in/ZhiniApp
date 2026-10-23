@@ -12,7 +12,6 @@ import 'package:image_picker/image_picker.dart';
 import 'theme/app_theme.dart';
 import 'utils/warranty_utils.dart';
 import 'widgets/app_dialog_field.dart';
-import 'widgets/room_selector_chips.dart';
 import 'widgets/service_provider_card.dart';
 import 'package:geolocator/geolocator.dart';
 import 'widgets/scan_shutter_button.dart';
@@ -88,14 +87,6 @@ class _ScanTabState extends State<ScanTab> {
   bool get _isUnderWarrantyNow =>
       WarrantyUtils.isActive(_detectedWarranty ?? _manualWarranty);
 
-  // Room selection
-  static const List<String> _fixedRooms = ['Hall', 'Kitchen', 'Bedroom', 'Bathroom'];
-  String _selectedRoom = 'Hall';
-
-  bool get _isSkipFlow =>
-      !widget.lockRoom &&
-      widget.address.trim().toLowerCase() == 'default' &&
-      (widget.knownRooms == null || widget.knownRooms!.isEmpty);
 
   List<Map<String, dynamic>> _nearbyServices = [];
   static const int _servicePageSize = 5;
@@ -122,11 +113,6 @@ class _ScanTabState extends State<ScanTab> {
   void initState() {
     super.initState();
     _currentHomeId = widget.homeId;
-    if (widget.initialRoom != null && widget.initialRoom!.trim().isNotEmpty) {
-      _selectedRoom = widget.initialRoom!.trim();
-    } else if (_isSkipFlow) {
-      _selectedRoom = 'Default';
-    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _openCameraView());
   }
 
@@ -558,7 +544,7 @@ void _startLiveCountdown() {
       request.fields['mobile'] = ApiConfig.stripCountryCode(widget.mobileNumber);
       request.fields['pincode'] = widget.pincode;
       request.fields['warranty'] = _detectedWarranty ?? _manualWarranty ?? 'N/A';
-      request.fields['roomName'] = _selectedRoom;
+      request.fields['roomName'] = 'Default';
       request.fields['name'] = widget.name;
 
       if (_lastCapturedImage != null) {
@@ -658,9 +644,6 @@ void _startLiveCountdown() {
       _manualWarranty = null;
       _warrantyCardUrl = null;
       _uploadingWarrantyCard = false;
-      _selectedRoom = (widget.initialRoom != null && widget.initialRoom!.trim().isNotEmpty)
-          ? widget.initialRoom!.trim()
-          : (_isSkipFlow ? 'Default' : 'Hall');
     });
 
     // Back to the live camera — the 3s countdown starts again.
@@ -1016,34 +999,6 @@ if (!_reviewing && !_aiThinking)
                     ),
                   ],
                 ),
-              ],
-
-              if (_isSkipFlow) ...[
-                // Skip-flow: no room picker, everything files under 'Default'.
-              ] else ...[
-                const SizedBox(height: 14),
-                if (widget.lockRoom) ...[
-                  Row(
-                    children: [
-                      const Icon(Icons.door_front_door_outlined, size: 16, color: AppColors.textMuted),
-                      const SizedBox(width: 8),
-                      Text('Room: $_selectedRoom', style: AppText.body),
-                    ],
-                  ),
-                ] else ...[
-                  const Text('Room', style: AppText.faintCaption),
-                  const SizedBox(height: 8),
-                  RoomSelectorChips(
-                    rooms: {..._fixedRooms, ...?widget.knownRooms},
-                    selectedRoom: _selectedRoom,
-                    isCustomRoom: !{..._fixedRooms, ...?widget.knownRooms}.contains(_selectedRoom),
-                    onSelectRoom: (room) => setState(() => _selectedRoom = room),
-                    onTapOther: () async {
-                      final name = await showCustomRoomNameDialog(context, initial: _selectedRoom);
-                      if (name != null) setState(() => _selectedRoom = name);
-                    },
-                  ),
-                ],
               ],
 
               if (_nearbyServices.isNotEmpty) ...[

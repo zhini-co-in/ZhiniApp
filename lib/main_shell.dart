@@ -6,6 +6,8 @@ import 'service_tab.dart';
 import 'profile_tab.dart';
 import 'scan_tab.dart';
 import 'theme/app_theme.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
+import 'models/home_model.dart';
 
 class MainShell extends StatefulWidget {
   final String mobileNumber;
@@ -54,20 +56,32 @@ class _MainShellState extends State<MainShell> {
   String _selectedAddress = '';
   String _selectedPincode = '';
 
-  @override
-  void initState() {
-    super.initState();
-    _scanHomeId = widget.homeId;
-    _scanAddress = widget.address;
-    _scanPincode = widget.pincode;
-    _scanKnownRooms = null;
+ @override
+void initState() {
+  super.initState();
+  _scanHomeId = widget.homeId;
+  _scanAddress = widget.address;
+  _scanPincode = widget.pincode;
+  _scanKnownRooms = null;
 
-    _selectedHomeId = widget.homeId;
-    _selectedAddress = widget.address;
-    _selectedPincode = widget.pincode;
+  _selectedHomeId = widget.homeId;
+  _selectedAddress = widget.address;
+  _selectedPincode = widget.pincode;
 
-    _hasHome = false;
+  _hasHome = _hasRegisteredHomeInCache();
+}
+
+bool _hasRegisteredHomeInCache() {
+  try {
+    final box = Hive.box<HomeModel>('homes');
+    return box.values.any((h) {
+      final addr = h.toMap()['address']?.toString().trim().toLowerCase() ?? '';
+      return addr.isNotEmpty && addr != 'default';
+    });
+  } catch (_) {
+    return false;
   }
+}
 
   void _switchTab(int index) {
     if (!_hasHome && (index == _Slot.devices || index == _Slot.service)) {
@@ -97,10 +111,14 @@ class _MainShellState extends State<MainShell> {
   // HomeTab tells us which home is selected. No setState needed — we only
   // read these values when the Scan button is tapped.
   void _onSelectedHomeChanged(String? homeId, String address, String pincode) {
-    _selectedHomeId = homeId;
-    _selectedAddress = address;
-    _selectedPincode = pincode;
-  }
+  final changed = _selectedHomeId != homeId ||
+      _selectedAddress != address ||
+      _selectedPincode != pincode;
+  _selectedHomeId = homeId;
+  _selectedAddress = address;
+  _selectedPincode = pincode;
+  if (changed && mounted) setState(() {});
+}
 
   void _goToScan({
     String? homeId,
@@ -130,22 +148,26 @@ class _MainShellState extends State<MainShell> {
       onProfileTap: () => _switchTab(_Slot.profile),
       onHomeStatusChanged: _onHomeStatusChanged,
       onSelectedHomeChanged: _onSelectedHomeChanged,
+      onOpenDevices: (_) => _switchTab(_Slot.devices),
     );
 
-    final devicesTab = DevicesTab(
-      mobileNumber: widget.mobileNumber,
-      address: widget.address,
-      pincode: widget.pincode,
-      name: _name,
-      onScanTap: _goToScan,
-    );
+    final tabAddress = _selectedAddress.isNotEmpty ? _selectedAddress : widget.address;
+final tabPincode = _selectedPincode.isNotEmpty ? _selectedPincode : widget.pincode;
 
-    final serviceTab = ServiceTab(
-      mobileNumber: widget.mobileNumber,
-      address: widget.address,
-      pincode: widget.pincode,
-      name: _name,
-    );
+final devicesTab = DevicesTab(
+  mobileNumber: widget.mobileNumber,
+  address: tabAddress,
+  pincode: tabPincode,
+  name: _name,
+  onScanTap: _goToScan,
+);
+
+final serviceTab = ServiceTab(
+  mobileNumber: widget.mobileNumber,
+  address: tabAddress,
+  pincode: tabPincode,
+  name: _name,
+);
 
     final profileTab = ProfileTab(
       mobileNumber: widget.mobileNumber,
@@ -175,7 +197,7 @@ class _MainShellState extends State<MainShell> {
         : const SizedBox.shrink();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: AppColors.scaffoldBg,
       body: IndexedStack(
         index: _currentIndex,
         children: [
@@ -193,7 +215,8 @@ class _MainShellState extends State<MainShell> {
 Widget _buildBottomNavBar() {
   return Container(
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppColors.cardBg,
+      border: Border(top: BorderSide(color: AppColors.borderSubtle)),
       boxShadow: [
         BoxShadow(
           color: Colors.black.withValues(alpha: 0.06),
@@ -207,27 +230,25 @@ Widget _buildBottomNavBar() {
       child: SizedBox(
         height: 68,
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
-            _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
-            _addDeviceButton(),
-            _navItem(icon: Icons.build_rounded, label: 'Services', slot: _Slot.service),
-            _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),
-          ],
-        ),
+  mainAxisAlignment: MainAxisAlignment.spaceAround,
+  children: [
+    _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
+    if (_hasHome)
+      _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
+    _addDeviceButton(),
+    if (_hasHome)
+      _navItem(icon: Icons.build_rounded, label: 'Services', slot: _Slot.service),
+    _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),
+  ],
+),
       ),
     ),
   );
 }
 
-Widget _navItem({
-  required IconData icon,
-  required String label,
-  required int slot,
-}) {
+Widget _navItem({required IconData icon, required String label, required int slot}) {
   final selected = _currentIndex == slot;
-  final color = selected ? const Color(0xFF2B7BFF) : const Color(0xFF9AA5B5);
+  final color = selected ? AppColors.primary : AppColors.textFaint;
 
   return InkWell(
     onTap: () => _switchTab(slot),
@@ -253,7 +274,6 @@ Widget _navItem({
   );
 }
 
-// Center big + = Add Device (like the design)
 Widget _addDeviceButton() {
   return GestureDetector(
     onTap: () => _goToScan(
@@ -268,27 +288,27 @@ Widget _addDeviceButton() {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 44, // was 52
+            width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: const Color(0xFF2B7BFF),
+              color: AppColors.primary,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF2B7BFF).withValues(alpha: 0.35),
+                  color: AppColors.primary.withValues(alpha: 0.35),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
               ],
             ),
-            child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+            child: const Icon(Icons.add_rounded, color: AppColors.onPrimary, size: 26),
           ),
           const SizedBox(height: 2),
           const Text(
             'Add Device',
             style: TextStyle(
               fontSize: 9.5,
-              color: Color(0xFF2B7BFF),
+              color: AppColors.primary,
               fontWeight: FontWeight.w600,
             ),
           ),

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'onboarding_screen.dart';
 import 'main_shell.dart';
 import 'services/session_manager.dart';
 import 'services/log_service.dart';
+import 'widgets/zhini_logo.dart';
 // Phase 3: import 'services/push_service.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -103,7 +105,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: AppColors.scaffoldBg,
       body: Stack(
         children: [
           Center(
@@ -111,12 +113,7 @@ class _SplashScreenState extends State<SplashScreen>
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Image.asset(
-                  'assets/Zhini_Icon1.png',
-                  width: 140,
-                  height: 140,
-                  fit: BoxFit.contain,
-                ),
+                const ZhiniLogo(size: 140),
                 const SizedBox(height: 0),
                 SlideTransition(
                   position: _slideAnimation,
@@ -125,11 +122,11 @@ class _SplashScreenState extends State<SplashScreen>
                     child: const Text(
                       'ZHINI',
                       style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 7.0,
-                      ),
+  color: AppColors.textPrimary,
+  fontSize: 24,
+  fontWeight: FontWeight.w700,
+  letterSpacing: 7.0,
+),
                     ),
                   ),
                 ),
@@ -149,7 +146,7 @@ class _SplashScreenState extends State<SplashScreen>
                   child: Text(
                     'Powered by Atom8',
                     style: TextStyle(
-                      color: Colors.white54,
+                      color: AppColors.textMuted,
                       fontSize: 11.5,
                       decoration: TextDecoration.underline,
                     ),

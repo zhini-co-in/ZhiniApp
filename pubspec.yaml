@@ -68,6 +68,7 @@ flutter:
     - shorebird.yaml
     - assets/images/house1.png
     - assets/zhini_genie.png
+    - assets/Zhini_Icon_Light.png
 
 flutter_launcher_icons:
   android: true

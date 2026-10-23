@@ -1,25 +1,18 @@
 // lib/profile_tab.dart
 //
-// Full-page "My Profile" screen — avatar/verification header, quick stats,
-// protection plan (AMC), homes list, and a grouped account-actions list.
+// Full-page "My Profile" screen — gradient hero card, quick stats,
+// protection plan (AMC), homes list, and grouped account-actions cards.
 //
 // SKIP-FLOW BEHAVIOUR: when the user has no registered home yet (they hit
 // "Skip" during address setup), we show a trimmed-down view — just the
-// profile card, an "Add home" button, and Account Actions (Sign out).
-// Once a real home exists, the full profile (household, stats, protection
-// plan, homes list, full account menu) renders exactly as before.
+// hero card, an "Add home" button, and Account Actions (Sign out).
+// Once a real home exists, the full profile renders.
 //
 // NOTE ON DATA SOURCES:
 //  - Device count / homes list come straight from the same Hive box
 //    ('homes') that HomeTab already keeps in sync — no extra network call.
-//  - "Service requests", "Saved via ₹warranty" and the AMC/protection-plan
-//    block have no backend field in the code shared with me, so they're
-//    wired as optional constructor inputs with a graceful empty/fallback
-//    state instead of being faked. Pass real values in once you have an
-//    endpoint for them (see `ProfileStats` / `AmcPlan` below).
-//  - "Delete account" has no known endpoint yet — the button is fully
-//    wired up to a confirm dialog; hook `_deleteAccount()` up to your real
-//    endpoint when it exists (marked with a TODO).
+//  - "Service requests", "Saved via warranty" and the AMC/protection-plan
+//    block are optional constructor inputs with a graceful fallback state.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -35,14 +28,14 @@ import 'widgets/confirm_action_dialog.dart';
 import 'home_tab.dart' show ScanRequest;
 import 'address_screen.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
-import 'services/member_service.dart'; // 👈 add this import
+import 'services/member_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'services/api_client.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/device_id_service.dart';
 import 'dart:io';
+import 'widgets/theme_mode_toggle.dart';
 
 // Optional, backend-fed extras. Leave null/default until you have a real
 // source for them — the UI degrades gracefully either way.
@@ -102,8 +95,6 @@ class ProfileTab extends StatefulWidget {
 
 class _ProfileTabState extends State<ProfileTab> {
   final _homeBox = Hive.box<HomeModel>('homes');
-  static const String _referralMessage =
-    "Hey! I've been using ZHINI to track all my home appliances, warranties, and find repair services in one place. Try it out 👉 https://play.google.com/store/apps/details?id=com.zhini.mobile";
 
   late String _displayName = widget.name;
 
@@ -154,7 +145,7 @@ class _ProfileTabState extends State<ProfileTab> {
   // ---------------------------------------------------------------------
   // EDIT NAME
   // ---------------------------------------------------------------------
-void _openEditProfileDialog() {
+  void _openEditProfileDialog() {
     final nameController = TextEditingController(text: _displayName);
     bool isSaving = false;
 
@@ -197,8 +188,6 @@ void _openEditProfileDialog() {
                       // updateEntity (backend) requires homeId as the root
                       // anchor — pick the first available home (registered
                       // or still "Default") to anchor the name update to.
-                      // No home at all yet -> nothing to anchor to, so we
-                      // just save locally and sync once a home exists.
                       final allHomes = _homeBox.values.map((h) => h.toMap()).toList();
                       final homeId = allHomes.isNotEmpty ? allHomes.first['id']?.toString() : null;
 
@@ -227,14 +216,16 @@ void _openEditProfileDialog() {
                         widget.onNameChanged?.call(value);
                       }
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(result['success'] == true
-                            ? 'Name updated successfully ✅'
-                            : (result['message']?.toString() ?? 'Failed to update name'))),
+                        SnackBar(
+                            content: Text(result['success'] == true
+                                ? 'Name updated successfully ✅'
+                                : (result['message']?.toString() ?? 'Failed to update name'))),
                       );
                     },
               child: isSaving
                   ? const SizedBox(
-                      width: 16, height: 16,
+                      width: 16,
+                      height: 16,
                       child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
                   : const Text('Save', style: TextStyle(color: AppColors.textPrimary)),
             ),
@@ -247,11 +238,10 @@ void _openEditProfileDialog() {
   // ---------------------------------------------------------------------
   // ADD HOME / EDIT ADDRESS  (mirrors HomeTab's flows)
   // ---------------------------------------------------------------------
-Future<void> _openAddHomeDialog() async {
+  Future<void> _openAddHomeDialog() async {
     // If a "Default" home already exists (created silently by Skip+Scan),
     // registering should UPDATE that same home instead of creating a new
-    // one — otherwise already-scanned devices get orphaned. Mirrors
-    // HomeTab._openAddHomeDialog's logic.
+    // one — otherwise already-scanned devices get orphaned.
     final allHomes = _homeBox.values.map((h) => h.toMap()).toList();
     final defaultHome = _findDefaultHome(allHomes);
     final existingDefaultId = defaultHome?['id']?.toString();
@@ -292,79 +282,75 @@ Future<void> _openAddHomeDialog() async {
     }
 
     // No default home yet — genuine "add a new home" path.
-    // No default home yet — genuine "add a new home" path.
-// Create the home directly (mirrors HomeTab._createNewHomeRecord) instead
-// of jumping into the camera — the user just wants the home added.
-final newHomeId = await _createNewHomeRecord(
-  address: address,
-  pincode: pincode ?? '',
-  name: widget.name,
-  homeName: address.split(',').first.trim().isNotEmpty
-      ? address.split(',').first.trim()
-      : 'Home',
-);
+    final newHomeId = await _createNewHomeRecord(
+      address: address,
+      pincode: pincode ?? '',
+      name: widget.name,
+      homeName: address.split(',').first.trim().isNotEmpty ? address.split(',').first.trim() : 'Home',
+    );
 
-if (!mounted) return;
+    if (!mounted) return;
 
-if (newHomeId == null) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Could not create the new home. Try again.')),
-  );
-  return;
-}
+    if (newHomeId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not create the new home. Try again.')),
+      );
+      return;
+    }
 
-setState(() {}); // Hive listener refreshes once created
-ScaffoldMessenger.of(context).showSnackBar(
-  const SnackBar(content: Text('Home added ✅')),
-);
+    setState(() {}); // Hive listener refreshes once created
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Home added ✅')),
+    );
   }
+
   Future<String?> _createNewHomeRecord({
-  required String address,
-  required String pincode,
-  required String name,
-  required String homeName,
-}) async {
-  try {
-    final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
-    final deviceId = await DeviceIdService.getDeviceId();
-    final fcmToken = await ApiClient.safeFcmToken();
-    if (authToken == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please sign in again to add a home.')),
-        );
-      }
-      return null;
-    }
-    final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
-  'name': name,
-  'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-  'address': address,
-  'pincode': pincode,
-  'homeName': homeName,
-  'PlatformInfo': {
-    'device': {
-      'deviceId': deviceId,
-      'fcmToken': fcmToken,
-      'os': Platform.isAndroid ? 'android' : 'ios',
-    },
-  },
-});
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final data = jsonDecode(response.body);
-      if (data['success'] == true && data['data'] != null) {
-        final homeId = data['data']['homeId']?.toString();
-        if (homeId != null && homeId.isNotEmpty) {
-          await SessionManager.updateHomeId(homeId);
+    required String address,
+    required String pincode,
+    required String name,
+    required String homeName,
+  }) async {
+    try {
+      final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      final deviceId = await DeviceIdService.getDeviceId();
+      final fcmToken = await ApiClient.safeFcmToken();
+      if (authToken == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please sign in again to add a home.')),
+          );
         }
-        return homeId;
+        return null;
       }
+      final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
+        'name': name,
+        'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+        'address': address,
+        'pincode': pincode,
+        'homeName': homeName,
+        'PlatformInfo': {
+          'device': {
+            'deviceId': deviceId,
+            'fcmToken': fcmToken,
+            'os': Platform.isAndroid ? 'android' : 'ios',
+          },
+        },
+      });
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final homeId = data['data']['homeId']?.toString();
+          if (homeId != null && homeId.isNotEmpty) {
+            await SessionManager.updateHomeId(homeId);
+          }
+          return homeId;
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Create home error: $e');
     }
-  } catch (e) {
-    debugPrint('❌ Create home error: $e');
+    return null;
   }
-  return null;
-}
 
   void _openEditAddressDialog(Map<String, dynamic> home) {
     final addressController = TextEditingController(text: home['address']?.toString() ?? '');
@@ -385,7 +371,11 @@ ScaffoldMessenger.of(context).showSnackBar(
             children: [
               AppDialogField(controller: addressController, hint: 'Address'),
               const SizedBox(height: 10),
-              AppDialogField(controller: pincodeController, hint: 'Pincode', keyboardType: TextInputType.number, maxLength: 6),
+              AppDialogField(
+                  controller: pincodeController,
+                  hint: 'Pincode',
+                  keyboardType: TextInputType.number,
+                  maxLength: 6),
             ],
           ),
           actions: [
@@ -401,7 +391,8 @@ ScaffoldMessenger.of(context).showSnackBar(
                       final newAddress = addressController.text.trim();
                       final newPincode = pincodeController.text.trim();
                       if (newAddress.isEmpty || homeId == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter the address.')));
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(content: Text('Enter the address.')));
                         return;
                       }
                       setDialogState(() => isSaving = true);
@@ -413,16 +404,21 @@ ScaffoldMessenger.of(context).showSnackBar(
                       if (dialogContext.mounted) Navigator.pop(dialogContext);
                       if (!mounted) return;
                       if (result['success'] == true) {
-  await _refreshHomes();   // 👈 add this
-}
+                        await _refreshHomes();
+                      }
+                      if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(result['success'] == true
-                            ? 'Address updated successfully ✅'
-                            : (result['message']?.toString() ?? 'Failed to update address'))),
+                        SnackBar(
+                            content: Text(result['success'] == true
+                                ? 'Address updated successfully ✅'
+                                : (result['message']?.toString() ?? 'Failed to update address'))),
                       );
                     },
               child: isSaving
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
                   : const Text('Save', style: TextStyle(color: AppColors.textPrimary)),
             ),
           ],
@@ -503,7 +499,7 @@ ScaffoldMessenger.of(context).showSnackBar(
   }
 
   // ---------------------------------------------------------------------
-  // SIGN OUT / DELETE ACCOUNT
+  // SIGN OUT
   // ---------------------------------------------------------------------
   Future<void> _handleLogout() async {
     final confirm = await showConfirmActionDialog(
@@ -513,82 +509,84 @@ ScaffoldMessenger.of(context).showSnackBar(
       confirmLabel: 'Log out',
     );
     if (confirm != true) return;
-ApiClient.reset();
-await FirebaseAuth.instance.signOut();
+    ApiClient.reset();
+    await FirebaseAuth.instance.signOut();
     await SessionManager.clearSession();
     await Hive.box<HomeModel>('homes').clear();
 
     if (!mounted) return;
-    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false);
+    Navigator.pushAndRemoveUntil(
+        context, MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false);
   }
 
-// ---------------------------------------------------------------------
-// PULL TO REFRESH — re-fetches home/appliance data from backend and
-// updates the shared Hive box, mirroring HomeTab's fetch logic.
-// ---------------------------------------------------------------------
-Future<void> _refreshHomes() async {
-  try {
-    final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
-    final response = await ApiClient.get(
-  '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile',
-);
+  // ---------------------------------------------------------------------
+  // PULL TO REFRESH — re-fetches home/appliance data from backend and
+  // updates the shared Hive box, mirroring HomeTab's fetch logic.
+  // ---------------------------------------------------------------------
+  Future<void> _refreshHomes() async {
+    try {
+      final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
+      final response = await ApiClient.get(
+        '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile',
+      );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data['success'] == true && data['data'] != null) {
-        final rawData = data['data'];
-        final List rawHomes = rawData is List ? rawData : [rawData];
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final rawData = data['data'];
+          final List rawHomes = rawData is List ? rawData : [rawData];
 
-        final parsedHomes = rawHomes.map<Map<String, dynamic>>((h) {
-          final roomsRaw = h['rooms'];
-          final Map<String, List<Map<String, dynamic>>> rooms = {};
-          if (roomsRaw is List) {
-            for (final roomObj in roomsRaw) {
-              if (roomObj is! Map) continue;
-              final roomName = roomObj['roomName']?.toString();
-              final devicesRaw = roomObj['devices'];
-              if (roomName == null || devicesRaw is! List) continue;
-              rooms[roomName.toLowerCase()] =
-                  devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-            }
-          } else if (roomsRaw is Map) {
-            roomsRaw.forEach((key, value) {
-              if (value is List) {
-                rooms[key.toString().toLowerCase()] =
-                    value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          final parsedHomes = rawHomes.map<Map<String, dynamic>>((h) {
+            final roomsRaw = h['rooms'];
+            final Map<String, List<Map<String, dynamic>>> rooms = {};
+            if (roomsRaw is List) {
+              for (final roomObj in roomsRaw) {
+                if (roomObj is! Map) continue;
+                final roomName = roomObj['roomName']?.toString();
+                final devicesRaw = roomObj['devices'];
+                if (roomName == null || devicesRaw is! List) continue;
+                rooms[roomName.toLowerCase()] =
+                    devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
               }
-            });
+            } else if (roomsRaw is Map) {
+              roomsRaw.forEach((key, value) {
+                if (value is List) {
+                  rooms[key.toString().toLowerCase()] =
+                      value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+                }
+              });
+            }
+
+            final membersRaw = h['members'];
+            final List<Map<String, dynamic>> members = membersRaw is List
+                ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+                : <Map<String, dynamic>>[];
+
+            return {
+              'id': (h['_id'] ?? h['id'])?.toString(),
+              'address': h['address']?.toString() ?? widget.address,
+              'pincode': h['pincode']?.toString() ?? widget.pincode,
+              'rooms': rooms,
+              'members': members,
+            };
+          }).toList();
+
+          await _homeBox.clear();
+          for (final h in parsedHomes) {
+            await _homeBox.add(HomeModel.fromMap(h));
           }
-
-          final membersRaw = h['members'];
-          final List<Map<String, dynamic>> members = membersRaw is List
-              ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
-              : <Map<String, dynamic>>[];
-
-          return {
-            'id': (h['_id'] ?? h['id'])?.toString(),
-            'address': h['address']?.toString() ?? widget.address,
-            'pincode': h['pincode']?.toString() ?? widget.pincode,
-            'rooms': rooms,
-            'members': members,
-          };
-        }).toList();
-
-        await _homeBox.clear();
-        for (final h in parsedHomes) {
-          await _homeBox.add(HomeModel.fromMap(h));
         }
       }
-    }
-  } catch (e) {
-    debugPrint('❌ Profile refresh error: $e');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not refresh. Try again.')),
-      );
+    } catch (e) {
+      debugPrint('❌ Profile refresh error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not refresh. Try again.')),
+        );
+      }
     }
   }
-}
+
   // ---------------------------------------------------------------------
   // BUILD
   // ---------------------------------------------------------------------
@@ -598,205 +596,229 @@ Future<void> _refreshHomes() async {
       valueListenable: _homeBox.listenable(),
       builder: (context, box, _) {
         final allHomes = box.values.map((h) => h.toMap()).toList();
-final homes = _registeredHomes(allHomes);   // 👈 Default home excluded from display
-final totalDevices = _totalDevices(box.values.toList());
-// Skip-flow users (or Skip+Scan with only a "Default" home) have no
-// registered home yet — show the trimmed view until they register.
-final hasHome = homes.isNotEmpty;
+        final homes = _registeredHomes(allHomes); // Default home excluded from display
+        final totalDevices = _totalDevices(box.values.toList());
+        // Skip-flow users have no registered home yet — trimmed view.
+        final hasHome = homes.isNotEmpty;
 
         return Scaffold(
           backgroundColor: AppColors.scaffoldBg,
           body: SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-  child: RefreshIndicator(
-    color: AppColors.primary,
-    backgroundColor: AppColors.cardBg,
-    onRefresh: _refreshHomes,
-    child: SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-      child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildHeader(),
-                        const SizedBox(height: 18),
-                        _buildAvatarCard(),
+            child: RefreshIndicator(
+              color: AppColors.primary,
+              backgroundColor: AppColors.cardBg,
+              onRefresh: _refreshHomes,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeroCard(),
 
-                        if (!hasHome) ...[
-                          // ============= SKIP-FLOW — trimmed view =============
-                          const SizedBox(height: 22),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: _openAddHomeDialog,
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                side: const BorderSide(color: AppColors.borderMuted),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              icon: const Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
-                              label: const Text('Add home',
-                                  style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
-                            ),
+                    if (!hasHome) ...[
+                      // ============= SKIP-FLOW — trimmed view =============
+                      const SizedBox(height: 22),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _openAddHomeDialog,
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: const BorderSide(color: AppColors.borderMuted),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          const SizedBox(height: 22),
-                          _sectionHeader('ACCOUNT ACTIONS', color: AppColors.danger),
-                          const SizedBox(height: 10),
-                          _accountRow(
-                            icon: Icons.logout_rounded,
-                            iconColor: AppColors.danger,
-                            title: 'Sign out',
-                            titleColor: AppColors.danger,
-                            onTap: _handleLogout,
+                          icon: const Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
+                          label: const Text('Add home',
+                              style: TextStyle(
+                                  color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      _sectionHeader('ACCOUNT ACTIONS', color: AppColors.danger),
+                      const SizedBox(height: 10),
+                      _groupCard([
+                        _accountRow(
+                          icon: Icons.logout_rounded,
+                          iconColor: AppColors.danger,
+                          title: 'Sign out',
+                          titleColor: AppColors.danger,
+                          onTap: _handleLogout,
+                        ),
+                      ]),
+                    ] else ...[
+                      // ============= FULL PROFILE — real home exists =============
+                      const SizedBox(height: 22),
+                      _buildStatsRow(totalDevices),
+                      const SizedBox(height: 24),
+                      _buildHouseholdSection(homes),
+                      const SizedBox(height: 24),
+                      _sectionHeader('MY PROTECTION PLAN'),
+                      const SizedBox(height: 10),
+                      _buildProtectionPlan(),
+                      const SizedBox(height: 24),
+                      _sectionHeader('MY HOMES'),
+                      const SizedBox(height: 10),
+                      ..._buildHomesList(homes),
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _openAddHomeDialog,
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: const BorderSide(color: AppColors.borderMuted),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                        ] else ...[
-                          // ============= FULL PROFILE — real home exists =============
-                          const SizedBox(height: 18),
-                          _buildHouseholdSection(homes),
-                          const SizedBox(height: 22),
-                          _buildStatsRow(totalDevices),
-                          const SizedBox(height: 22),
-                          _sectionHeader('MY PROTECTION PLAN'),
-                          const SizedBox(height: 10),
-                          _buildProtectionPlan(),
-                          const SizedBox(height: 22),
-                          _sectionHeader('MY HOMES'),
-                          const SizedBox(height: 10),
-                          ..._buildHomesList(homes),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: _openAddHomeDialog,
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                side: const BorderSide(color: AppColors.borderMuted),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              icon: const Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
-                              label: const Text('Add another home', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
-                            ),
-                          ),
-                          const SizedBox(height: 22),
-                          _sectionHeader('ACCOUNT'),
-                          const SizedBox(height: 10),
-                          _accountRow(
-                            icon: Icons.shield_outlined,
-                            iconColor: AppColors.success,
-                            title: 'Warranty vault',
-                            subtitle: _warrantyVaultSubtitle(homes),
-                            onTap: () => _openComingSoon('Warranty vault', 'A full list of active and expired warranties across all your homes will show up here.'),
-                          ),
-                          _accountRow(
-                            icon: Icons.description_outlined,
-                            iconColor: AppColors.primary,
-                            title: 'Document locker',
-                            subtitle: 'Bills · Manuals · Photos',
-                            trailing: _chipLabel('14 files'),
-                            onTap: () => _openComingSoon('Document locker', 'Upload and store bills, manuals and photos against each appliance.'),
-                          ),
-                          _accountRow(
-                            icon: Icons.notifications_outlined,
-                            iconColor: AppColors.warning,
-                            title: 'Reminders',
-                            subtitle: 'Warranty · Service · AMC',
-                            onTap: () => _openComingSoon('Reminders', 'Get notified before warranties expire or a service is due.'),
-                          ),
-                          _accountRow(
-                            icon: Icons.people_outline_rounded,
-                            iconColor: AppColors.primary,
-                            title: 'Refer a neighbour',
-                            subtitle: '2 referrals · ₹200 earned',
-                            trailing: _chipLabel('Earn ₹100'),
-                            onTap: _openReferSheet,
-                          ),
-                          _accountRow(
-                            icon: Icons.credit_card_outlined,
-                            iconColor: AppColors.success,
-                            title: 'Payments and billing',
-                            subtitle: 'UPI · Cards · History',
-                            onTap: () => _openComingSoon('Payments and billing', 'Manage saved payment methods and view your billing history.'),
-                          ),
-                          _accountRow(
-                            icon: Icons.settings_outlined,
-                            iconColor: AppColors.textSecondary,
-                            title: 'Preferences',
-                            subtitle: 'Language · Notifications · Theme',
-                            onTap: () => _openComingSoon('Preferences', 'App language, notification and theme settings.'),
-                          ),
-                          _accountRow(
-                            icon: Icons.help_outline_rounded,
-                            iconColor: AppColors.primary,
-                            title: 'Help and support',
-                            subtitle: 'FAQ · Chat · Call ZHINI',
-                            onTap: () => _openComingSoon('Help and support', 'Reach ZHINI support via chat, call, or browse the FAQ.'),
-                          ),
-                          _accountRow(
-                            icon: Icons.info_outline_rounded,
-                            iconColor: AppColors.textMuted,
-                            title: 'About ZHINI',
-                            subtitle: 'v1.0.0 · Built by two kids',
-                            onTap: () => _openComingSoon('About ZHINI', 'ZHINI v1.0.0 — your home\'s appliance and warranty companion.'),
-                          ),
-                          const SizedBox(height: 22),
-                          _sectionHeader('ACCOUNT ACTIONS', color: AppColors.danger),
-                          const SizedBox(height: 10),
-                          _accountRow(
-                            icon: Icons.logout_rounded,
-                            iconColor: AppColors.danger,
-                            title: 'Sign out',
-                            titleColor: AppColors.danger,
-                            onTap: _handleLogout,
-                          ),
-                        ],
+                          icon: const Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
+                          label: const Text('Add another home',
+                              style: TextStyle(
+                                  color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
 
-                        const SizedBox(height: 18),
-Center(
-  child: Text('Your data is never sold · DPDP compliant · v1.0.0',
-      style: AppText.faintCaption, textAlign: TextAlign.center),
-),
-const SizedBox(height: 10),
-Center(
-  child: InkWell(
-    onTap: () async {
-      final Uri emailUri = Uri(
-        scheme: 'mailto',
-        path: 'support@zhini.co.in',
-        query: 'subject=ZHINI App Support',
-      );
-      try {
-        await launchUrl(emailUri);
-      } catch (e) {
-        debugPrint('Email launch error: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open mail app.')),
-          );
-        }
-      }
-    },
-    borderRadius: BorderRadius.circular(8),
-    child: const Padding(
-      padding: EdgeInsets.symmetric(vertical: 4, horizontal: 10),
-      child: Text(
-        'powered by Atom8',
-        style: TextStyle(
-          color: AppColors.textFaint,
-          fontSize: 11,
-          decoration: TextDecoration.underline,
-        ),
-      ),
-    ),
-  ),
-),
-                      ],
+                      _sectionHeader('APPEARANCE'),
+                      const SizedBox(height: 10),
+                      const ThemeModeToggle(),
+                      const SizedBox(height: 24),
+
+                      _sectionHeader('MY STUFF'),
+                      const SizedBox(height: 10),
+                      _groupCard([
+                        _accountRow(
+                          icon: Icons.shield_outlined,
+                          iconColor: AppColors.success,
+                          title: 'Warranty vault',
+                          subtitle: _warrantyVaultSubtitle(homes),
+                          onTap: () => _openComingSoon('Warranty vault',
+                              'A full list of active and expired warranties across all your homes will show up here.'),
+                        ),
+                        _accountRow(
+                          icon: Icons.description_outlined,
+                          iconColor: AppColors.primary,
+                          title: 'Document locker',
+                          subtitle: 'Bills · Manuals · Photos',
+                          trailing: _chipLabel('14 files'),
+                          onTap: () => _openComingSoon('Document locker',
+                              'Upload and store bills, manuals and photos against each appliance.'),
+                        ),
+                        _accountRow(
+                          icon: Icons.notifications_outlined,
+                          iconColor: AppColors.warning,
+                          title: 'Reminders',
+                          subtitle: 'Warranty · Service · AMC',
+                          onTap: () => _openComingSoon('Reminders',
+                              'Get notified before warranties expire or a service is due.'),
+                        ),
+                      ]),
+                      const SizedBox(height: 24),
+
+                      _sectionHeader('REWARDS & BILLING'),
+                      const SizedBox(height: 10),
+                      _groupCard([
+                        _accountRow(
+                          icon: Icons.people_outline_rounded,
+                          iconColor: AppColors.primary,
+                          title: 'Refer a neighbour',
+                          subtitle: '2 referrals · ₹200 earned',
+                          trailing: _chipLabel('Earn ₹100'),
+                          onTap: _openReferSheet,
+                        ),
+                        _accountRow(
+                          icon: Icons.credit_card_outlined,
+                          iconColor: AppColors.success,
+                          title: 'Payments and billing',
+                          subtitle: 'UPI · Cards · History',
+                          onTap: () => _openComingSoon('Payments and billing',
+                              'Manage saved payment methods and view your billing history.'),
+                        ),
+                      ]),
+                      const SizedBox(height: 24),
+
+                      _sectionHeader('SUPPORT'),
+                      const SizedBox(height: 10),
+                      _groupCard([
+                        _accountRow(
+                          icon: Icons.settings_outlined,
+                          iconColor: AppColors.textSecondary,
+                          title: 'Preferences',
+                          subtitle: 'Language · Notifications · Theme',
+                          onTap: () => _openComingSoon(
+                              'Preferences', 'App language, notification and theme settings.'),
+                        ),
+                        _accountRow(
+                          icon: Icons.help_outline_rounded,
+                          iconColor: AppColors.primary,
+                          title: 'Help and support',
+                          subtitle: 'FAQ · Chat · Call ZHINI',
+                          onTap: () => _openComingSoon('Help and support',
+                              'Reach ZHINI support via chat, call, or browse the FAQ.'),
+                        ),
+                        _accountRow(
+                          icon: Icons.info_outline_rounded,
+                          iconColor: AppColors.textMuted,
+                          title: 'About ZHINI',
+                          subtitle: 'v1.0.0 · Built by two kids',
+                          onTap: () => _openComingSoon('About ZHINI',
+                              "ZHINI v1.0.0 — your home's appliance and warranty companion."),
+                        ),
+                      ]),
+                      const SizedBox(height: 24),
+
+                      _groupCard([
+                        _accountRow(
+                          icon: Icons.logout_rounded,
+                          iconColor: AppColors.danger,
+                          title: 'Sign out',
+                          titleColor: AppColors.danger,
+                          onTap: _handleLogout,
+                        ),
+                      ]),
+                    ],
+
+                    const SizedBox(height: 22),
+                    Center(
+                      child: Text('Your data is never sold · DPDP compliant · v1.0.0',
+                          style: AppText.faintCaption, textAlign: TextAlign.center),
                     ),
-                  ),
+                    const SizedBox(height: 10),
+                    Center(
+                      child: InkWell(
+                        onTap: () async {
+                          final Uri emailUri = Uri(
+                            scheme: 'mailto',
+                            path: 'support@zhini.co.in',
+                            query: 'subject=ZHINI App Support',
+                          );
+                          try {
+                            await launchUrl(emailUri);
+                          } catch (e) {
+                            debugPrint('Email launch error: $e');
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Could not open mail app.')),
+                              );
+                            }
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 4, horizontal: 10),
+                          child: Text(
+                            'powered by Atom8',
+                            style: TextStyle(
+                              color: AppColors.textFaint,
+                              fontSize: 11,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                ),   // 👈 closes SingleChildScrollView
-              ],
+              ),
             ),
           ),
         );
@@ -804,6 +826,153 @@ Center(
     );
   }
 
+  // ---------------------------------------------------------------------
+  // HERO CARD (replaces old header + avatar card)
+  // ---------------------------------------------------------------------
+  Widget _buildHeroCard() {
+    final name = _displayName.trim();
+    final hasName = name.isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.7)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.3),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('My Profile',
+                  style: TextStyle(
+                      color: AppColors.onPrimary.withValues(alpha: 0.85),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4)),
+              const Spacer(),
+              InkWell(
+                onTap: _openEditProfileDialog,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.onPrimary.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_outlined, size: 13, color: AppColors.onPrimary),
+                      const SizedBox(width: 5),
+                      Text('Edit',
+                          style: TextStyle(
+                              color: AppColors.onPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.onPrimary.withValues(alpha: 0.3),
+                ),
+                child: CircleAvatar(
+                  radius: 30,
+                  backgroundColor: AppColors.onPrimary,
+                  child: hasName
+                      ? Text(name[0].toUpperCase(),
+                          style: TextStyle(
+                              fontSize: 24, color: AppColors.primary, fontWeight: FontWeight.w800))
+                      : Icon(Icons.person_rounded, color: AppColors.primary, size: 28),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(hasName ? name : 'Add your name',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: AppColors.onPrimary,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3)),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.phone_iphone_rounded,
+                            size: 13, color: AppColors.onPrimary.withValues(alpha: 0.8)),
+                        const SizedBox(width: 4),
+                        Text(widget.mobileNumber,
+                            style: TextStyle(
+                                color: AppColors.onPrimary.withValues(alpha: 0.85), fontSize: 13)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (widget.verified || widget.memberSince != null) ...[
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (widget.verified) _heroChip(Icons.verified_rounded, 'Verified'),
+                if (widget.memberSince != null)
+                  _heroChip(Icons.calendar_month_rounded, 'Since ${_monthYear(widget.memberSince!)}'),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _heroChip(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.onPrimary.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.onPrimary),
+          const SizedBox(width: 5),
+          Text(text,
+              style: TextStyle(color: AppColors.onPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // HOUSEHOLD
+  // ---------------------------------------------------------------------
   Widget _buildHouseholdSection(List<Map<String, dynamic>> homes) {
     final currentHome = homes.isNotEmpty ? homes.first : null;
     final members = (currentHome?['members'] as List?)
@@ -871,7 +1040,7 @@ Center(
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 11),
               side: const BorderSide(color: AppColors.primary),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             icon: const Icon(Icons.person_add, color: AppColors.primary, size: 18),
             label: const Text('Add Member', style: TextStyle(color: AppColors.primary, fontSize: 14)),
@@ -894,6 +1063,7 @@ Center(
             Future<void> pickFromContacts() async {
               final granted = await FlutterContacts.requestPermission();
               if (!granted) {
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Contacts permission denied.')),
                 );
@@ -972,7 +1142,8 @@ Center(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(pickedName!, style: const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+                                Text(pickedName!,
+                                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
                                 Text(pickedMobile!, style: AppText.caption),
                               ],
                             ),
@@ -1021,7 +1192,7 @@ Center(
     );
   }
 
-Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, String newMobile) async {
+  Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, String newMobile) async {
     final homeId = currentHome['id']?.toString();
     if (homeId == null) {
       if (mounted) {
@@ -1047,11 +1218,12 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
 
     if (result['success'] == true) {
       await MemberService.refreshHomeMembers(homeId: homeId, mobileNumber: widget.mobileNumber);
-      if (mounted) setState(() {}); // box already patched, this just repaints
+      if (mounted) setState(() {});
     }
   }
 
-  Future<void> _confirmDeleteMember(Map<String, dynamic>? currentHome, String name, String mobile) async {
+  Future<void> _confirmDeleteMember(
+      Map<String, dynamic>? currentHome, String name, String mobile) async {
     final homeId = currentHome?['id']?.toString();
     if (homeId == null) return;
     final confirm = await showConfirmActionDialog(
@@ -1065,7 +1237,8 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result['success'] == true ? '$name removed ✅' : (result['message']?.toString() ?? ''))),
+      SnackBar(
+          content: Text(result['success'] == true ? '$name removed ✅' : (result['message']?.toString() ?? ''))),
     );
 
     if (result['success'] == true) {
@@ -1095,112 +1268,39 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
     return '$active active · $expired expired';
   }
 
-  Widget _buildHeader() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('My Profile', style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
-              SizedBox(height: 2),
-              Text('Account · Homes · Settings', style: AppText.caption),
-            ],
-          ),
-        ),
-        InkWell(
-          onTap: _openEditProfileDialog,
-          borderRadius: BorderRadius.circular(8),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            child: Row(children: [
-              Icon(Icons.edit_outlined, size: 14, color: AppColors.primary),
-              SizedBox(width: 4),
-              Text('Edit', style: AppText.linkAction),
-            ]),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAvatarCard() {
-    final trimmedName = _displayName.trim();
-    final hasName = trimmedName.isNotEmpty;
-    final memberSinceText = widget.memberSince != null
-        ? 'Member since ${_monthYear(widget.memberSince!)}'
-        : null;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: AppDecor.flatCard(radius: 16),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: AppColors.primary,
-            // 👈 No more hardcoded 'P' fallback — shows a generic person
-            // icon when there's no real name yet, and the actual initial
-            // once a name is set.
-            child: hasName
-                ? Text(trimmedName[0].toUpperCase(),
-                    style: const TextStyle(fontSize: 20, color: AppColors.textPrimary, fontWeight: FontWeight.bold))
-                : const Icon(Icons.person_rounded, color: AppColors.textPrimary, size: 24),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(hasName ? trimmedName : 'Add your name',
-                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 16.5, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(widget.mobileNumber, style: AppText.caption),
-                if (memberSinceText != null) ...[
-                  const SizedBox(height: 2),
-                  Text(memberSinceText, style: AppText.caption),
-                ],
-                if (widget.verified) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                    decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.verified_rounded, size: 12, color: AppColors.success),
-                        SizedBox(width: 4),
-                        Text('Verified account', style: TextStyle(color: AppColors.success, fontSize: 10.5, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   String _monthYear(DateTime d) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${months[d.month - 1]} ${d.year}';
   }
 
+  // ---------------------------------------------------------------------
+  // STATS
+  // ---------------------------------------------------------------------
   Widget _buildStatsRow(int totalDevices) {
-    Widget box(String value, String label) {
+    Widget box(IconData icon, Color color, String value, String label) {
       return Expanded(
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: AppDecor.flatCard(radius: 12),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: AppDecor.flatCard(radius: 16),
           child: Column(
             children: [
-              Text(value, style: const TextStyle(color: AppColors.primary, fontSize: 16, fontWeight: FontWeight.bold)),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 16, color: color),
+              ),
+              const SizedBox(height: 8),
+              Text(value,
+                  style: const TextStyle(
+                      color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 2),
-              Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 10), textAlign: TextAlign.center),
+              Text(label,
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5),
+                  textAlign: TextAlign.center),
             ],
           ),
         ),
@@ -1209,9 +1309,17 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
 
     return Row(
       children: [
-        box('$totalDevices', 'Devices\nregistered'),
-        box(widget.stats.serviceRequests != null ? '${widget.stats.serviceRequests}' : '—', 'Service\nrequests'),
-        box(widget.stats.savedViaWarranty != null ? '₹${_compact(widget.stats.savedViaWarranty!)}' : '—', 'Saved via\nwarranty'),
+        box(Icons.devices_other_rounded, AppColors.primary, '$totalDevices', 'Devices\nregistered'),
+        box(
+            Icons.build_circle_outlined,
+            AppColors.warning,
+            widget.stats.serviceRequests != null ? '${widget.stats.serviceRequests}' : '—',
+            'Service\nrequests'),
+        box(
+            Icons.savings_outlined,
+            AppColors.success,
+            widget.stats.savedViaWarranty != null ? '₹${_compact(widget.stats.savedViaWarranty!)}' : '—',
+            'Saved via\nwarranty'),
       ],
     );
   }
@@ -1221,6 +1329,9 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
     return value.toStringAsFixed(0);
   }
 
+  // ---------------------------------------------------------------------
+  // PROTECTION PLAN
+  // ---------------------------------------------------------------------
   Widget _buildProtectionPlan() {
     final plan = widget.amcPlan;
     if (plan == null) {
@@ -1228,7 +1339,7 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: AppColors.primaryFaint,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: AppColors.primaryBorder.withValues(alpha: 0.4)),
         ),
         child: Row(
@@ -1239,14 +1350,17 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('No active protection plan', style: TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                  const Text('No active protection plan',
+                      style: TextStyle(
+                          color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text('Cover all your appliances under one AMC plan.', style: AppText.faintCaption),
                 ],
               ),
             ),
             TextButton(
-              onPressed: () => _openComingSoon('Protection plans', 'Browse AMC plans that cover repairs and servicing for your appliances.'),
+              onPressed: () => _openComingSoon('Protection plans',
+                  'Browse AMC plans that cover repairs and servicing for your appliances.'),
               child: const Text('Explore', style: AppText.linkAction),
             ),
           ],
@@ -1261,7 +1375,7 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.success.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppColors.success.withValues(alpha: 0.5)),
       ),
       child: Column(
@@ -1272,13 +1386,19 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
               const Icon(Icons.shield_rounded, color: AppColors.success, size: 20),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(plan.label, style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
+                child: Text(plan.label,
+                    style: const TextStyle(
+                        color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
               ),
               if (plan.active)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                  decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
-                  child: const Text('ACTIVE', style: TextStyle(color: AppColors.success, fontSize: 10, fontWeight: FontWeight.w700)),
+                  decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20)),
+                  child: const Text('ACTIVE',
+                      style: TextStyle(
+                          color: AppColors.success, fontSize: 10, fontWeight: FontWeight.w700)),
                 ),
             ],
           ),
@@ -1303,7 +1423,8 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
             children: [
               Text('$daysLeft days remaining', style: AppText.caption),
               TextButton(
-                onPressed: () => _openComingSoon('Upgrade plan', 'Upgrade your AMC to cover up to ${plan.upgradeToSlots} appliances.'),
+                onPressed: () => _openComingSoon(
+                    'Upgrade plan', 'Upgrade your AMC to cover up to ${plan.upgradeToSlots} appliances.'),
                 child: Text('Upgrade to ${plan.upgradeToSlots} ↗', style: AppText.linkAction),
               ),
             ],
@@ -1313,6 +1434,9 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
     );
   }
 
+  // ---------------------------------------------------------------------
+  // HOMES LIST
+  // ---------------------------------------------------------------------
   List<Widget> _buildHomesList(List<Map<String, dynamic>> homes) {
     if (homes.isEmpty) {
       return [
@@ -1332,65 +1456,130 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
 
       return Container(
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.cardBgAlt,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isSelected ? AppColors.primary.withValues(alpha: 0.6) : AppColors.borderSubtle),
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isSelected ? AppColors.primary.withValues(alpha: 0.6) : AppColors.borderSubtle,
+            width: isSelected ? 1.4 : 1,
+          ),
         ),
         child: Row(
           children: [
-            Icon(isSelected ? Icons.home_rounded : Icons.home_outlined, size: 18,
-                color: isSelected ? AppColors.primary : AppColors.textMuted),
-            const SizedBox(width: 10),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: (isSelected ? AppColors.primary : AppColors.textMuted).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(isSelected ? Icons.home_rounded : Icons.home_outlined,
+                  size: 22, color: isSelected ? AppColors.primary : AppColors.textMuted),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$title${locality.isNotEmpty ? ' — $locality' : ''}',
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text('$deviceCount devices · ${isSelected ? 'AMC active' : 'No AMC'}', style: AppText.caption),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                      if (isSelected) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primarySoft,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text('PRIMARY',
+                              style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.6)),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (locality.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(locality, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
+                  ],
+                  const SizedBox(height: 4),
+                  Text('$deviceCount devices · ${isSelected ? 'AMC active' : 'No AMC'}',
+                      style: AppText.caption),
                 ],
               ),
             ),
             InkWell(
-  onTap: () => _openEditAddressDialog(home),
-  borderRadius: BorderRadius.circular(20),
-  child: Padding(
-    padding: const EdgeInsets.all(4),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (isSelected) ...[
-          Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 8),
-        ],
-        const Icon(Icons.edit_outlined, color: AppColors.primary, size: 18),
-      ],
-    ),
-  ),
-),
+              onTap: () => _openEditAddressDialog(home),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(color: AppColors.primarySoft, shape: BoxShape.circle),
+                child: const Icon(Icons.edit_outlined, color: AppColors.primary, size: 16),
+              ),
+            ),
           ],
         ),
       );
     }).toList();
   }
 
+  // ---------------------------------------------------------------------
+  // SHARED UI HELPERS
+  // ---------------------------------------------------------------------
   Widget _sectionHeader(String title, {Color color = AppColors.textMuted}) {
-    return Text(title, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1));
+    return Row(
+      children: [
+        Container(
+          width: 3,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color == AppColors.textMuted ? AppColors.primary : color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(title,
+            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1)),
+      ],
+    );
   }
 
   Widget _chipLabel(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(20)),
-      child: Text(text, style: const TextStyle(color: AppColors.primary, fontSize: 10.5, fontWeight: FontWeight.w600)),
+      child: Text(text,
+          style: const TextStyle(color: AppColors.primary, fontSize: 10.5, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  // Rows ah oru card kulla vechu, naduvula divider podum.
+  Widget _groupCard(List<Widget> rows) {
+    return Container(
+      decoration: AppDecor.flatCard(radius: 18),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (int i = 0; i < rows.length; i++) ...[
+            rows[i],
+            if (i != rows.length - 1)
+              const Divider(height: 1, indent: 62, endIndent: 14, color: AppColors.borderSubtle),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1405,23 +1594,26 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
             Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(color: iconColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-              child: Icon(icon, color: iconColor, size: 18),
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, color: iconColor, size: 19),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: titleColor, fontSize: 14, fontWeight: FontWeight.w600)),
+                  Text(title,
+                      style: TextStyle(color: titleColor, fontSize: 14, fontWeight: FontWeight.w600)),
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
                     Text(subtitle, style: AppText.caption),
@@ -1430,21 +1622,17 @@ Future<void> _submitAddMember(Map<String, dynamic> currentHome, String name, Str
               ),
             ),
             if (trailing != null) ...[trailing, const SizedBox(width: 6)],
-            const Icon(Icons.chevron_right_rounded, color: AppColors.textFaint, size: 18),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.textFaint, size: 20),
           ],
         ),
       ),
     );
   }
-
 }
 
 // Minimal, local warranty-expiry parser used only for the vault subtitle
-// count — mirrors WarrantyUtils.parseExpiry's public contract so this file
-// has no compile-time dependency ordering surprises. If your project's
-// utils/warranty_utils.dart already exposes parseExpiry(String?, {DateTime?
-// referenceDate}), feel free to delete this shim and call that directly
-// (as the rest of this file already does via `home_tab.dart`'s pattern).
+// count. If utils/warranty_utils.dart already exposes parseExpiry, you can
+// delete this shim and call that directly.
 class WarrantyUtilsLite {
   static DateTime? parseExpiry(Map<String, dynamic> item) {
     final warranty = item['warranty']?.toString();

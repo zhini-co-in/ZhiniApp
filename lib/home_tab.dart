@@ -18,15 +18,16 @@ import 'services/session_manager.dart';
 import 'theme/app_theme.dart';
 import 'utils/warranty_utils.dart';
 import 'widgets/app_dialog_field.dart';
-import 'widgets/confirm_action_dialog.dart';
 import 'widgets/light_card.dart';
-import 'widgets/room_selector_chips.dart';
 import 'widgets/section_header.dart';
+import 'dart:async';
+import 'utils/devices_filter_bus.dart';
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
 // BRAND NEW home from `address` (used by "Add Home"). Pass an existing
 // home's id to add to that home.
+// (knownRooms is kept only so other files that use this typedef still compile.)
 typedef ScanRequest = void Function({
   String? homeId,
   required String address,
@@ -43,6 +44,7 @@ class HomeTab extends StatefulWidget {
   final VoidCallback? onProfileTap;
   final ValueChanged<bool>? onHomeStatusChanged;
   final void Function(String? homeId, String address, String pincode)? onSelectedHomeChanged;
+  final ValueChanged<String>? onOpenDevices; // 'All' | 'Warranty' | 'Attention'
 
   const HomeTab({
     super.key,
@@ -54,6 +56,7 @@ class HomeTab extends StatefulWidget {
     this.onProfileTap,
     this.onHomeStatusChanged,
     this.onSelectedHomeChanged,
+    this.onOpenDevices,
   });
 
   @override
@@ -68,6 +71,9 @@ class HomeTabState extends State<HomeTab> {
   bool _fetchInFlight = false;
 
   // Each entry: { id, address, pincode, members, rooms: {roomKey: [items]}, roomIds }
+  // NOTE: the backend still groups devices by room. The app no longer shows
+  // rooms: every device goes into the "Default" room and the UI flattens all
+  // rooms into one device list.
   List<Map<String, dynamic>> _homes = [];
   int _selectedHomeIndex = 0;
 
@@ -75,76 +81,14 @@ class HomeTabState extends State<HomeTab> {
   String? _nameOverride;
   String get _displayName => _nameOverride ?? widget.name;
 
-  // Locally-created empty rooms, stored PER HOME (key = homeId).
-  final Map<String, Map<String, String>> _localExtraRoomsByHome = {};
-
-  String get _homeScopeKey => _currentHomeId ?? 'idx_$_selectedHomeIndex';
-
-  // Always points to the extra rooms of the CURRENTLY selected home only.
-  Map<String, String> get _localExtraRooms =>
-      _localExtraRoomsByHome.putIfAbsent(_homeScopeKey, () => {});
-
   // Hidden placeholder room used by AddressScreen to force home creation at
   // signup time. Never shown anywhere in the UI.
   static const String _hiddenSetupRoomKey = '__setup__';
 
-  static const List<String> _suggestedRooms = ['Hall', 'Kitchen', 'Bedroom', 'Bathroom'];
+  // Every new appliance is saved under this room name.
+  static const String _defaultRoomName = 'Default';
 
-  // ---------------------------------------------------------------------
-  // CATALOG DATA
-  // ---------------------------------------------------------------------
-  static const List<Map<String, dynamic>> _roomTypes = [
-    {'key': 'living room', 'label': 'Living room', 'icon': Icons.weekend_rounded, 'color': Color(0xFF4A90E2)},
-    {'key': 'kitchen', 'label': 'Kitchen', 'icon': Icons.kitchen_rounded, 'color': Color(0xFFE2B93B)},
-    {'key': 'bedroom', 'label': 'Bedroom', 'icon': Icons.bed_rounded, 'color': Color(0xFF9B6BD6)},
-    {'key': 'bathroom', 'label': 'Bathroom', 'icon': Icons.bathtub_rounded, 'color': Color(0xFF3BC9DB)},
-    {'key': 'utility', 'label': 'Utility', 'icon': Icons.local_laundry_service_rounded, 'color': Color(0xFF4CAF50)},
-    {'key': 'study', 'label': 'Study / Office', 'icon': Icons.laptop_mac_rounded, 'color': Color(0xFFB666D2)},
-    {'key': 'dining room', 'label': 'Dining room', 'icon': Icons.table_restaurant_rounded, 'color': Color(0xFFE28A3B)},
-    {'key': 'custom', 'label': 'Custom', 'icon': Icons.add_rounded, 'color': AppColors.textMuted},
-  ];
-
-  static const Map<String, List<String>> _roomNameSuggestions = {
-    'living room': ['Living Hall', 'Drawing Room', 'Hall', 'TV Room', 'Front Room'],
-    'kitchen': ['Kitchen', 'Modular Kitchen', 'Cook Room'],
-    'bedroom': ['Master Bedroom', 'Bedroom 1', 'Bedroom 2', 'Guest Room'],
-    'bathroom': ['Bathroom', 'Attached Bath', 'Common Bath'],
-    'utility': ['Utility Room', 'Wash Area', 'Store Room'],
-    'study': ['Study Room', 'Home Office', 'Work Room'],
-    'dining room': ['Dining Room', 'Dining Hall'],
-  };
-
-  static const Map<String, List<Map<String, dynamic>>> _quickDeviceSuggestions = {
-    'living room': [
-      {'label': 'TV', 'icon': Icons.tv_rounded},
-      {'label': 'AC', 'icon': Icons.ac_unit_rounded},
-      {'label': 'Speaker', 'icon': Icons.speaker_rounded},
-      {'label': 'Fan', 'icon': Icons.mode_fan_off_rounded},
-      {'label': 'Set top box', 'icon': Icons.settings_input_antenna_rounded},
-    ],
-    'kitchen': [
-      {'label': 'Fridge', 'icon': Icons.kitchen_rounded},
-      {'label': 'Mixer', 'icon': Icons.blender_rounded},
-      {'label': 'Microwave', 'icon': Icons.microwave_rounded},
-      {'label': 'Water Purifier', 'icon': Icons.water_drop_rounded},
-    ],
-    'bedroom': [
-      {'label': 'AC', 'icon': Icons.ac_unit_rounded},
-      {'label': 'TV', 'icon': Icons.tv_rounded},
-      {'label': 'Fan', 'icon': Icons.mode_fan_off_rounded},
-    ],
-    'bathroom': [
-      {'label': 'Geyser', 'icon': Icons.hot_tub_rounded},
-      {'label': 'Exhaust Fan', 'icon': Icons.mode_fan_off_rounded},
-    ],
-  };
-
-  static const Map<String, IconData> _roomIcons = {
-    'hall': Icons.weekend_rounded,
-    'kitchen': Icons.kitchen_rounded,
-    'bedroom': Icons.bed_rounded,
-    'bathroom': Icons.bathtub_rounded,
-  };
+  static const int _maxDevicesOnHome = 4;
 
   static const Map<String, IconData> _applianceIcons = {
     'fridge': Icons.kitchen_rounded,
@@ -165,26 +109,56 @@ class HomeTabState extends State<HomeTab> {
   };
 
   // Services near you — backed by scrapeHomeServices(serviceType, pincode).
-  static const List<Map<String, dynamic>> _serviceCategories = [
-    {'label': 'Electrician', 'type': 'electrician', 'icon': Icons.electrical_services_rounded},
-    {'label': 'Plumber', 'type': 'plumber', 'icon': Icons.plumbing_rounded},
-    {'label': 'AC Service', 'type': 'AC service', 'icon': Icons.ac_unit_rounded},
-    {'label': 'Carpenter', 'type': 'carpenter', 'icon': Icons.carpenter_rounded},
-    {'label': 'Painter', 'type': 'painter', 'icon': Icons.format_paint_rounded},
-    {'label': 'Pest Control', 'type': 'pest control', 'icon': Icons.pest_control_rounded},
+    static const List<Map<String, dynamic>> _serviceCategories = [
+    {'label': 'Electrician', 'type': 'electrician', 'icon': Icons.bolt_rounded, 'color': Color(0xFFFF9800)},
+    {'label': 'Plumber', 'type': 'plumber', 'icon': Icons.build_rounded, 'color': Color(0xFF1E6BFF)},
+    {'label': 'AC Service', 'type': 'AC service', 'icon': Icons.ac_unit_rounded, 'color': Color(0xFF2196F3)},
+    {'label': 'Carpenter', 'type': 'carpenter', 'icon': Icons.hardware_rounded, 'color': Color(0xFF7C4DFF)},
+    {'label': 'Painter', 'type': 'painter', 'icon': Icons.format_paint_rounded, 'color': Color(0xFFE91E63)},
+    {'label': 'Pest Control', 'type': 'pest control', 'icon': Icons.pest_control_rounded, 'color': Color(0xFF00A86B)},
   ];
-
-  static const int _maxRoomsOnHome = 4;
 
   // serviceType -> provider count, shown as "X nearby".
   final Map<String, int> _serviceCounts = {};
   Future<String?>? _gpsQueryCache;
 
+    // ── Banner carousel ──
+  final PageController _bannerController = PageController(viewportFraction: 0.92);
+  int _bannerIndex = 0;
+  Timer? _bannerTimer;
+
+  static const List<String> _bannerImages = [
+    'assets/images/banner_ac.png',
+    'assets/images/banner_appliance.png',
+    'assets/images/banner_fridge.png',
+  ];
+
+  void _startBannerTimer() {
+    _bannerTimer?.cancel();
+    _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_bannerController.hasClients) return;
+      final next = (_bannerIndex + 1) % _bannerImages.length;
+      _bannerController.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
   @override
+  void dispose() {
+    _bannerTimer?.cancel();
+    _bannerController.dispose();
+    super.dispose();
+  }
+
+    @override
   void initState() {
     super.initState();
     _fetchAppliances();
     _prefetchServiceCounts();
+    _startBannerTimer();
   }
 
   // Called by MainShell when the Home tab is tapped.
@@ -207,7 +181,6 @@ class HomeTabState extends State<HomeTab> {
   // ---------------------------------------------------------------------
   // SERVICES NEAR YOU — data
   // ---------------------------------------------------------------------
-  // Fetches every category IN PARALLEL so the "X nearby" counts are fast.
   void _prefetchServiceCounts() async {
     final futures = _serviceCategories.map((cat) async {
       final type = cat['type'] as String;
@@ -217,8 +190,6 @@ class HomeTabState extends State<HomeTab> {
     await Future.wait(futures);
   }
 
-  // Defaults to the home's pincode; falls back to live GPS when there's no
-  // pincode or when forced.
   Future<List<Map<String, dynamic>>> _fetchHomeServicesFor(
     String serviceType, {
     String? pincodeOverride,
@@ -318,9 +289,6 @@ class HomeTabState extends State<HomeTab> {
   // ---------------------------------------------------------------------
   // ICON HELPERS
   // ---------------------------------------------------------------------
-  IconData _iconForRoom(String room) =>
-      _roomIcons[room.toLowerCase()] ?? Icons.door_front_door_rounded;
-
   IconData _iconForAppliance(String product) {
     final key = product.toLowerCase();
     for (final entry in _applianceIcons.entries) {
@@ -400,7 +368,6 @@ class HomeTabState extends State<HomeTab> {
                 if (rid != null && rid.isNotEmpty) roomIds[key] = rid;
               }
             } else if (roomsRaw is Map) {
-              // Flat-map fallback has no per-room id; delete falls back to local-only.
               roomsRaw.forEach((key, value) {
                 if (value is List) {
                   if (key.toString().toLowerCase() == _hiddenSetupRoomKey) return;
@@ -440,9 +407,6 @@ class HomeTabState extends State<HomeTab> {
                 } else {
                   _homes.add(updated);
                 }
-                final updatedRooms = updated['rooms'] as Map<String, List<Map<String, dynamic>>>;
-                _localExtraRoomsByHome[homeId]
-                    ?.removeWhere((key, _) => updatedRooms.containsKey(key));
               });
               await _homeBox.clear();
               for (final h in _homes) {
@@ -481,14 +445,6 @@ class HomeTabState extends State<HomeTab> {
                 _selectedHomeIndex = idx;
               } else if (_selectedHomeIndex >= _homes.length) {
                 _selectedHomeIndex = 0;
-              }
-
-              // Drop a local-extra room once the backend actually has it (per home).
-              for (final h in _homes) {
-                final hid = h['id']?.toString();
-                if (hid == null) continue;
-                final hRooms = h['rooms'] as Map<String, List<Map<String, dynamic>>>;
-                _localExtraRoomsByHome[hid]?.removeWhere((key, _) => hRooms.containsKey(key));
               }
 
               _loading = false;
@@ -603,8 +559,9 @@ class HomeTabState extends State<HomeTab> {
   Map<String, List<Map<String, dynamic>>> get _currentRooms =>
       (_currentHome?['rooms'] as Map<String, List<Map<String, dynamic>>>?) ?? {};
 
-  Map<String, String> get _currentRoomIds =>
-      (_currentHome?['roomIds'] as Map<String, String>?) ?? {};
+  // ALL devices of the current home, flattened (rooms are not shown anymore).
+  List<Map<String, dynamic>> get _allDevices =>
+      _currentRooms.values.expand((items) => items).toList();
 
   String? get _currentHomeId => _currentHome?['id']?.toString();
   String get _currentAddress => _currentHome?['address']?.toString() ?? widget.address;
@@ -634,120 +591,67 @@ class HomeTabState extends State<HomeTab> {
     return null;
   }
 
-  List<MapEntry<String, String>> get _displayRooms {
-    final entries = <MapEntry<String, String>>[];
-    final realKeys = _currentRooms.keys.toList()..sort();
-    for (final key in realKeys) {
-      final display = key.isNotEmpty ? '${key[0].toUpperCase()}${key.substring(1)}' : key;
-      entries.add(MapEntry(key, display));
-    }
-    _localExtraRooms.forEach((key, display) {
-      if (!_currentRooms.containsKey(key)) entries.add(MapEntry(key, display));
-    });
-    return entries;
-  }
-
   void _requestScan() {
     widget.onScanTap?.call(
       homeId: _currentHomeId,
       address: _currentAddress,
       pincode: _currentPincode,
-      knownRooms: _displayRooms.map((e) => e.value).toList(),
     );
+  }
+  void _openDevicesTabWith(String filter) {
+  devicesFilterRequest.value = filter;
+  widget.onOpenDevices?.call(filter);
+}
+
+  // ---------------------------------------------------------------------
+  // WARRANTY HELPERS
+  // ---------------------------------------------------------------------
+  DateTime? _expiryOf(Map<String, dynamic> item) {
+    return WarrantyUtils.parseExpiry(
+      item['warranty']?.toString(),
+      referenceDate: DateTime.tryParse(item['createdAt']?.toString() ?? ''),
+    );
+  }
+
+  String _fmtDate(DateTime d) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${d.day.toString().padLeft(2, '0')} ${months[d.month - 1]} ${d.year}';
   }
 
   // ---------------------------------------------------------------------
   // STATS
   // ---------------------------------------------------------------------
-  Map<String, int> _computeStats() {
-    int devices = 0;
-    int warrantyOk = 0;
-    int attention = 0;
-    final now = DateTime.now();
+Map<String, int> _computeStats() {
+  int active = 0;
+  int attention = 0;
+  final now = DateTime.now();
+  final devices = _allDevices;
 
-    _currentRooms.forEach((_, items) {
-      for (final item in items) {
-        devices++;
-        final expiry = WarrantyUtils.parseExpiry(
-          item['warranty']?.toString(),
-          referenceDate: DateTime.tryParse(item['createdAt']?.toString() ?? ''),
-        );
-        if (expiry != null && expiry.isAfter(now)) {
-          warrantyOk++;
-        } else {
-          attention++;
-        }
-      }
-    });
-
-    return {
-      'devices': devices,
-      'warranty': warrantyOk,
-      'attention': attention,
-      'rooms': _currentRooms.length,
-    };
-  }
-
-  // ---------------------------------------------------------------------
-  // DELETE ROOM
-  // ---------------------------------------------------------------------
-  Future<bool> _submitDeleteRoom(String homeId, String roomId) async {
-    try {
-      final response = await ApiClient.delete(
-        ApiConfig.deleteRoomUrl(homeId),
-        body: {'roomId': roomId, 'homeId': homeId},
-      );
-      debugPrint('🗑️ Delete room status: ${response.statusCode}');
-      if (!mounted) return false;
-
-      if (response.statusCode == 200) return true;
-      final data = jsonDecode(response.body);
-      _snack(data['message']?.toString() ?? 'Could not delete room.');
-      return false;
-    } catch (e) {
-      debugPrint('❌ Delete room error: $e');
-      _snack('Network error. Try again.');
-      return false;
+  for (final item in devices) {
+    final expiry = _expiryOf(item);
+    if (expiry == null) continue;
+    if (expiry.isAfter(now)) {
+      active++;
+      if (expiry.difference(now).inDays <= 30) attention++; // expiring soon
+    } else {
+      attention++; // expired
     }
   }
 
-  // Via backend (if it has a real roomId) or purely client-side (local empty room).
-  Future<void> _confirmDeleteRoom(String roomKey, String displayName) async {
-    final ok = await showConfirmActionDialog(
-      context,
-      title: 'Delete room?',
-      content: '$displayName and any devices in it will be removed. This cannot be undone.',
-    );
-    if (ok != true) return;
-
-    final homeId = _currentHomeId;
-    final roomId = _currentRoomIds[roomKey];
-
-    if (homeId == null || roomId == null) {
-      setState(() => _localExtraRooms.remove(roomKey));
-      _snack('$displayName removed ✅');
-      return;
-    }
-
-    final success = await _submitDeleteRoom(homeId, roomId);
-    if (success) {
-      setState(() => _localExtraRooms.remove(roomKey));
-      _snack('$displayName removed ✅');
-      _fetchAppliances(homeId: homeId);
-    }
-  }
+  return {'devices': devices.length, 'active': active, 'attention': attention};
+}
 
   // ---------------------------------------------------------------------
-  // ROOM DETAIL
+  // DEVICES SCREEN (re-uses the old room detail screen, shows ALL devices)
   // ---------------------------------------------------------------------
-  void _openRoomDetail(String roomKey, String displayName) {
+  void _openDevicesScreen() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => RoomDetailScreen(
-          roomKey: roomKey,
-          roomName: displayName,
-          items: _currentRooms[roomKey] ?? [],
+          roomKey: _defaultRoomName.toLowerCase(),
+          roomName: 'All devices',
+          items: _allDevices,
           iconForAppliance: _iconForAppliance,
           mobileNumber: widget.mobileNumber,
           address: _currentAddress,
@@ -765,21 +669,20 @@ class HomeTabState extends State<HomeTab> {
     });
   }
 
-  // Room that lives in the "Default" home (skip-flow).
-  void _openDefaultRoomDetail(String roomKey) {
+  // Devices that live in the "Default" home (skip-flow).
+  void _openDefaultHomeDevices() {
     final dh = _defaultHome;
     if (dh == null) return;
     final rooms = (dh['rooms'] as Map<String, List<Map<String, dynamic>>>?) ?? {};
-    final displayName =
-        roomKey.isNotEmpty ? '${roomKey[0].toUpperCase()}${roomKey.substring(1)}' : roomKey;
+    final items = rooms.values.expand((l) => l).toList();
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => RoomDetailScreen(
-          roomKey: roomKey,
-          roomName: displayName,
-          items: rooms[roomKey] ?? [],
+          roomKey: _defaultRoomName.toLowerCase(),
+          roomName: 'All devices',
+          items: items,
           iconForAppliance: _iconForAppliance,
           mobileNumber: widget.mobileNumber,
           address: dh['address']?.toString() ?? widget.address,
@@ -789,414 +692,6 @@ class HomeTabState extends State<HomeTab> {
         ),
       ),
     ).then((_) => _fetchAppliances());
-  }
-
-  // ---------------------------------------------------------------------
-  // ADD A ROOM — 3-step guided flow
-  // ---------------------------------------------------------------------
-  Widget _dialogHeader(BuildContext dialogContext, String title) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(title, style: AppText.dialogTitle),
-        InkWell(
-          onTap: () => Navigator.pop(dialogContext),
-          borderRadius: BorderRadius.circular(20),
-          child: const Icon(Icons.close_rounded, color: AppColors.textSecondary, size: 20),
-        ),
-      ],
-    );
-  }
-
-  void _openAddRoomDialog() {
-    int step = 0;
-    Map<String, dynamic>? selectedType;
-    final nameController = TextEditingController();
-    String createdDisplay = '';
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            Widget dots() {
-              return Row(
-                children: List.generate(3, (i) {
-                  return Container(
-                    margin: const EdgeInsets.only(right: 5),
-                    width: 16,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: i <= step ? AppColors.primary : AppColors.borderSubtle,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  );
-                }),
-              );
-            }
-
-            // ---------------- STEP 1 : Pick room type ----------------
-            Widget buildStep1() {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _dialogHeader(dialogContext, 'Add a room'),
-                  const SizedBox(height: 2),
-                  const Text('Choose the room type', style: AppText.faintCaption),
-                  const SizedBox(height: 10),
-                  dots(),
-                  const SizedBox(height: 16),
-                  const Text('COMMON ROOMS', style: AppText.label),
-                  const SizedBox(height: 10),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _roomTypes.length,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 10,
-                      crossAxisSpacing: 10,
-                      childAspectRatio: 1.5,
-                    ),
-                    itemBuilder: (context, i) {
-                      final type = _roomTypes[i];
-                      final isSelected = selectedType?['key'] == type['key'];
-                      final color = type['color'] as Color;
-                      return InkWell(
-                        onTap: () => setDialogState(() => selectedType = type),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: isSelected ? color.withValues(alpha: 0.12) : AppColors.cardBgAlt,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected ? color : AppColors.borderSubtle,
-                              width: isSelected ? 1.4 : 1,
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: color.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(type['icon'] as IconData, color: color, size: 18),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(type['label'] as String,
-                                  style: const TextStyle(
-                                      color: AppColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: AppDecor.primaryButton,
-                      onPressed: selectedType == null
-                          ? null
-                          : () {
-                              final key = selectedType!['key'] as String;
-                              final suggestions = _roomNameSuggestions[key];
-                              nameController.text =
-                                  (key != 'custom' && suggestions != null && suggestions.isNotEmpty)
-                                      ? suggestions.first
-                                      : '';
-                              setDialogState(() => step = 1);
-                            },
-                      child: const Text('Continue', style: AppText.button),
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            // ---------------- STEP 2 : Name the room ----------------
-            Widget buildStep2() {
-              final type = selectedType!;
-              final color = type['color'] as Color;
-              final key = type['key'] as String;
-              final suggestions = key == 'custom' ? <String>[] : (_roomNameSuggestions[key] ?? []);
-              final homeLabel =
-                  _currentAddress.isNotEmpty ? _currentAddress.split(',').first.trim() : 'Home';
-
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _dialogHeader(dialogContext, 'Name this room'),
-                  const SizedBox(height: 2),
-                  Text('${type['label']} selected', style: AppText.faintCaption),
-                  const SizedBox(height: 10),
-                  dots(),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: color.withValues(alpha: 0.6)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                              color: color.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(10)),
-                          child: Icon(type['icon'] as IconData, color: color, size: 20),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(type['label'] as String,
-                                  style: const TextStyle(
-                                      color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w700)),
-                              Text('$homeLabel home', style: AppText.caption),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('ROOM NAME', style: AppText.label),
-                  const SizedBox(height: 8),
-                  AppDialogField(controller: nameController, hint: 'e.g. Living Hall'),
-                  const SizedBox(height: 4),
-                  const Text('Give it a name that helps you identify it quickly',
-                      style: AppText.faintCaption),
-                  if (suggestions.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    const Text('QUICK SUGGESTIONS', style: AppText.labelMuted),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: suggestions.map((s) {
-                        final isChosen = nameController.text.trim() == s;
-                        return InkWell(
-                          onTap: () => setDialogState(() => nameController.text = s),
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: isChosen ? AppColors.primarySoft : AppColors.cardBgAlt,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                  color: isChosen ? AppColors.primary : AppColors.borderSubtle),
-                            ),
-                            child: Text(s,
-                                style: TextStyle(
-                                    color: isChosen ? AppColors.primary : AppColors.textSecondary,
-                                    fontSize: 12.5)),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.cardBgAlt,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.home_outlined, size: 14, color: AppColors.textMuted),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text('Adding to: $_currentAddress',
-                              maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.caption),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: AppDecor.primaryButton,
-                      onPressed: () {
-                        final name = nameController.text.trim();
-                        if (name.isEmpty) {
-                          _snack('Enter a room name.');
-                          return;
-                        }
-                        final roomKey = name.toLowerCase();
-                        if (_currentRooms.containsKey(roomKey) || _localExtraRooms.containsKey(roomKey)) {
-                          _snack('This room already exists.');
-                          return;
-                        }
-                        createdDisplay = name;
-                        setState(() => _localExtraRooms[roomKey] = name);
-                        setDialogState(() => step = 2);
-                      },
-                      child: const Text('Create room', style: AppText.button),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      onPressed: () => setDialogState(() => step = 0),
-                      child: const Text('← Back', style: AppText.cancelAction),
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            // ---------------- STEP 3 : Room added / quick devices ----------------
-            Widget buildStep3() {
-              final type = selectedType!;
-              final key = type['key'] as String;
-              final devices = _quickDeviceSuggestions[key] ??
-                  const [
-                    {'label': 'Appliance', 'icon': Icons.devices_other_rounded},
-                  ];
-              final homeLabel =
-                  _currentAddress.isNotEmpty ? _currentAddress.split(',').first.trim() : 'Home';
-              final who = (_displayName.isNotEmpty && _displayName.toLowerCase() != 'guest')
-                  ? _displayName
-                  : 'You';
-
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _dialogHeader(dialogContext, 'Room added'),
-                  const SizedBox(height: 2),
-                  Text('$homeLabel — $who', style: AppText.faintCaption),
-                  const SizedBox(height: 10),
-                  dots(),
-                  const SizedBox(height: 16),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.success.withValues(alpha: 0.5)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('$createdDisplay created',
-                            style: const TextStyle(
-                                color: AppColors.success, fontSize: 15, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 2),
-                        Text('$homeLabel home · 0 devices so far', style: AppText.caption),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text('Suggested devices for this room',
-                      style: TextStyle(
-                          color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 10),
-                  // Suggestions only: not tappable.
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: devices.map((d) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: AppColors.cardBgAlt,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: AppColors.borderSubtle),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(d['icon'] as IconData, size: 14, color: AppColors.textSecondary),
-                            const SizedBox(width: 6),
-                            Text(d['label'] as String,
-                                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5)),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      style: AppDecor.primaryOutlinedButton,
-                      onPressed: () {
-                        Navigator.pop(dialogContext);
-                        _openManualAddDialog(initialRoom: createdDisplay);
-                      },
-                      icon: const Icon(Icons.edit_note_rounded, size: 18, color: AppColors.primary),
-                      label: const Text('Add manually',
-                          style: TextStyle(
-                              color: AppColors.primary, fontSize: 14, fontWeight: FontWeight.w600)),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      style: AppDecor.primaryButton,
-                      onPressed: () {
-                        Navigator.pop(dialogContext);
-                        _requestScan();
-                      },
-                      icon: const Icon(Icons.qr_code_scanner_rounded, size: 16, color: AppColors.onPrimary),
-                      label: const Text('Scan and add first device', style: AppText.button),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(dialogContext),
-                      child: const Text('Done — go to home', style: AppText.cancelAction),
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            return Dialog(
-              backgroundColor: AppColors.cardBg,
-              shape: AppDecor.dialogShape,
-              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: SingleChildScrollView(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      child: KeyedSubtree(
-                        key: ValueKey(step),
-                        child: step == 0 ? buildStep1() : (step == 1 ? buildStep2() : buildStep3()),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   // ---------------------------------------------------------------------
@@ -1368,14 +863,12 @@ class HomeTabState extends State<HomeTab> {
   }
 
   // ---------------------------------------------------------------------
-  // MANUAL ADD — product / brand / warranty / room, no camera needed.
+  // MANUAL ADD — product / brand / warranty. No room: always "Default".
   // ---------------------------------------------------------------------
-  void _openManualAddDialog({String? initialRoom}) {
+  void _openManualAddDialog() {
     final productController = TextEditingController();
     final brandController = TextEditingController();
     final warrantyController = TextEditingController();
-    String selectedRoom = initialRoom ?? 'Hall';
-    bool isCustomRoom = false;
     bool isSubmitting = false;
 
     StateSetter? refreshDialog;
@@ -1394,20 +887,7 @@ class HomeTabState extends State<HomeTab> {
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      InkWell(
-                        onTap: () => Navigator.pop(dialogContext),
-                        borderRadius: BorderRadius.circular(20),
-                        child: const Padding(
-                          padding: EdgeInsets.only(right: 8),
-                          child: Icon(Icons.arrow_back_rounded, color: AppColors.textSecondary, size: 20),
-                        ),
-                      ),
-                      const Text('Add Appliance', style: AppText.dialogTitle),
-                    ],
-                  ),
+                  const Text('Add Appliance', style: AppText.dialogTitle),
                   InkWell(
                     onTap: () {
                       Navigator.pop(dialogContext);
@@ -1446,30 +926,6 @@ class HomeTabState extends State<HomeTab> {
                     const SizedBox(height: 10),
                     AppDialogField(
                         controller: warrantyController, hint: 'Warranty (e.g. 2 Years, optional)'),
-                    const SizedBox(height: 12),
-                    const Text('Room', style: AppText.faintCaption),
-                    const SizedBox(height: 8),
-                    RoomSelectorChips(
-                      rooms: _displayRooms.map((e) => e.value).toSet().union(_suggestedRooms.toSet()),
-                      selectedRoom: selectedRoom,
-                      isCustomRoom: isCustomRoom,
-                      onSelectRoom: (room) => setDialogState(() {
-                        selectedRoom = room;
-                        isCustomRoom = false;
-                      }),
-                      onTapOther: () async {
-                        final name = await showCustomRoomNameDialog(
-                          dialogContext,
-                          initial: isCustomRoom ? selectedRoom : '',
-                        );
-                        if (name != null) {
-                          setDialogState(() {
-                            selectedRoom = name;
-                            isCustomRoom = true;
-                          });
-                        }
-                      },
-                    ),
                   ],
                 ),
               ),
@@ -1488,7 +944,6 @@ class HomeTabState extends State<HomeTab> {
                             product: productController.text.trim(),
                             brand: brandController.text.trim(),
                             warranty: warrantyController.text.trim(),
-                            room: selectedRoom,
                           );
                           if (dialogContext.mounted) Navigator.pop(dialogContext);
                           if (ok) {
@@ -1519,7 +974,6 @@ class HomeTabState extends State<HomeTab> {
     required String product,
     required String brand,
     required String warranty,
-    required String room,
   }) async {
     try {
       String? homeIdToUse = _currentHomeId;
@@ -1553,7 +1007,7 @@ class HomeTabState extends State<HomeTab> {
       request.fields['mobile'] = ApiConfig.stripCountryCode(widget.mobileNumber);
       request.fields['pincode'] = _currentPincode;
       request.fields['warranty'] = warranty.isNotEmpty ? warranty : 'N/A';
-      request.fields['roomName'] = room;
+      request.fields['roomName'] = _defaultRoomName;
       request.fields['name'] = _displayName;
 
       final streamed = await request.send();
@@ -1574,167 +1028,6 @@ class HomeTabState extends State<HomeTab> {
       _snack('Network error. Try again.');
       return false;
     }
-  }
-
-  // ---------------------------------------------------------------------
-  // ALL ROOMS SHEET (dark sheet, dark room cards)
-  // ---------------------------------------------------------------------
-  void _openAllRoomsSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.cardBg,
-      isScrollControlled: true,
-      shape: AppDecor.sheetShape,
-      builder: (sheetContext) {
-        final rooms = _displayRooms;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('All rooms (${rooms.length})', style: AppText.dialogTitle),
-                    InkWell(
-                      onTap: () => Navigator.pop(sheetContext),
-                      borderRadius: BorderRadius.circular(20),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(Icons.close_rounded, color: AppColors.textSecondary, size: 22),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                const Text('Tap to open · long-press to delete', style: AppText.faintCaption),
-                const SizedBox(height: 14),
-                Flexible(
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 10,
-                      crossAxisSpacing: 10,
-                      mainAxisExtent: 112,
-                    ),
-                    itemCount: rooms.length,
-                    itemBuilder: (context, i) => _roomCard(
-                      rooms[i].key,
-                      rooms[i].value,
-                      onBeforeOpen: () => Navigator.pop(sheetContext),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // Compact dark room card used inside the "All rooms" sheet.
-  Widget _roomCard(String roomKey, String displayName, {VoidCallback? onBeforeOpen}) {
-    final items = _currentRooms[roomKey] ?? [];
-    final first = items.isNotEmpty ? items.first : null;
-    final extra = items.length - 1;
-    final firstProduct = first?['product']?.toString() ?? '';
-    final firstImage = first?['imageUrl']?.toString();
-
-    return InkWell(
-      onTap: () {
-        onBeforeOpen?.call();
-        _openRoomDetail(roomKey, displayName);
-      },
-      onLongPress: () => _confirmDeleteRoom(roomKey, displayName),
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppColors.cardBgAlt,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.borderSubtle),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Icon(_iconForRoom(roomKey), color: AppColors.primary, size: 17),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)),
-                      Text('${items.length} appliance${items.length == 1 ? '' : 's'}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 10.5)),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 15),
-              ],
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 7),
-              child: Divider(height: 1, color: AppColors.borderSubtle),
-            ),
-            if (first == null)
-              const Text('No appliances yet',
-                  style: TextStyle(color: AppColors.textDisabled, fontSize: 10.5))
-            else
-              Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: (firstImage != null && firstImage.isNotEmpty)
-                          ? Image.network(
-                              firstImage,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Icon(_iconForAppliance(firstProduct),
-                                  size: 14, color: AppColors.textFaint),
-                            )
-                          : Icon(_iconForAppliance(firstProduct), size: 14, color: AppColors.textFaint),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(firstProduct,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5)),
-                  ),
-                  if (extra > 0)
-                    Text('+$extra',
-                        style: const TextStyle(
-                            color: AppColors.primary, fontSize: 11.5, fontWeight: FontWeight.w700)),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
   }
 
   // =====================================================================
@@ -1781,18 +1074,14 @@ class HomeTabState extends State<HomeTab> {
                             const SizedBox(height: 28),
                             _buildServicesNearYou(),
                           ] else ...[
-                            SectionHeader('Buildings', onManage: widget.onProfileTap),
-                            const SizedBox(height: 12),
-                            _buildHomeSwitcher(),
-                            const SizedBox(height: 20),
+                                                        _buildBuildingsHeader(),
+                            const SizedBox(height: 16),
                             _buildStatsRow(stats!),
                             const SizedBox(height: 24),
-                            SectionHeader('Rooms (${stats['rooms']})',
-                                actionLabel: 'View all', onManage: _openAllRoomsSheet),
+                            SectionHeader('Devices (${stats['devices']})',
+                                actionLabel: 'View all', onManage: _openDevicesScreen),
                             const SizedBox(height: 12),
-                            _buildRoomsList(),
-                            const SizedBox(height: 12),
-                            _buildAddRoomButton(),
+                            _buildDevicesList(),
                             const SizedBox(height: 28),
                             _buildServicesNearYou(),
                           ],
@@ -1806,30 +1095,57 @@ class HomeTabState extends State<HomeTab> {
     );
   }
 
-  // ── HEADER (logo + avatar + search + hero) ──
-  Widget _buildHeader() {
+   Widget _buildHeader() {
     final hasName = _displayName.isNotEmpty && _displayName.toLowerCase() != 'guest';
 
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(gradient: AppDecor.lightHeaderGradient),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      decoration: BoxDecoration(gradient: AppDecor.lightHeaderGradient),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Logo + search + avatar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Row(
               children: [
                 const Text(
                   'zhini',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 28,
+                    fontSize: 26,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.5,
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: AppColors.lightSurface,
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const TextField(
+                      style: TextStyle(fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'Search here...',
+                        hintStyle: TextStyle(color: AppColors.lightHint, fontSize: 12),
+                        prefixIcon: Icon(Icons.search_rounded, color: AppColors.lightHint, size: 20),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 GestureDetector(
                   onTap: widget.onProfileTap,
                   child: CircleAvatar(
@@ -1847,253 +1163,375 @@ class HomeTabState extends State<HomeTab> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            Container(
-              height: 46,
-              decoration: BoxDecoration(
-                color: AppColors.lightSurface,
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const TextField(
-                decoration: InputDecoration(
-                  hintText: 'Search devices, rooms or services',
-                  hintStyle: TextStyle(color: AppColors.lightHint, fontSize: 14),
-                  prefixIcon: Icon(Icons.search_rounded, color: AppColors.lightHint),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 150,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Positioned(
-                    left: 0,
-                    top: 12,
-                    right: 140,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Your home\nin control', style: AppText.lightHeroTitle),
-                        SizedBox(height: 8),
-                        Text('Monitor, manage and keep\neverything running smoothly.',
-                            style: AppText.lightHeroSubtitle),
-                      ],
-                    ),
-                  ),
-                  Positioned(
-                    right: -16,
-                    top: -4,
-                    bottom: -8,
-                    width: 175,
+          ),
+          const SizedBox(height: 14),
+
+          // Banner carousel (images are 1600x533 => 3:1)
+          AspectRatio(
+            aspectRatio: 3 / 1.05,
+            child: PageView.builder(
+              controller: _bannerController,
+              itemCount: _bannerImages.length,
+              onPageChanged: (i) {
+  setState(() => _bannerIndex = i);
+  _startBannerTimer(); // swipe pannina 4 sec count restart
+},
+              itemBuilder: (context, i) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
                     child: Image.asset(
-                      'assets/images/house1.png',
-                      fit: BoxFit.contain,
-                      alignment: Alignment.bottomRight,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      _bannerImages[i],
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(color: AppColors.lightSurface),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
-          ],
-        ),
-      ),
-    );
-  }
+          ),
+          const SizedBox(height: 10),
 
-  // ── Building chips ──
-  Widget _buildHomeSwitcher() {
-    return SizedBox(
-      height: 48,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _homes.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          final selected = index == _selectedHomeIndex;
-          final label = _homeLabel(_homes[index], index);
-
-          return GestureDetector(
-            onTap: () {
-              setState(() => _selectedHomeIndex = index);
-              _notifySelectedHome();
-              _prefetchServiceCounts();
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.lightSurface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: selected ? AppColors.lightPrimary : AppColors.lightBorderStrong,
-                  width: selected ? 1.8 : 1,
+          // Dots
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (int i = 0; i < _bannerImages.length; i++)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: i == _bannerIndex ? 18 : 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: i == _bannerIndex
+                        ? AppColors.lightPrimary
+                        : Colors.white.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
-                boxShadow: selected
-                    ? [
-                        BoxShadow(
-                          color: AppColors.lightPrimary.withValues(alpha: 0.12),
-                          blurRadius: 8,
-                        )
-                      ]
-                    : null,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.apartment_rounded,
-                    size: 18,
-                    color: selected ? AppColors.lightPrimary : AppColors.lightTextMuted,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: selected ? AppColors.lightPrimary : AppColors.lightTextSoft,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13.5,
-                    ),
-                  ),
-                  if (selected) ...[
-                    const SizedBox(width: 6),
-                    const Icon(Icons.check_circle_rounded, size: 16, color: AppColors.lightPrimary),
-                  ],
-                ],
-              ),
-            ),
-          );
-        },
+            ],
+          ),
+          const SizedBox(height: 14),
+        ],
       ),
     );
   }
 
-  // ── Stats ──
-  Widget _buildStatsRow(Map<String, int> stats) {
+    // ── Buildings title + dropdown to choose the building ──
+  Widget _buildBuildingsHeader() {
+    final current = _currentHome;
+    final label = current == null ? 'Select' : _homeLabel(current, _selectedHomeIndex);
+
     return Row(
       children: [
-        _statCard(Icons.devices_other_rounded, AppColors.lightPrimary, '${stats['devices']}', 'Devices'),
-        const SizedBox(width: 10),
-        _statCard(Icons.meeting_room_outlined, AppColors.lightPurple, '${stats['rooms']}', 'Rooms'),
-        const SizedBox(width: 10),
-        _statCard(Icons.verified_user_outlined, AppColors.lightSuccess, '${stats['warranty']}', 'Warranty'),
-        const SizedBox(width: 10),
-        _statCard(Icons.warning_amber_rounded, AppColors.lightWarning, '${stats['attention']}', 'Attention',
-            highlight: (stats['attention'] ?? 0) > 0),
+        const Text('Buildings', style: AppText.lightSectionTitle),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: PopupMenuButton<int>(
+              offset: const Offset(0, 48),
+              color: AppColors.cardBg,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              onSelected: (value) {
+                if (value == -1) {
+                  _openAddHomeDialog();
+                  return;
+                }
+                if (value == _selectedHomeIndex) return;
+                setState(() => _selectedHomeIndex = value);
+                _notifySelectedHome();
+                _prefetchServiceCounts();
+              },
+              itemBuilder: (context) => [
+                for (int i = 0; i < _homes.length; i++)
+                  if (!_isDefaultHome(_homes[i]))
+                    PopupMenuItem<int>(
+                      value: i,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 240),
+                        child: Row(
+                          children: [
+                            Icon(
+                              i == _selectedHomeIndex
+                                  ? Icons.check_circle_rounded
+                                  : Icons.apartment_rounded,
+                              size: 18,
+                              color: i == _selectedHomeIndex
+                                  ? AppColors.lightPrimary
+                                  : AppColors.lightTextMuted,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _homeLabel(_homes[i], i),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.lightCardTitle,
+                                  ),
+                                  Text(
+                                    _homes[i]['address']?.toString() ?? '',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.lightCaption,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                const PopupMenuDivider(),
+                const PopupMenuItem<int>(
+                  value: -1,
+                  child: Row(
+                    children: [
+                      Icon(Icons.add_circle_outline_rounded, size: 18, color: AppColors.lightPrimary),
+                      SizedBox(width: 10),
+                      Text('Add new building', style: AppText.lightLink),
+                    ],
+                  ),
+                ),
+              ],
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: AppColors.lightSurface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.lightPrimary.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.apartment_rounded, size: 18, color: AppColors.lightPrimary),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.lightPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.keyboard_arrow_down_rounded,
+                        size: 20, color: AppColors.lightPrimary),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _statCard(IconData icon, Color color, String value, String label, {bool highlight = false}) {
-    return Expanded(
-      child: LightCard(
-        radius: 14,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-        borderColor: highlight ? color.withValues(alpha: 0.4) : AppColors.lightBorder,
+  // ── Stats ──
+Widget _buildStatsRow(Map<String, int> stats) {
+  return Row(
+    children: [
+      _statCard(Icons.devices_other_rounded, AppColors.lightPrimary, '${stats['devices']}', 'Appliances',
+          onTap: () => _openDevicesTabWith('All')),
+      const SizedBox(width: 10),
+      _statCard(Icons.verified_user_outlined, AppColors.lightSuccess, '${stats['active']}',
+          'Active Warranties',
+          onTap: () => _openDevicesTabWith('Warranty')),
+      const SizedBox(width: 10),
+      _statCard(Icons.warning_amber_rounded, AppColors.lightWarning, '${stats['attention']}', 'Attention',
+          highlight: (stats['attention'] ?? 0) > 0,
+          onTap: () => _openDevicesTabWith('Attention')),
+    ],
+  );
+}
+
+Widget _statCard(IconData icon, Color color, String value, String label,
+    {bool highlight = false, VoidCallback? onTap}) {
+  return Expanded(
+    child: LightCard(
+      onTap: onTap,
+      radius: 14,
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+      borderColor: highlight ? color.withValues(alpha: 0.4) : AppColors.lightBorder,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppColors.lightTextDark,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.lightTextMuted,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+  // ── Devices list (flat, first few) ──
+  Widget _buildDevicesList() {
+    final devices = _allDevices;
+
+    if (devices.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: AppDecor.lightCard(),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 18),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              style: const TextStyle(
-                color: AppColors.lightTextDark,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
+            const Icon(Icons.devices_other_rounded, color: AppColors.lightChevron, size: 32),
+            const SizedBox(height: 8),
+            const Text('No appliances yet', style: AppText.lightCardTitle),
+            const SizedBox(height: 4),
+                        const Text('Tap + Add Device below to add one.', style: AppText.lightCaption),
+          ],
+        ),
+      );
+    }
+
+    final shown = devices.take(_maxDevicesOnHome).toList();
+
+    return Container(
+      decoration: AppDecor.lightCard(),
+      child: Column(
+        children: [
+          for (int i = 0; i < shown.length; i++) ...[
+            _deviceRow(shown[i]),
+            if (i != shown.length - 1)
+              const Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.lightBorder),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _deviceRow(Map<String, dynamic> item) {
+    final product = item['product']?.toString() ?? 'Appliance';
+    final brand = item['brand']?.toString() ?? '';
+    final hasBrand = brand.isNotEmpty && brand.toLowerCase() != 'unknown' && brand.toUpperCase() != 'N/A';
+    final imageUrl = item['imageUrl']?.toString();
+    final fallback = Icon(_iconForAppliance(product), size: 22, color: AppColors.lightPrimary);
+
+    return InkWell(
+      onTap: _openDevicesScreen,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: AppDecor.lightIconBox(radius: 12),
+              clipBehavior: Clip.antiAlias,
+              child: (imageUrl != null && imageUrl.isNotEmpty)
+                  ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback)
+                  : fallback,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(product, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCardTitle),
+                  const SizedBox(height: 2),
+                  Text(hasBrand ? brand : 'Brand not added',
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCaption),
+                ],
               ),
             ),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.lightTextMuted,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            const SizedBox(width: 8),
+            _warrantyBadge(item),
           ],
         ),
       ),
     );
   }
 
-  // ── Rooms (horizontal list, first few) ──
-  Widget _buildRoomsList() {
-    final rooms = _displayRooms.take(_maxRoomsOnHome).toList();
-    if (rooms.isEmpty) return const SizedBox.shrink();
+  Widget _warrantyBadge(Map<String, dynamic> item) {
+    final expiry = _expiryOf(item);
+    final now = DateTime.now();
 
-    return SizedBox(
-      height: 84,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: rooms.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, i) {
-          final key = rooms[i].key;
-          final name = rooms[i].value;
-          final count = (_currentRooms[key] ?? []).length;
+    Color color;
+    IconData icon;
+    String title;
+    String? subtitle;
 
-          return LightCard(
-            width: 148,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            onTap: () => _openRoomDetail(key, name),
-            onLongPress: () => _confirmDeleteRoom(key, name),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: AppDecor.lightIconBox(),
-                  child: Icon(_iconForRoom(key), color: AppColors.lightPrimary, size: 18),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(name,
-                          maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCardTitle),
-                      const SizedBox(height: 2),
-                      Text('$count device${count == 1 ? '' : 's'}', style: AppText.lightCaption),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right_rounded, color: AppColors.lightChevron, size: 18),
-              ],
-            ),
-          );
-        },
+    if (expiry == null) {
+      color = AppColors.lightTextMuted;
+      icon = Icons.help_outline_rounded;
+      title = 'No warranty info';
+    } else if (expiry.isAfter(now)) {
+      color = AppColors.lightSuccess;
+      icon = Icons.verified_user_rounded;
+      title = 'Warranty Active';
+      subtitle = 'Valid till ${_fmtDate(expiry)}';
+    } else {
+      color = AppColors.danger;
+      icon = Icons.error_rounded;
+      title = 'Warranty Expired';
+      subtitle = 'Expired on ${_fmtDate(expiry)}';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
+              if (subtitle != null)
+                Text(subtitle, style: const TextStyle(color: AppColors.lightTextMuted, fontSize: 9.5)),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  // NOTE: the old UI had no reachable "Add room" button. Delete this widget
-  // and its call in build() if you do not want it on the Home screen.
-  Widget _buildAddRoomButton() {
+  Widget _buildAddApplianceButton() {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
-        onPressed: _openAddRoomDialog,
+        onPressed: _openManualAddDialog,
         style: OutlinedButton.styleFrom(
           side: const BorderSide(color: AppColors.lightPrimary, width: 1.2),
           padding: const EdgeInsets.symmetric(vertical: 13),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.lightPrimary, size: 18),
-        label: const Text('Add New Room', style: AppText.lightLink),
+        label: const Text('Add appliance manually', style: AppText.lightLink),
       ),
     );
   }
@@ -2105,31 +1543,65 @@ class HomeTabState extends State<HomeTab> {
       children: [
         const SectionHeader('Services near you'),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 100,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _serviceCategories.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (context, i) {
-              final cat = _serviceCategories[i];
-              final count = _serviceCounts[cat['type'] as String];
-              return LightCard(
-                width: 95,
-                onTap: () => _openServiceCategorySheet(cat),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(cat['icon'] as IconData, color: AppColors.lightPrimary, size: 22),
-                    const Spacer(),
-                    Text(cat['label'] as String,
-                        maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCardTitle),
-                    Text(count == null ? '...' : '$count nearby', style: AppText.lightSuccessCaption),
-                  ],
-                ),
-              );
-            },
-          ),
+                LayoutBuilder(
+          builder: (context, constraints) {
+            const gap = 10.0;
+            const visible = 3; // screen la ethana card theriyanum
+            final cardWidth = (constraints.maxWidth - gap * (visible - 1)) / visible;
+
+            return SizedBox(
+              height: 118,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _serviceCategories.length,
+                separatorBuilder: (_, __) => const SizedBox(width: gap),
+                itemBuilder: (context, i) {
+                  final cat = _serviceCategories[i];
+                  final color = cat['color'] as Color;
+                  final count = _serviceCounts[cat['type'] as String];
+                  return LightCard(
+                    width: cardWidth,
+                    onTap: () => _openServiceCategorySheet(cat),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(cat['icon'] as IconData, color: color, size: 22),
+                        ),
+                        const Spacer(),
+                                                FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            cat['label'] as String,
+                            maxLines: 1,
+                            softWrap: false,
+                            style: AppText.lightCardTitle,
+                          ),
+                        ),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            count == null ? '...' : '$count nearby',
+                            maxLines: 1,
+                            softWrap: false,
+                            style: AppText.lightSuccessCaption,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            );
+          },
         ),
         const SizedBox(height: 12),
         Row(
@@ -2171,7 +1643,7 @@ class HomeTabState extends State<HomeTab> {
     );
   }
 
-  // ── Shown instead of rooms/stats when user has no registered home (skip-flow) ──
+  // ── Shown instead of devices/stats when user has no registered home (skip-flow) ──
   Widget _buildRegisterHomeCard() {
     return Container(
       width: double.infinity,
@@ -2222,12 +1694,7 @@ class HomeTabState extends State<HomeTab> {
     if (defaultHome == null) return const SizedBox.shrink();
 
     final rooms = (defaultHome['rooms'] as Map<String, List<Map<String, dynamic>>>?) ?? {};
-    final allDevices = <MapEntry<String, Map<String, dynamic>>>[];
-    rooms.forEach((roomKey, items) {
-      for (final it in items) {
-        allDevices.add(MapEntry(roomKey, it));
-      }
-    });
+    final allDevices = rooms.values.expand((l) => l).toList();
 
     if (allDevices.isEmpty) return const SizedBox.shrink();
 
@@ -2253,8 +1720,7 @@ class HomeTabState extends State<HomeTab> {
           const SizedBox(height: 4),
           const Text('These will move into your home once you register.', style: AppText.faintCaption),
           const SizedBox(height: 12),
-          ...allDevices.take(5).map((entry) {
-            final item = entry.value;
+          ...allDevices.take(5).map((item) {
             final product = item['product']?.toString() ?? 'Appliance';
             final brand = item['brand']?.toString() ?? '';
             final label =
@@ -2263,7 +1729,7 @@ class HomeTabState extends State<HomeTab> {
             final fallback = Icon(_iconForAppliance(product), size: 14, color: AppColors.textFaint);
 
             return InkWell(
-              onTap: () => _openDefaultRoomDetail(entry.key),
+              onTap: _openDefaultHomeDevices,
               borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 5),
@@ -2297,7 +1763,7 @@ class HomeTabState extends State<HomeTab> {
           }),
           if (allDevices.length > 5)
             InkWell(
-              onTap: () => _openDefaultRoomDetail(allDevices.first.key),
+              onTap: _openDefaultHomeDevices,
               child: Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(

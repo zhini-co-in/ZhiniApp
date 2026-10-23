@@ -11,6 +11,7 @@
 // 'COMPLETED'.
 
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'services/ticket_service.dart';
 
 enum _BillStep { items, payment }
@@ -48,8 +49,8 @@ class BillingScreen extends StatefulWidget {
 }
 
 class _BillingScreenState extends State<BillingScreen> {
-  static const _bg = Color(0xFF0A1628);
-  static const _card = Color(0xFF0F2038);
+  static const _bg = AppColors.scaffoldBg;
+  static const _card = AppColors.cardBg;
   static const _accent = Color(0xFF2E7DFF);
   static const _green = Color(0xFF35D48A);
 
@@ -225,7 +226,7 @@ class _BillingScreenState extends State<BillingScreen> {
             children: [
               Text(
                 widget.customerName,
-                style: const TextStyle(color: Colors.white54, fontSize: 12.5),
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5),
               ),
               const SizedBox(height: 18),
               const Text('Product',
@@ -269,7 +270,7 @@ class _BillingScreenState extends State<BillingScreen> {
                     selectedColor: _accent,
                     labelStyle: TextStyle(
                         color: selected ? Colors.white : Colors.white60, fontSize: 12.5),
-                    side: BorderSide(color: selected ? _accent : Colors.white10),
+                    side: BorderSide(color: selected ? _accent : AppColors.borderSubtle),
                   );
                 }).toList(),
               ),
@@ -290,17 +291,17 @@ class _BillingScreenState extends State<BillingScreen> {
                 style: const TextStyle(color: Colors.white, fontSize: 13.5),
                 decoration: InputDecoration(
                   hintText: 'e.g. Replaced cracked screen and serviced cooling system',
-                  hintStyle: const TextStyle(color: Colors.white24, fontSize: 12.5),
+                  hintStyle: const TextStyle(color: AppColors.textDisabled, fontSize: 12.5),
                   filled: true,
                   fillColor: _card,
                   contentPadding: const EdgeInsets.all(12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Colors.white10),
+                    borderSide: const BorderSide(color: AppColors.borderSubtle),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Colors.white10),
+                    borderSide: const BorderSide(color: AppColors.borderSubtle),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -355,7 +356,7 @@ class _BillingScreenState extends State<BillingScreen> {
       decoration: BoxDecoration(
         color: _card,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppColors.borderSubtle),
       ),
       child: Column(
         children: [
@@ -363,13 +364,13 @@ class _BillingScreenState extends State<BillingScreen> {
           _summaryRow('Labour charge', _labour),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Divider(color: Colors.white10, height: 1),
+            child: Divider(color: AppColors.borderSubtle, height: 1),
           ),
           _summaryRow('Subtotal', _subtotal),
           _summaryRow('GST (${_gstPercent.toStringAsFixed(0)}%)', _gstAmount),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Divider(color: Colors.white10, height: 1),
+            child: Divider(color: AppColors.borderSubtle, height: 1),
           ),
           _summaryRow('Total', _grandTotal, bold: true),
         ],
@@ -385,12 +386,12 @@ class _BillingScreenState extends State<BillingScreen> {
         children: [
           Text(label,
               style: TextStyle(
-                  color: bold ? Colors.white : Colors.white54,
+                  color: bold ? Colors.white : AppColors.textMuted,
                   fontSize: bold ? 14.5 : 12.5,
                   fontWeight: bold ? FontWeight.w700 : FontWeight.normal)),
           Text('₹${value.toStringAsFixed(2)}',
               style: TextStyle(
-                  color: bold ? _green : Colors.white70,
+                  color: bold ? _green : AppColors.textSecondary,
                   fontSize: bold ? 15 : 12.5,
                   fontWeight: bold ? FontWeight.w700 : FontWeight.normal)),
         ],
@@ -414,12 +415,12 @@ class _BillingScreenState extends State<BillingScreen> {
                 decoration: BoxDecoration(
                   color: _card,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white10),
+                  border: Border.all(color: AppColors.borderSubtle),
                 ),
                 child: Column(
                   children: [
                     const Text('Amount to collect',
-                        style: TextStyle(color: Colors.white54, fontSize: 12.5)),
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
                     const SizedBox(height: 6),
                     Text('₹${_grandTotal.toStringAsFixed(2)}',
                         style: const TextStyle(
@@ -484,15 +485,15 @@ class _BillingScreenState extends State<BillingScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border:
-                Border.all(color: selected ? _accent : Colors.white10, width: selected ? 1.4 : 1),
+                Border.all(color: selected ? _accent : AppColors.borderSubtle, width: selected ? 1.4 : 1),
           ),
           child: Column(
             children: [
-              Icon(icon, color: selected ? _accent : Colors.white38, size: 26),
+              Icon(icon, color: selected ? _accent : AppColors.textFaint, size: 26),
               const SizedBox(height: 8),
               Text(label,
                   style: TextStyle(
-                      color: selected ? Colors.white : Colors.white54,
+                      color: selected ? Colors.white : AppColors.textMuted,
                       fontSize: 13.5,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.normal)),
             ],
@@ -511,17 +512,17 @@ class _BillingScreenState extends State<BillingScreen> {
       style: const TextStyle(color: Colors.white, fontSize: 13.5),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+        hintStyle: const TextStyle(color: AppColors.textDisabled, fontSize: 13),
         filled: true,
         fillColor: _card,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Colors.white10),
+          borderSide: const BorderSide(color: AppColors.borderSubtle),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Colors.white10),
+          borderSide: const BorderSide(color: AppColors.borderSubtle),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
@@ -540,17 +541,17 @@ class _BillingScreenState extends State<BillingScreen> {
       style: const TextStyle(color: Colors.white, fontSize: 13.5),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+        hintStyle: const TextStyle(color: AppColors.textDisabled, fontSize: 13),
         filled: true,
         fillColor: _card,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Colors.white10),
+          borderSide: const BorderSide(color: AppColors.borderSubtle),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Colors.white10),
+          borderSide: const BorderSide(color: AppColors.borderSubtle),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),

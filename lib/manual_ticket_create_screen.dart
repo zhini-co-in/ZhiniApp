@@ -8,6 +8,7 @@
 // provider marks the ticket as ACCEPTED from the Jobs list.
 
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'services/ticket_service.dart';
 import 'utils/manual_ticket_store.dart';
 
@@ -31,9 +32,9 @@ class _ManualTicketCreateScreenState extends State<ManualTicketCreateScreen> {
 
   bool _submitting = false;
 
-  static const _fieldFill = Color(0xFF0F2038);
-  static const _bg1 = Color(0xFF0A1628);
-  static const _bg2 = Color(0xFF0F2038);
+  static const _fieldFill = AppColors.cardBg;
+  static const _bg1 = AppColors.scaffoldBg;
+  static const _bg2 = AppColors.cardBg;
 
   @override
   void dispose() {
@@ -66,7 +67,7 @@ Future<void> _submit() async {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          backgroundColor: Color(0xFF16294A),
+          backgroundColor: AppColors.cardBgAlt,
           content: Text('Ticket created successfully', style: TextStyle(color: Colors.white)),
         ),
       );
@@ -85,8 +86,8 @@ Future<void> _submit() async {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      labelStyle: const TextStyle(color: Colors.white54),
-      hintStyle: const TextStyle(color: Colors.white24),
+      labelStyle: const TextStyle(color: AppColors.textMuted),
+      hintStyle: const TextStyle(color: AppColors.textDisabled),
       filled: true,
       fillColor: _fieldFill,
       border: OutlineInputBorder(
@@ -123,7 +124,7 @@ Future<void> _submit() async {
               children: [
                 const Text(
                   'Enter the customer & job details below. This is for walk-in / phone-in requests.',
-                  style: TextStyle(color: Colors.white54, fontSize: 12.5),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
                 ),
                 const SizedBox(height: 20),
                 TextFormField(

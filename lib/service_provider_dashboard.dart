@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'login_screen.dart';
 import 'service_ticket_card.dart';
 import 'service_provider_scan_tab.dart';
@@ -44,7 +45,7 @@ class _ServiceProviderDashboardState extends State<ServiceProviderDashboard> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: const Color(0xFF16294A),
+        backgroundColor: AppColors.cardBgAlt,
         content: Text(
           value ? 'You are now available' : 'You are now unavailable',
           style: const TextStyle(color: Colors.white),
@@ -58,7 +59,7 @@ class _ServiceProviderDashboardState extends State<ServiceProviderDashboard> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF0F2038),
+        backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Confirm Logout', style: TextStyle(color: Colors.white)),
         content: const Text(
@@ -123,13 +124,13 @@ class _ServiceProviderDashboardState extends State<ServiceProviderDashboard> {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0A1628),
+        backgroundColor: AppColors.scaffoldBg,
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [Color(0xFF0A1628), Color(0xFF0F2038)],
+              colors: [AppColors.scaffoldBg, AppColors.cardBg],
             ),
           ),
           child: SafeArea(
@@ -226,7 +227,7 @@ class _HomeTab extends StatelessWidget {
                         const SizedBox(width: 2),
                         Text(
                           '$rating · $category',
-                          style: const TextStyle(color: Colors.white54, fontSize: 12.5),
+                          style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5),
                         ),
                       ],
                     ),
@@ -263,9 +264,9 @@ class _HomeTab extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F2038),
+              color: AppColors.cardBg,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.white10),
+              border: Border.all(color: AppColors.borderSubtle),
             ),
             child: Row(
               children: [
@@ -281,7 +282,7 @@ class _HomeTab extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         isAvailable ? 'Receiving new jobs' : 'Turn on to get new jobs',
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
                       ),
                     ],
                   ),
@@ -291,8 +292,8 @@ class _HomeTab extends StatelessWidget {
                   onChanged: onAvailabilityChanged,
                   activeThumbColor: Colors.white,
                   activeTrackColor: Colors.blue,
-                  inactiveThumbColor: Colors.white70,
-                  inactiveTrackColor: Colors.white24,
+                  inactiveThumbColor: AppColors.textSecondary,
+                  inactiveTrackColor: AppColors.textDisabled,
                 ),
               ],
             ),
@@ -332,9 +333,9 @@ class _HomeTab extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 28),
               decoration: BoxDecoration(
-                color: const Color(0xFF0F2038),
+                color: AppColors.cardBg,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white10),
+                border: Border.all(color: AppColors.borderSubtle),
               ),
               child: Column(
                 children: [
@@ -342,10 +343,10 @@ class _HomeTab extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.2), size: 32),
                   const SizedBox(height: 10),
                   const Text('You are offline',
-                      style: TextStyle(color: Colors.white54, fontSize: 13)),
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
                   const SizedBox(height: 2),
                   const Text('Turn on availability to get started',
-                      style: TextStyle(color: Colors.white24, fontSize: 11)),
+                      style: TextStyle(color: AppColors.textDisabled, fontSize: 11)),
                 ],
               ),
             ),
@@ -367,9 +368,9 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F2038),
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppColors.borderSubtle),
       ),
       child: Column(
         children: [
@@ -377,7 +378,7 @@ class _StatCard extends StatelessWidget {
               style: const TextStyle(
                   color: Colors.blue, fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 3),
-          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11.5)),
+          Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 11.5)),
         ],
       ),
     );
@@ -472,7 +473,7 @@ class _JobsTabState extends State<_JobsTab> {
               style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
           Text('${_activeTickets.length} active · ${_completedTickets.length} completed',
-              style: const TextStyle(color: Colors.white54, fontSize: 12.5)),
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
           const SizedBox(height: 16),
           SizedBox(
           width: double.infinity,
@@ -535,7 +536,7 @@ class _JobsTabState extends State<_JobsTab> {
           children: [
             const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 28),
             const SizedBox(height: 8),
-            const Text('Couldn\'t load jobs', style: TextStyle(color: Colors.white70, fontSize: 13)),
+            const Text('Couldn\'t load jobs', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(height: 10),
             TextButton(
               onPressed: _loadJobs,
@@ -548,7 +549,7 @@ class _JobsTabState extends State<_JobsTab> {
 
     return RefreshIndicator(
       color: Colors.blue,
-      backgroundColor: const Color(0xFF0F2038),
+      backgroundColor: AppColors.cardBg,
       onRefresh: _loadJobs,
       child: _visibleTickets.isEmpty
           ? ListView(
@@ -558,7 +559,7 @@ class _JobsTabState extends State<_JobsTab> {
                 Icon(Icons.work_off_rounded, color: Colors.white.withValues(alpha: 0.15), size: 40),
                 const SizedBox(height: 12),
                 const Center(
-                  child: Text('No jobs here yet', style: TextStyle(color: Colors.white38, fontSize: 13)),
+                  child: Text('No jobs here yet', style: TextStyle(color: AppColors.textFaint, fontSize: 13)),
                 ),
               ],
             )
@@ -606,7 +607,7 @@ class _JobsTabState extends State<_JobsTab> {
       case 'COMPLETED':
         return Colors.greenAccent;
       default:
-        return Colors.white38;
+        return AppColors.textFaint;
     }
   }
 }
@@ -626,9 +627,9 @@ class _FilterChipButton extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? Colors.blue : const Color(0xFF0F2038),
+          color: selected ? Colors.blue : AppColors.cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? Colors.blue : Colors.white10),
+          border: Border.all(color: selected ? Colors.blue : AppColors.borderSubtle),
         ),
         child: Text(
           label,
@@ -664,9 +665,9 @@ class _JobHistoryCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F2038),
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppColors.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -692,10 +693,10 @@ class _JobHistoryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text(subtitle, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
           if (location.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(location, style: const TextStyle(color: Colors.white38, fontSize: 11.5)),
+            Text(location, style: const TextStyle(color: AppColors.textFaint, fontSize: 11.5)),
           ],
         ],
       ),
@@ -718,7 +719,7 @@ class _CustomersTab extends StatelessWidget {
           Icon(Icons.people_alt_rounded, color: Colors.white.withValues(alpha: 0.2), size: 48),
           const SizedBox(height: 14),
           const Text('Your customers will show up here',
-              style: TextStyle(color: Colors.white54, fontSize: 13)),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
         ],
       ),
     );
@@ -763,10 +764,10 @@ class _ProfileTab extends StatelessWidget {
                     style: const TextStyle(
                         color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                Text(mobileNumber, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                Text(mobileNumber, style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
                 const SizedBox(height: 4),
                 Text('★ $rating · $category',
-                    style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                    style: const TextStyle(color: AppColors.textFaint, fontSize: 12)),
               ],
             ),
           ),
@@ -816,7 +817,7 @@ class _ProfileMenuTile extends StatelessWidget {
             Expanded(
               child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 14)),
             ),
-            const Icon(Icons.chevron_right_rounded, color: Colors.white24, size: 20),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.textDisabled, size: 20),
           ],
         ),
       ),
@@ -838,7 +839,7 @@ class _BottomNavBar extends StatelessWidget {
     return Container(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom > 0 ? 8 : 14, top: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F2038),
+        color: AppColors.cardBg,
         border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
       ),
       child: Row(
@@ -873,7 +874,7 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = index == currentIndex;
-    final color = selected ? Colors.blue : Colors.white38;
+    final color = selected ? Colors.blue : AppColors.textFaint;
     return GestureDetector(
       onTap: () => onTap(index),
       behavior: HitTestBehavior.opaque,

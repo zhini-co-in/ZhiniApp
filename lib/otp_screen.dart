@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'theme/app_theme.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,7 @@ import 'login_screen.dart';
 import 'services/log_service.dart';
 import 'services/api_client.dart';
 import 'webview_screen.dart';
+import 'widgets/zhini_logo.dart';
 // Phase 3:
 // import 'services/push_service.dart';
 
@@ -54,8 +56,8 @@ class _OtpScreenState extends State<OtpScreen> {
   // Short inline error shown directly below the OTP boxes.
   String? _otpError;
 
-  static const Color _secondaryText = Color(0xB3FFFFFF); // white @ 70%
-  static const Color _labelText = Color(0xE6FFFFFF); // white @ 90%
+  static const Color _secondaryText = AppColors.textSecondary; // white @ 70%
+  static const Color _labelText = AppColors.textPrimary; // white @ 90%
   static const Color _errorColor = Color(0xFFFF5A5A);
 
   static const String _termsUrl = 'https://atom8itsolutions.com/Zhini/term';
@@ -508,20 +510,21 @@ class _OtpScreenState extends State<OtpScreen> {
                     height: 56,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
+                      color: AppColors.cardBg,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: _otpError != null
                             ? _errorColor
                             : (focused && i == activeIndex)
-                                ? Colors.blue
-                                : Colors.blue.shade300,
+                                ? AppColors.primary
+                                : AppColors.primary,
                         width: (focused && i == activeIndex) ? 2 : 1,
                       ),
                     ),
                     child: Text(
                       i < text.length ? text[i] : '',
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: AppColors.textPrimary,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
@@ -572,7 +575,7 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: AppColors.scaffoldBg,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -581,11 +584,7 @@ class _OtpScreenState extends State<OtpScreen> {
             children: [
               const SizedBox(height: 60),
 
-              Image.asset(
-                'assets/Zhini_Icon1.png',
-                width: 112,
-                height: 112,
-              ),
+              const ZhiniLogo(size: 112),
 
               const SizedBox(height: 40),
 
@@ -593,7 +592,7 @@ class _OtpScreenState extends State<OtpScreen> {
                 'Verify your number',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
                 ),
@@ -613,7 +612,7 @@ class _OtpScreenState extends State<OtpScreen> {
                     _maskedNumber,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: AppColors.textPrimary,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0.5,
@@ -679,7 +678,7 @@ class _OtpScreenState extends State<OtpScreen> {
                             child: Text(
                               _isResending ? 'Sending...' : 'Resend',
                               style: const TextStyle(
-                                color: Colors.blue,
+                                color: AppColors.primary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -699,8 +698,8 @@ class _OtpScreenState extends State<OtpScreen> {
                       ? null
                       : _verifyOtp,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    disabledBackgroundColor: const Color(0xFF3A4556),
+                    backgroundColor: AppColors.primary,
+                    disabledBackgroundColor: AppColors.cardBgAlt,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -711,18 +710,18 @@ class _OtpScreenState extends State<OtpScreen> {
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
+  color: AppColors.onPrimary,
+  strokeWidth: 2,
+),
                         )
                       : Text(
                           'Verify and continue',
                           style: TextStyle(
-                            color: _enteredOtp.length == _otpLength
-                                ? Colors.white
-                                : Colors.white54,
-                            fontSize: 16,
-                          ),
+  color: _enteredOtp.length == _otpLength
+      ? AppColors.onPrimary
+      : AppColors.textMuted,
+  fontSize: 16,
+),
                         ),
                 ),
               ),
@@ -749,13 +748,13 @@ class _OtpScreenState extends State<OtpScreen> {
                   children: [
                     TextSpan(
                       text: 'Terms',
-                      style: const TextStyle(color: Colors.blue),
+                      style: const TextStyle(color: AppColors.primary),
                       recognizer: _termsTap,
                     ),
                     const TextSpan(text: ' and '),
                     TextSpan(
                       text: 'Privacy policy.',
-                      style: const TextStyle(color: Colors.blue),
+                      style: const TextStyle(color: AppColors.primary),
                       recognizer: _privacyTap,
                     ),
                   ],
@@ -771,7 +770,7 @@ class _OtpScreenState extends State<OtpScreen> {
                   Expanded(
                     child: Container(
                       height: 1,
-                      color: Colors.blue.withOpacity(0.25),
+                      color: AppColors.primary.withValues(alpha: 0.25),
                     ),
                   ),
                   Padding(
@@ -780,13 +779,13 @@ class _OtpScreenState extends State<OtpScreen> {
                       alignment: Alignment.center,
                       children: const [
                         Icon(Icons.shield,
-                            color: Color(0xFF16243A), size: 42),
+                            color: AppColors.cardBgAlt, size: 42),
                         Icon(Icons.shield_outlined,
-                            color: Colors.blue, size: 42),
+                            color: AppColors.primary, size: 42),
                         Padding(
                           padding: EdgeInsets.only(top: 2),
                           child:
-                              Icon(Icons.lock, color: Colors.blue, size: 16),
+                              Icon(Icons.lock, color: AppColors.primary, size: 16),
                         ),
                       ],
                     ),
@@ -794,7 +793,7 @@ class _OtpScreenState extends State<OtpScreen> {
                   Expanded(
                     child: Container(
                       height: 1,
-                      color: Colors.blue.withOpacity(0.25),
+                      color: AppColors.primary.withValues(alpha: 0.25),
                     ),
                   ),
                 ],
@@ -806,7 +805,7 @@ class _OtpScreenState extends State<OtpScreen> {
                 'Your data & documents are protected',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),

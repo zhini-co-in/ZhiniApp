@@ -5,10 +5,12 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'models/home_model.dart';
 import 'splash_screen.dart';
-import 'services/log_service.dart';      // Phase 2
+import 'services/log_service.dart'; // Phase 2
 //import 'services/push_service.dart';   // Phase 3
 import 'firebase_options.dart';
+import 'theme/theme_controller.dart';
 import 'update_service.dart';
+import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,10 +18,12 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-    // TEMP DIAGNOSTIC
+  // TEMP DIAGNOSTIC
   try {
     final settings = await FirebaseMessaging.instance.requestPermission(
-      alert: true, badge: true, sound: true,
+      alert: true,
+      badge: true,
+      sound: true,
     );
     debugPrint('PUSH permission: ${settings.authorizationStatus}');
 
@@ -36,7 +40,7 @@ void main() async {
     debugPrint('PUSH check error: $e');
   }
 
-  LogService.instance.init();            // Phase 2
+  LogService.instance.init(); // Phase 2
   //await PushService.instance.init();   // Phase 3
   await availableCameras();
 
@@ -45,17 +49,28 @@ void main() async {
   await Hive.openBox<HomeModel>('homes');
   await Hive.openBox('session');
 
+  await ThemeController.load(); // saved Light / Dark mode
+
   runApp(const MyApp());
   UpdateService.checkForUpdate();
 }
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: SplashScreen(),
+    return ValueListenableBuilder<bool>(
+      valueListenable: ThemeController.notifier,
+      builder: (context, isDark, _) => MaterialApp(
+        key: ValueKey(isDark),
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          brightness: isDark ? Brightness.dark : Brightness.light,
+          scaffoldBackgroundColor: AppColors.scaffoldBg,
+        ),
+        home: SplashScreen(),
+      ),
     );
   }
 }

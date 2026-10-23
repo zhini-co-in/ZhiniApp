@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'theme_controller.dart';
+import 'dart:ui' show ColorSpace;
 
 /// ---------------------------------------------------------------------
 /// APP THEME — the "CSS" of the app.
@@ -11,58 +13,77 @@ import 'package:flutter/material.dart';
 ///  * Light palette -> new Home screen (names start with `light`)
 /// ---------------------------------------------------------------------
 
+/// A color that holds a LIGHT and a DARK value and picks one at paint time.
+/// It is `const`-friendly, so `const Text(style: AppText.x)` keeps working.
+class DynColor extends Color {
+  const DynColor(this.light, this.dark) : super(0);
+
+  final Color light;
+  final Color dark;
+
+  Color get _c => ThemeController.isDark ? dark : light;
+
+  @override
+  double get a => _c.a;
+  @override
+  double get r => _c.r;
+  @override
+  double get g => _c.g;
+  @override
+  double get b => _c.b;
+  @override
+  ColorSpace get colorSpace => _c.colorSpace;
+}
+
 class AppColors {
   AppColors._();
 
-  // ───────────── MAIN PALETTE (used by ALL screens) ─────────────
-  // Every screen/dialog/sheet that uses these names now follows the
-  // light Home look. Change a value here -> whole app changes.
+  // Each color = DynColor(LIGHT value, DARK value).
+  // Edit a value here -> that color changes in the whole app.
 
   // Backgrounds
-  static const Color scaffoldBg = Color(0xFFF5F8FF);
-  static const Color cardBg = Colors.white;
-  static const Color cardBgAlt = Color(0xFFEEF3FC);
-  static const Color memberAvatarBg = Color(0xFFDCE8FF);
+  static const Color scaffoldBg = DynColor(Color(0xFFF5F8FF), Color(0xFF0A1628));
+  static const Color cardBg = DynColor(Color(0xFFFFFFFF), Color(0xFF0F2038));
+  static const Color cardBgAlt = DynColor(Color(0xFFEEF3FC), Color(0xFF16294A));
+  static const Color memberAvatarBg = DynColor(Color(0xFFDCE8FF), Color(0xFF1E3A8A));
 
   // Brand / accents
-  static const Color primary = Color(0xFF2B7BFF);
-  static const Color primaryBorder = Color(0xFF8FBAFF);
-  static const Color primarySoft = Color(0x262B7BFF); // 15%
-  static const Color primaryFaint = Color(0x0D2B7BFF); // 5%
+  static const Color primary = DynColor(Color(0xFF2B7BFF), Color(0xFF2196F3));
+  static const Color primaryBorder = DynColor(Color(0xFF8FBAFF), Color(0xFF64B5F6));
+  static const Color primarySoft = DynColor(Color(0x262B7BFF), Color(0x262196F3));
+  static const Color primaryFaint = DynColor(Color(0x0D2B7BFF), Color(0x0D2196F3));
   static const Color onPrimary = Colors.white; // text/icons ON a blue button
 
   // Status colors
-  static const Color success = Color(0xFF22C55E);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color danger = Color(0xFFEF4444);
+  static const Color success = DynColor(Color(0xFF22C55E), Color(0xFF69F0AE));
+  static const Color warning = DynColor(Color(0xFFF59E0B), Color(0xFFFFAB40));
+  static const Color danger = DynColor(Color(0xFFEF4444), Color(0xFFFF5252));
   static const Color star = Colors.amber;
 
   // Text
-  static const Color textPrimary = Color(0xFF0F1C3F);
-  static const Color textSecondary = Color(0xFF4A5A7A);
-  static const Color textMuted = Color(0xFF7A8BA8);
-  static const Color textFaint = Color(0xFF9AA5B5);
-  static const Color textDisabled = Color(0xFFB0BACE);
-  static const Color borderSubtle = Color(0xFFE8EEF8);
-  static const Color borderMuted = Color(0xFFE0E7F5);
+  static const Color textPrimary = DynColor(Color(0xFF0F1C3F), Color(0xFFFFFFFF));
+  static const Color textSecondary = DynColor(Color(0xFF4A5A7A), Color(0xB3FFFFFF));
+  static const Color textMuted = DynColor(Color(0xFF7A8BA8), Color(0x8AFFFFFF));
+  static const Color textFaint = DynColor(Color(0xFF9AA5B5), Color(0x62FFFFFF));
+  static const Color textDisabled = DynColor(Color(0xFFB0BACE), Color(0x3DFFFFFF));
+  static const Color borderSubtle = DynColor(Color(0xFFE8EEF8), Color(0x1AFFFFFF));
+  static const Color borderMuted = DynColor(Color(0xFFE0E7F5), Color(0x3DFFFFFF));
 
-  // ───────────── LIGHT THEME (Home screen) ─────────────
+  // Home-screen names (same palette, kept so home_tab.dart needs no change)
   static const Color lightBg = scaffoldBg;
-  static const Color lightSurface = Colors.white;
-  static const Color lightPrimary = Color(0xFF2B7BFF);
-  static const Color lightSuccess = Color(0xFF22C55E);
-  static const Color lightPurple = Color(0xFF8B5CF6);
-  static const Color lightWarning = Color(0xFFF59E0B);
-
-  static const Color lightTextDark = Color(0xFF0F1C3F);
-  static const Color lightTextBody = Color(0xFF3D4F6F);
-  static const Color lightTextSoft = Color(0xFF4A5A7A);
-  static const Color lightTextMuted = Color(0xFF7A8BA8);
-  static const Color lightHint = Color(0xFF9AA5B5);
-  static const Color lightChevron = Color(0xFFB0BACE);
-
-  static const Color lightBorder = Color(0xFFE8EEF8);
-  static const Color lightBorderStrong = Color(0xFFE0E7F5);
+  static const Color lightSurface = cardBg;
+  static const Color lightPrimary = primary;
+  static const Color lightSuccess = success;
+  static const Color lightWarning = warning;
+  static const Color lightPurple = DynColor(Color(0xFF8B5CF6), Color(0xFFA78BFA));
+  static const Color lightTextDark = textPrimary;
+  static const Color lightTextBody = DynColor(Color(0xFF3D4F6F), Color(0xB3FFFFFF));
+  static const Color lightTextSoft = textSecondary;
+  static const Color lightTextMuted = textMuted;
+  static const Color lightHint = textFaint;
+  static const Color lightChevron = textDisabled;
+  static const Color lightBorder = borderSubtle;
+  static const Color lightBorderStrong = borderMuted;
 
   // Card border by warranty/alert status
   static Color statusColor(String status) {
@@ -215,33 +236,39 @@ class AppDecor {
       );
 
   /// Full-width blue filled button (dialog "Continue", "Create room"...).
-  static ButtonStyle primaryButton = ElevatedButton.styleFrom(
-    backgroundColor: AppColors.primary,
-    padding: const EdgeInsets.symmetric(vertical: 13),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-  );
+  static ButtonStyle get primaryButton => ElevatedButton.styleFrom(
+      backgroundColor: AppColors.primary,
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
 
-  /// Full-width blue outlined button.
-  static ButtonStyle primaryOutlinedButton = OutlinedButton.styleFrom(
-    side: const BorderSide(color: AppColors.primary),
-    padding: const EdgeInsets.symmetric(vertical: 13),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-  );
+static ButtonStyle get primaryOutlinedButton => OutlinedButton.styleFrom(
+      side: const BorderSide(color: AppColors.primary),
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
 
   // ───────────── LIGHT ─────────────
 
-  static const LinearGradient lightHeaderGradient = LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    colors: [
-      Color(0xFF4BA3F0),
-      Color(0xFF7EC0F8),
-      Color(0xFFB8DFFC),
-      Color(0xFFEAF6FF),
-      Color(0xFFF5F8FF),
-    ],
-    stops: [0.0, 0.25, 0.5, 0.75, 1.0],
-  );
+  static LinearGradient get lightHeaderGradient => ThemeController.isDark
+      ? const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF16406B), Color(0xFF0F2347), Color(0xFF0A1628)],
+          stops: [0.0, 0.55, 1.0],
+        )
+      : const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF4BA3F0),
+            Color(0xFF7EC0F8),
+            Color(0xFFB8DFFC),
+            Color(0xFFEAF6FF),
+            Color(0xFFF5F8FF),
+          ],
+          stops: [0.0, 0.25, 0.5, 0.75, 1.0],
+        );
 
   /// White card with soft border — rooms, services, stats, info cards.
   static BoxDecoration lightCard({double radius = 16, Color? borderColor}) => BoxDecoration(

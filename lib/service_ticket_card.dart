@@ -5,6 +5,7 @@
 // Tickets are fetched live from the backend (wekan-services).
 
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'job_detail_screen.dart';
 import 'services/ticket_service.dart';
 import 'utils/whatsapp_share.dart';
@@ -140,7 +141,7 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: const Color(0xFF16294A),
+        backgroundColor: AppColors.cardBgAlt,
         content: Text(
           accepted
               ? 'Accepted ${ticket.customerName}\'s ${ticket.appliance} request ✅'
@@ -190,7 +191,7 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFF16294A),
+          backgroundColor: AppColors.cardBgAlt,
           content: Text(
             '${ticket.customerName}\'s job marked as completed ✅',
             style: const TextStyle(color: Colors.white),
@@ -215,9 +216,9 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 36),
         decoration: BoxDecoration(
-          color: const Color(0xFF0F2038),
+          color: AppColors.cardBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white10),
+          border: Border.all(color: AppColors.borderSubtle),
         ),
         child: const Center(
           child: CircularProgressIndicator(color: Colors.blue, strokeWidth: 2),
@@ -230,7 +231,7 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
         decoration: BoxDecoration(
-          color: const Color(0xFF0F2038),
+          color: AppColors.cardBg,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
         ),
@@ -239,11 +240,11 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
             const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 28),
             const SizedBox(height: 8),
             const Text('Couldn\'t load requests',
-                style: TextStyle(color: Colors.white70, fontSize: 13)),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(height: 4),
             Text(_error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white24, fontSize: 10.5)),
+                style: const TextStyle(color: AppColors.textDisabled, fontSize: 10.5)),
             const SizedBox(height: 10),
             TextButton(
               onPressed: _loadTickets,
@@ -318,19 +319,19 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 36),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F2038),
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppColors.borderSubtle),
       ),
       child: Column(
         children: [
           Icon(Icons.inbox_rounded, color: Colors.white.withValues(alpha: 0.2), size: 34),
           const SizedBox(height: 10),
           const Text('No requests right now',
-              style: TextStyle(color: Colors.white54, fontSize: 13)),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
           const SizedBox(height: 2),
           const Text('New tickets will show up here',
-              style: TextStyle(color: Colors.white24, fontSize: 11)),
+              style: TextStyle(color: AppColors.textDisabled, fontSize: 11)),
         ],
       ),
     );
@@ -423,9 +424,9 @@ class TicketCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF0F2038),
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppColors.borderSubtle),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 10, offset: const Offset(0, 4)),
         ],
@@ -463,7 +464,7 @@ class TicketCard extends StatelessWidget {
                                       color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700)),
                               const SizedBox(height: 2),
                               Text(ticket.customerName,
-                                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
                             ],
                           ),
                         ),
@@ -482,25 +483,25 @@ class TicketCard extends StatelessWidget {
                                       color: urgencyColor, fontSize: 10, fontWeight: FontWeight.w700)),
                             ),
                             const SizedBox(height: 6),
-                            Text(_timeAgo, style: const TextStyle(color: Colors.white24, fontSize: 10)),
+                            Text(_timeAgo, style: const TextStyle(color: AppColors.textDisabled, fontSize: 10)),
                           ],
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     Text(ticket.issue,
-                        style: const TextStyle(color: Colors.white70, fontSize: 12.5, height: 1.35)),
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.35)),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        const Icon(Icons.location_on_rounded, color: Colors.white38, size: 14),
+                        const Icon(Icons.location_on_rounded, color: AppColors.textFaint, size: 14),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             ticket.address,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white38, fontSize: 11.5),
+                            style: const TextStyle(color: AppColors.textFaint, fontSize: 11.5),
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -513,7 +514,7 @@ class TicketCard extends StatelessWidget {
                             ),
                             child: Text(
                               '${ticket.distanceKm.toStringAsFixed(1)} km',
-                              style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                              style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5),
                             ),
                           ),
                       ],

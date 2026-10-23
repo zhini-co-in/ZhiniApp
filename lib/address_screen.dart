@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'theme/app_theme.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -12,6 +13,7 @@ import 'services/device_id_service.dart';
 import 'services/api_client.dart';
 import 'constants/api_config.dart';
 import 'widgets/app_dialog_field.dart';
+import 'widgets/zhini_logo.dart';
 
 class AddressScreen extends StatefulWidget {
   final String mobileNumber;
@@ -414,7 +416,7 @@ class _AddressScreenState extends State<AddressScreen> {
     // is created. If it fails, show a Retry button.
     if (_autoDefault) {
       return Scaffold(
-        backgroundColor: const Color(0xFF0A1628),
+        backgroundColor: AppColors.scaffoldBg,
         body: Center(
           child: _autoFailed
               ? Column(
@@ -422,19 +424,19 @@ class _AddressScreenState extends State<AddressScreen> {
                   children: [
                     const Text(
                       'Could not set up your account.',
-                      style: TextStyle(color: Colors.white70),
+                      style: TextStyle(color: AppColors.textSecondary),
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue),
-                      onPressed: _skip,
-                      child: const Text('Retry',
-                          style: TextStyle(color: Colors.white)),
-                    ),
+  style: ElevatedButton.styleFrom(
+      backgroundColor: AppColors.primary),
+  onPressed: _skip,
+  child: const Text('Retry',
+      style: TextStyle(color: AppColors.onPrimary)),
+),
                   ],
                 )
-              : const CircularProgressIndicator(color: Colors.blue),
+              : const CircularProgressIndicator(color: AppColors.primary),
         ),
       );
     }
@@ -442,7 +444,7 @@ class _AddressScreenState extends State<AddressScreen> {
     final bool anyActionInProgress = _isSaving || _isSkipping;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: AppColors.scaffoldBg,
       body: SafeArea(
         child: Stack(
           children: [
@@ -451,24 +453,24 @@ class _AddressScreenState extends State<AddressScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 60),
-                  Image.asset('assets/Zhini_Icon1.png', width: 80, height: 80),
+                  const ZhiniLogo(size: 80),
                   const SizedBox(height: 40),
                   Text(
                     widget.isAddingHome
                         ? "Let's add a new home"
                         : "Let's set up your home",
                     style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
+  color: AppColors.textPrimary,
+  fontSize: 26,
+  fontWeight: FontWeight.bold,
+),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     widget.isAddingHome
                         ? 'Use your current location for a one-tap add, or enter the address manually below.'
                         : 'ZHINI uses this to personalize your experience and connect you with nearby service.',
-                    style: const TextStyle(color: Colors.white60, fontSize: 14),
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
                   ),
                   const SizedBox(height: 20),
 
@@ -491,19 +493,19 @@ class _AddressScreenState extends State<AddressScreen> {
                   const SizedBox(height: 20),
                   Row(
                     children: const [
-                      Expanded(child: Divider(color: Colors.white24)),
+                      Expanded(child: Divider(color: AppColors.textDisabled)),
                       Padding(
                         padding: EdgeInsets.symmetric(horizontal: 10),
                         child: Text(
                           'OR',
                           style: TextStyle(
-                            color: Colors.white38,
+                            color: AppColors.textFaint,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                      Expanded(child: Divider(color: Colors.white24)),
+                      Expanded(child: Divider(color: AppColors.textDisabled)),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -515,17 +517,16 @@ class _AddressScreenState extends State<AddressScreen> {
                           ? null
                           : _useCurrentLocationForAddress,
                       icon: _isFetchingLocation
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.my_location,
-                              size: 18, color: Colors.blue),
-                      label: const Text(
-                        'Use current location',
-                        style: TextStyle(color: Colors.blue),
-                      ),
+    ? const SizedBox(
+        height: 16,
+        width: 16,
+        child: CircularProgressIndicator(strokeWidth: 2))
+    : const Icon(Icons.my_location,
+        size: 18, color: AppColors.primary),
+label: const Text(
+  'Use current location',
+  style: TextStyle(color: AppColors.primary),
+),
                     ),
                   ),
 
@@ -537,31 +538,31 @@ class _AddressScreenState extends State<AddressScreen> {
                           ? null
                           : _saveAndContinue,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        disabledBackgroundColor: const Color(0xFF3A4556),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: _isSaving
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Text(
-                              widget.isAddingHome ? 'Add Home' : 'Register',
-                              style: TextStyle(
-                                color: _isFormValid
-                                    ? Colors.white
-                                    : Colors.white38,
-                                fontSize: 16,
-                              ),
-                            ),
+  backgroundColor: AppColors.primary,
+  disabledBackgroundColor: AppColors.cardBgAlt,
+  padding: const EdgeInsets.symmetric(vertical: 16),
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(8),
+  ),
+),
+child: _isSaving
+    ? const SizedBox(
+        height: 20,
+        width: 20,
+        child: CircularProgressIndicator(
+          color: AppColors.onPrimary,
+          strokeWidth: 2,
+        ),
+      )
+    : Text(
+        widget.isAddingHome ? 'Add Home' : 'Register',
+        style: TextStyle(
+          color: _isFormValid
+              ? AppColors.onPrimary
+              : AppColors.textFaint,
+          fontSize: 16,
+        ),
+      ),
                     ),
                   ),
                   const SizedBox(height: 40),
@@ -581,7 +582,7 @@ class _AddressScreenState extends State<AddressScreen> {
                       ? null
                       : () => Navigator.pop(context),
                   icon: const Icon(Icons.arrow_back_rounded,
-                      color: Colors.white60),
+    color: AppColors.textSecondary),
                   tooltip: 'Back',
                 ),
               ),
