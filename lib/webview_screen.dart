@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class WebViewScreen extends StatefulWidget {
@@ -18,7 +19,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.white)
+      ..setBackgroundColor(AppColors.textPrimary)
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (_) {
@@ -33,7 +34,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   Widget build(BuildContext context) {
     // No AppBar -> header-less. Android back button also closes it.
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.textPrimary,
       body: SafeArea(
         child: Stack(
           children: [
@@ -48,7 +49,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
                 color: Colors.black54,
                 shape: const CircleBorder(),
                 child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  icon: Icon(Icons.close, color: AppColors.textPrimary, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
               ),

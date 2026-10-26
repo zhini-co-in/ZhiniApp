@@ -32,9 +32,9 @@ class _ManualTicketCreateScreenState extends State<ManualTicketCreateScreen> {
 
   bool _submitting = false;
 
-  static const _fieldFill = AppColors.cardBg;
-  static const _bg1 = AppColors.scaffoldBg;
-  static const _bg2 = AppColors.cardBg;
+  static Color get _fieldFill => AppColors.cardBg;
+  static Color get _bg1 => AppColors.scaffoldBg;
+  static Color get _bg2 => AppColors.cardBg;
 
   @override
   void dispose() {
@@ -66,9 +66,9 @@ Future<void> _submit() async {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           backgroundColor: AppColors.cardBgAlt,
-          content: Text('Ticket created successfully', style: TextStyle(color: Colors.white)),
+          content: Text('Ticket created successfully', style: TextStyle(color: AppColors.textPrimary)),
         ),
       );
       Navigator.pop(context, true);
@@ -86,8 +86,8 @@ Future<void> _submit() async {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      labelStyle: const TextStyle(color: AppColors.textMuted),
-      hintStyle: const TextStyle(color: AppColors.textDisabled),
+      labelStyle: TextStyle(color: AppColors.textMuted),
+      hintStyle: TextStyle(color: AppColors.textDisabled),
       filled: true,
       fillColor: _fieldFill,
       border: OutlineInputBorder(
@@ -105,11 +105,11 @@ Future<void> _submit() async {
       appBar: AppBar(
         backgroundColor: _bg1,
         elevation: 0,
-        title: const Text('Create Ticket', style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text('Create Ticket', style: TextStyle(color: AppColors.onPrimary)),
+        iconTheme: IconThemeData(color: AppColors.textPrimary),
       ),
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -122,14 +122,14 @@ Future<void> _submit() async {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                const Text(
+                Text(
                   'Enter the customer & job details below. This is for walk-in / phone-in requests.',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
                 ),
                 const SizedBox(height: 20),
                 TextFormField(
                   controller: _nameController,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.textPrimary),
                   decoration: _decoration('Customer name'),
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
@@ -137,7 +137,7 @@ Future<void> _submit() async {
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.textPrimary),
                   decoration: _decoration('Customer phone', hint: '10-digit mobile number'),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Required';
@@ -149,7 +149,7 @@ Future<void> _submit() async {
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _addressController,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.textPrimary),
                   maxLines: 2,
                   decoration: _decoration('Address'),
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
@@ -157,7 +157,7 @@ Future<void> _submit() async {
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _descriptionController,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.textPrimary),
                   maxLines: 3,
                   decoration: _decoration('Issue / appliance description',
                       hint: 'e.g. LG Fridge — Not cooling'),
@@ -166,7 +166,7 @@ Future<void> _submit() async {
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _timeController,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.textPrimary),
                   decoration: _decoration('Available time', hint: 'e.g. Today evening 5-7 PM'),
                 ),
                 const SizedBox(height: 28),
@@ -175,18 +175,18 @@ Future<void> _submit() async {
                   child: ElevatedButton(
                     onPressed: _submitting ? null : _submit,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
+                      backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     child: _submitting
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            child: CircularProgressIndicator(color: AppColors.onPrimary, strokeWidth: 2),
                           )
-                        : const Text('Create Ticket',
-                            style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                        : Text('Create Ticket',
+                            style: TextStyle(color: AppColors.onPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
                   ),
                 ),
               ],

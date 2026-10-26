@@ -119,9 +119,9 @@ class _ZhiniThinkingViewState extends State<ZhiniThinkingView>
                       shaderCallback: (rect) => LinearGradient(
                         begin: Alignment(-1.5 + 3 * t, 0),
                         end: Alignment(-0.5 + 3 * t, 0),
-                        colors: const [
+                        colors: [
                           Color(0xFF81D4FA),
-                          Colors.white,
+                          AppColors.textPrimary,
                           Color(0xFF81D4FA),
                         ],
                       ).createShader(rect),
@@ -163,7 +163,7 @@ class _ZhiniThinkingViewState extends State<ZhiniThinkingView>
                       child: Text(
                         _messages[_msgIndex],
                         key: ValueKey(_msgIndex),
-                        style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
                       ),
                     ),
                   ],
@@ -207,7 +207,7 @@ class _SparklePainter extends CustomPainter {
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, s.size);
       canvas.drawCircle(Offset(x, y), s.size, paint);
       if (s.size > 3.2) {
-        final star = Paint()..color = Colors.white.withValues(alpha: alpha);
+        final star = Paint()..color = AppColors.textPrimary.withValues(alpha: alpha);
         canvas.drawRect(Rect.fromCenter(center: Offset(x, y), width: s.size * 3, height: 1.2), star);
         canvas.drawRect(Rect.fromCenter(center: Offset(x, y), width: 1.2, height: s.size * 3), star);
       }

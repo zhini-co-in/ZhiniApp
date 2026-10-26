@@ -11,6 +11,7 @@ import 'firebase_options.dart';
 import 'theme/theme_controller.dart';
 import 'update_service.dart';
 import 'theme/app_theme.dart';
+import 'package:flutter/rendering.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,6 +51,13 @@ void main() async {
   await Hive.openBox('session');
 
   await ThemeController.load(); // saved Light / Dark mode
+  ThemeController.notifier.addListener(() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.reassembleApplication();
+    });
+  });
+
+  runApp(const MyApp());
 
   runApp(const MyApp());
   UpdateService.checkForUpdate();
@@ -58,19 +66,51 @@ void main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
+  // Step 1: ella widget ayum rebuild pannu
+  static void _rebuildAll() {
+    void rebuild(Element el) {
+      el.markNeedsBuild();
+      el.visitChildren(rebuild);
+    }
+
+    WidgetsBinding.instance.rootElement?.visitChildren(rebuild);
+  }
+
+  // Step 2: cached decoration paint ah reset pannu
+  static void _resetPaintCaches() {
+    final root = WidgetsBinding.instance.rootElement?.renderObject;
+    if (root == null) return;
+    void visit(RenderObject ro) {
+      if (ro is RenderDecoratedBox) {
+        final d = ro.decoration;
+        ro.decoration = const BoxDecoration(); // cache drop aagum
+        ro.decoration = d; // thirumba original, puthu colour oda
+      }
+      ro.markNeedsPaint();
+      ro.visitChildren(visit);
+    }
+
+    visit(root);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: ThemeController.notifier,
-      builder: (context, isDark, _) => MaterialApp(
-        key: ValueKey(isDark),
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          brightness: isDark ? Brightness.dark : Brightness.light,
-          scaffoldBackgroundColor: AppColors.scaffoldBg,
-        ),
-        home: SplashScreen(),
-      ),
+      builder: (context, isDark, _) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _rebuildAll();
+          WidgetsBinding.instance.addPostFrameCallback((_) => _resetPaintCaches());
+        });
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            brightness: isDark ? Brightness.dark : Brightness.light,
+            scaffoldBackgroundColor: AppColors.scaffoldBg,
+          ),
+          home: SplashScreen(),
+        );
+      },
     );
   }
 }

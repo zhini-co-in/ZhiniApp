@@ -87,7 +87,7 @@ class _ScanShutterButtonState extends State<ScanShutterButton>
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.black38,
-                          border: Border.all(color: Colors.white, width: 3),
+                          border: Border.all(color: AppColors.textPrimary, width: 3),
                           boxShadow: [
                             BoxShadow(
                               color: AppColors.primary.withOpacity(0.45),
@@ -107,17 +107,17 @@ class _ScanShutterButtonState extends State<ScanShutterButton>
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [
-                              Colors.white,
+                              AppColors.textPrimary,
                               AppColors.primary.withOpacity(0.85),
                             ],
                           ),
                         ),
                         child: widget.busy
-                            ? const Padding(
+                            ? Padding(
                                 padding: EdgeInsets.all(18),
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.5,
-                                  color: Colors.white,
+                                  color: AppColors.textPrimary,
                                 ),
                               )
                             : const Icon(
@@ -136,8 +136,8 @@ class _ScanShutterButtonState extends State<ScanShutterButton>
         const SizedBox(height: 8),
         Text(
           widget.busy ? 'Capturing…' : 'Tap to scan',
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: AppColors.textPrimary,
             fontSize: 13,
             fontWeight: FontWeight.w500,
             letterSpacing: 0.6,

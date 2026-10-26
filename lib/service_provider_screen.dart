@@ -32,8 +32,8 @@ class ServiceProviderOnboardingScreen extends StatefulWidget {
 class _ServiceProviderOnboardingScreenState
     extends State<ServiceProviderOnboardingScreen> {
   final PageController _pageController = PageController();
-  int _currentStep = 0; // 0 = step1, 1 = step2, 2 = step3
-  static const int _totalSteps = 3;
+  int _currentStep = 0; // 0 = details, 1 = CRM
+  static const int _totalSteps = 2;
 
   File? _storePhoto;
   final TextEditingController _nameController = TextEditingController();
@@ -46,11 +46,29 @@ class _ServiceProviderOnboardingScreenState
     'Plumbing',
     'Electrician',
     'AC Service',
+    'Home Appliances',
     'Carpenter',
     'Painting',
     'Others',
   ];
   final Set<String> _selectedAppliances = {};
+
+  // Skill -> sub-services shown after the skill chip is selected.
+  static const Map<String, List<String>> _subServices = {
+    'AC Service': ['Gas filling', 'Cleaning / Wash', 'Installation', 'Repair', 'Full service'],
+    'Plumbing': ['Tap & leak repair', 'Pipe fitting', 'Bathroom fitting', 'Tank cleaning', 'Drain blockage'],
+    'Electrician': ['Wiring', 'Switch & socket', 'Fan / light fitting', 'MCB / fuse', 'Full service'],
+    'Carpenter': ['Furniture repair', 'Door & window', 'Modular work', 'Polishing', 'Assembly'],
+    'Painting': ['Interior', 'Exterior', 'Waterproofing', 'Texture / design', 'Touch-up'],
+    'Home Appliances': [
+      'Refrigerator', 'Washing Machine', 'Television', 'Microwave Oven',
+      'Water Purifier (RO)', 'Geyser / Water Heater', 'Mixer / Grinder',
+      'Ceiling / Table Fan', 'Air Cooler', 'Induction / Gas Stove', 'Chimney',
+      'Dishwasher', 'Inverter / UPS', 'Vacuum Cleaner', 'Iron Box', 'Wi-Fi Router',
+    ],
+  };
+
+  final Map<String, Set<String>> _selectedSubs = {};
 
   double _workingRangeKm = 1;
   bool _isSubmitting = false;
@@ -83,21 +101,20 @@ class _ServiceProviderOnboardingScreenState
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.scaffoldBg,
-        title: const Text('Log out?', style: TextStyle(color: Colors.white)),
-        content: const Text(
+        backgroundColor: AppColors.cardBg,
+        title: Text('Log out?', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
           'You will need to verify your mobile number again.',
-          style: TextStyle(color: Colors.white60),
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.white60)),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Log out', style: TextStyle(color: Colors.blue)),
+            child: Text('Log out', style: TextStyle(color: AppColors.primary)),
           ),
         ],
       ),
@@ -159,10 +176,6 @@ class _ServiceProviderOnboardingScreenState
     _goToStep(1);
   }
 
-  void _onContinueFromStep2() {
-    _goToStep(2);
-  }
-
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
@@ -197,6 +210,7 @@ class _ServiceProviderOnboardingScreenState
           'mobile': _plainMobile,
           'address': fullAddress,
           'pincode': pincode,
+          'role': 'service_provider',
           'PlatformInfo': {
             'device': {
               'deviceId': deviceId,
@@ -251,6 +265,12 @@ class _ServiceProviderOnboardingScreenState
         finalExpertise.addAll(customServices);
       }
 
+      final subMap = {
+        for (final e in _selectedSubs.entries)
+          if (_selectedAppliances.contains(e.key) && e.value.isNotEmpty)
+            e.key: e.value.toList(),
+      };
+
       final uri = Uri.parse(ApiConfig.createServiceProviderUrl);
       final request = http.MultipartRequest('POST', uri)
         ..headers.addAll(await ApiClient.authHeaders())
@@ -259,7 +279,8 @@ class _ServiceProviderOnboardingScreenState
         ..fields['address'] = _addressController.text.trim()
         ..fields['pincode'] = _pincodeController.text.trim()
         ..fields['range'] = _workingRangeKm.round().toString()
-        ..fields['expertise'] = finalExpertise.join(',');
+        ..fields['expertise'] = finalExpertise.join(',')
+        ..fields['subServices'] = jsonEncode(subMap);
 
       if (_gstinController.text.trim().isNotEmpty) {
         request.fields['gstNumber'] = _gstinController.text.trim();
@@ -322,16 +343,16 @@ class _ServiceProviderOnboardingScreenState
           leading: _currentStep == 0
               ? null
               : IconButton(
-                  icon: const Icon(Icons.arrow_back, color: AppColors.textSecondary),
+                  icon: Icon(Icons.arrow_back, color: AppColors.textSecondary),
                   onPressed: () => _goToStep(_currentStep - 1),
                 ),
-          title: const Text(
+          title: Text(
             'Become a service provider',
-            style: TextStyle(color: Colors.white, fontSize: 18),
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 18),
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.logout, color: AppColors.textSecondary),
+              icon: Icon(Icons.logout, color: AppColors.textSecondary),
               onPressed: _logout,
               tooltip: 'Log out',
             ),
@@ -339,8 +360,7 @@ class _ServiceProviderOnboardingScreenState
         ),
         body: SafeArea(
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -354,7 +374,6 @@ class _ServiceProviderOnboardingScreenState
                     children: [
                       _buildStep1(),
                       _buildStep2(),
-                      _buildStep3(),
                     ],
                   ),
                 ),
@@ -366,10 +385,10 @@ class _ServiceProviderOnboardingScreenState
     );
   }
 
-  // ---- Step 1: Your profile ----
+  // ---- Step 1: Profile + Store details ----
   Widget _buildStep1() {
     return _StepCard(
-      title: 'Your profile',
+      title: 'Your details',
       stepLabel: 'Step 1 of $_totalSteps',
       child: SingleChildScrollView(
         child: Column(
@@ -379,7 +398,7 @@ class _ServiceProviderOnboardingScreenState
             const SizedBox(height: 8),
             TextField(
               controller: _nameController,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
               decoration: _fieldDecoration('Enter your full name'),
             ),
             const SizedBox(height: 20),
@@ -388,7 +407,7 @@ class _ServiceProviderOnboardingScreenState
             TextField(
               controller: _addressController,
               maxLines: 2,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
               decoration: _fieldDecoration('e.g. Chennai — T. Nagar, Adyar'),
             ),
             const SizedBox(height: 20),
@@ -398,9 +417,9 @@ class _ServiceProviderOnboardingScreenState
               controller: _pincodeController,
               keyboardType: TextInputType.number,
               maxLength: 6,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
               decoration: _fieldDecoration('e.g. 600045').copyWith(
-                counterText: '', // hides the 0/6 counter
+                counterText: '',
               ),
             ),
             const SizedBox(height: 20),
@@ -411,63 +430,42 @@ class _ServiceProviderOnboardingScreenState
               runSpacing: 10,
               children: _allAppliances.map((appliance) {
                 final isSelected = _selectedAppliances.contains(appliance);
-                return FilterChip(
-                  label: Text(appliance),
+                return _choiceChip(
+                  label: appliance,
                   selected: isSelected,
-                  onSelected: (selected) {
+                  onTap: () {
                     setState(() {
-                      if (selected) {
-                        _selectedAppliances.add(appliance);
-                      } else {
+                      if (isSelected) {
                         _selectedAppliances.remove(appliance);
+                        _selectedSubs.remove(appliance);
+                      } else {
+                        _selectedAppliances.add(appliance);
                       }
                     });
                   },
-                  showCheckmark: false,
-                  surfaceTintColor: Colors.transparent,
-                  selectedColor: Colors.blue,
-                  backgroundColor: AppColors.cardBgAlt,
-                  labelStyle: TextStyle(
-                    color: isSelected ? Colors.white : AppColors.textSecondary,
-                    fontWeight:
-                        isSelected ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                  side: BorderSide(
-                    color: isSelected ? Colors.blue : Colors.blue.shade300,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
                 );
               }).toList(),
             ),
+
+            // Sub-services for every selected skill that has them
+            for (final skill in _allAppliances)
+              if (_selectedAppliances.contains(skill) &&
+                  _subServices.containsKey(skill))
+                _buildSubServiceBlock(skill),
+
             if (_selectedAppliances.contains('Others')) ...[
               const SizedBox(height: 12),
               TextField(
                 controller: _othersController,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
                 decoration: _fieldDecoration(
                     'e.g. Pest control, Home cleaning (comma separated)'),
               ),
             ],
-            const SizedBox(height: 28),
-            _primaryButton('Continue', onPressed: _onContinueFromStep1),
-          ],
-        ),
-      ),
-    );
-  }
 
-  // ---- Step 2: Store details ----
-  Widget _buildStep2() {
-    return _StepCard(
-      title: 'Store details',
-      stepLabel: 'Step 2 of $_totalSteps',
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _label('Store photo'),
+            // ── Store details (merged from old Step 2) ──
+            const SizedBox(height: 24),
+            _label('Store photo (optional)'),
             const SizedBox(height: 8),
             GestureDetector(
               onTap: _pickStorePhoto,
@@ -476,19 +474,19 @@ class _ServiceProviderOnboardingScreenState
                 width: 100,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade300),
-                  color: Colors.white.withValues(alpha: 0.05),
+                  border: Border.all(color: AppColors.primaryBorder),
+                  color: AppColors.textPrimary.withValues(alpha: 0.05),
                 ),
                 child: _storePhoto == null
-                    ? const Column(
+                    ? Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.add_a_photo,
-                              color: Colors.blue, size: 26),
-                          SizedBox(height: 4),
+                              color: AppColors.primary, size: 26),
+                          const SizedBox(height: 4),
                           Text('Add photo',
                               style: TextStyle(
-                                  color: Colors.white60, fontSize: 11)),
+                                  color: AppColors.textSecondary, fontSize: 11)),
                         ],
                       )
                     : ClipRRect(
@@ -502,8 +500,8 @@ class _ServiceProviderOnboardingScreenState
             Center(
               child: Text(
                 '${_workingRangeKm.round()} km',
-                style: const TextStyle(
-                    color: Colors.blue,
+                style: TextStyle(
+                    color: AppColors.primary,
                     fontSize: 32,
                     fontWeight: FontWeight.bold),
               ),
@@ -513,7 +511,7 @@ class _ServiceProviderOnboardingScreenState
               min: 1,
               max: 50,
               divisions: 49,
-              activeColor: Colors.blue,
+              activeColor: AppColors.primary,
               inactiveColor: AppColors.textDisabled,
               label: '${_workingRangeKm.round()} km',
               onChanged: (value) => setState(() => _workingRangeKm = value),
@@ -524,22 +522,101 @@ class _ServiceProviderOnboardingScreenState
             TextField(
               controller: _gstinController,
               textCapitalization: TextCapitalization.characters,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
               decoration: _fieldDecoration('e.g. 22AAAAA0000A1Z5'),
             ),
             const SizedBox(height: 28),
-            _primaryButton('Continue', onPressed: _onContinueFromStep2),
+            _primaryButton('Continue', onPressed: _onContinueFromStep1),
           ],
         ),
       ),
     );
   }
 
-  // ---- Step 3: Free CRM activated ----
-  Widget _buildStep3() {
+  // ---- Sub-service picker for one skill ----
+  Widget _buildSubServiceBlock(String skill) {
+    final options = _subServices[skill] ?? const <String>[];
+    final selected = _selectedSubs[skill] ?? <String>{};
+    final allSelected = options.isNotEmpty && selected.length == options.length;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.cardBgAlt,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.primaryBorder.withValues(alpha: 0.5)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$skill — what do you handle?',
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      if (allSelected) {
+                        _selectedSubs[skill] = <String>{};
+                      } else {
+                        _selectedSubs[skill] = options.toSet();
+                      }
+                    });
+                  },
+                  child: Text(allSelected ? 'Clear' : 'Select all',
+                      style: TextStyle(color: AppColors.primary, fontSize: 12)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: options.map((sub) {
+                final isOn = selected.contains(sub);
+                return _choiceChip(
+                  label: sub,
+                  selected: isOn,
+                  small: true,
+                  onTap: () {
+                    setState(() {
+                      final set = _selectedSubs.putIfAbsent(skill, () => <String>{});
+                      if (isOn) {
+                        set.remove(sub);
+                      } else {
+                        set.add(sub);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Step 2: Free CRM activated ----
+  Widget _buildStep2() {
     return _StepCard(
       title: 'Free CRM activated',
-      stepLabel: 'Step 3 of $_totalSteps',
+      stepLabel: 'Step 2 of $_totalSteps',
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -548,22 +625,22 @@ class _ServiceProviderOnboardingScreenState
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.12),
+                color: AppColors.success.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
+                border: Border.all(color: AppColors.success.withValues(alpha: 0.4)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
+                children: [
                   Text(
                     'ZHINI CRM is free',
                     style: TextStyle(
-                      color: Colors.greenAccent,
+                      color: AppColors.success,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 6),
+                  const SizedBox(height: 6),
                   Text(
                     'Job management · Invoice generation · Customer history',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
@@ -578,27 +655,27 @@ class _ServiceProviderOnboardingScreenState
               decoration: BoxDecoration(
                 color: AppColors.cardBgAlt,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue.shade300),
+                border: Border.all(color: AppColors.primaryBorder),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const Text(
+                  Text(
                     'Your referral code',
-                    style: TextStyle(color: Colors.white60, fontSize: 13),
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     _referralCode,
-                    style: const TextStyle(
-                      color: Colors.blue,
+                    style: TextStyle(
+                      color: AppColors.primary,
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'Earn ₹200 when a colleague joins and completes first job',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.textMuted, fontSize: 12),
@@ -622,8 +699,39 @@ class _ServiceProviderOnboardingScreenState
 
   Widget _label(String text) => Text(
         text,
-        style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
       );
+
+  /// Rounded selectable chip (skills + sub-services). Theme-aware.
+  Widget _choiceChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    bool small = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: EdgeInsets.symmetric(
+            horizontal: small ? 12 : 16, vertical: small ? 6 : 9),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : AppColors.cardBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: selected ? AppColors.primary : AppColors.primaryBorder),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? AppColors.onPrimary : AppColors.textSecondary,
+            fontSize: small ? 12 : 14,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _primaryButton(String text,
       {required VoidCallback? onPressed, bool loading = false}) {
@@ -632,22 +740,22 @@ class _ServiceProviderOnboardingScreenState
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue,
-          disabledBackgroundColor: Colors.blue.withValues(alpha: 0.3),
+          backgroundColor: AppColors.primary,
+          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.3),
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
         ),
         child: loading
-            ? const SizedBox(
+            ? SizedBox(
                 height: 20,
                 width: 20,
                 child: CircularProgressIndicator(
-                    color: Colors.white, strokeWidth: 2),
+                    color: AppColors.onPrimary, strokeWidth: 2),
               )
             : Text(text,
-                style: const TextStyle(color: Colors.white, fontSize: 16)),
+                style: TextStyle(color: AppColors.onPrimary, fontSize: 16)),
       ),
     );
   }
@@ -655,15 +763,15 @@ class _ServiceProviderOnboardingScreenState
   InputDecoration _fieldDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: AppColors.textFaint),
+      hintStyle: TextStyle(color: AppColors.textFaint),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: Colors.blue.shade300),
+        borderSide: BorderSide(color: AppColors.primaryBorder),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Colors.blue, width: 2),
+        borderSide: BorderSide(color: AppColors.primary, width: 2),
       ),
     );
   }
@@ -690,15 +798,15 @@ class _StepCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        border: Border.all(color: AppColors.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.textPrimary,
               fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
@@ -706,7 +814,7 @@ class _StepCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             stepLabel,
-            style: const TextStyle(color: AppColors.textFaint, fontSize: 12),
+            style: TextStyle(color: AppColors.textFaint, fontSize: 12),
           ),
           const SizedBox(height: 18),
           Expanded(child: child),
@@ -738,8 +846,8 @@ class _StepDots extends StatelessWidget {
           width: isCurrent ? 26 : 8,
           decoration: BoxDecoration(
             color: isCompleted
-                ? Colors.greenAccent
-                : (isCurrent ? Colors.blue : Colors.transparent),
+                ? AppColors.success
+                : (isCurrent ? AppColors.primary : Colors.transparent),
             border: isCurrent || isCompleted
                 ? null
                 : Border.all(color: AppColors.textDisabled),
@@ -754,7 +862,7 @@ class _StepDots extends StatelessWidget {
             width: 20,
             height: 2,
             margin: const EdgeInsets.symmetric(horizontal: 4),
-            color: i < currentStep ? Colors.greenAccent : AppColors.textDisabled,
+            color: i < currentStep ? AppColors.success : AppColors.textDisabled,
           ),
         );
       }

@@ -73,7 +73,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               borderRadius: BorderRadius.circular(12),
               child: Image.network(
                 url,
-                errorBuilder: (_, __, ___) => const Padding(
+                errorBuilder: (_, __, ___) => Padding(
                   padding: EdgeInsets.all(24),
                   child: Icon(Icons.broken_image_outlined, color: AppColors.textFaint, size: 40),
                 ),
@@ -193,11 +193,11 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                       }
                     },
               child: isSaving
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(color: AppColors.onPrimary, strokeWidth: 2))
-                  : const Text('Save', style: TextStyle(color: AppColors.onPrimary)),
+                  : Text('Save', style: TextStyle(color: AppColors.onPrimary)),
             ),
           ],
         ),
@@ -388,12 +388,12 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                           if (ok && mounted) Navigator.pop(context); // close provider sheet too
                         },
                   child: isSubmitting
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(color: AppColors.onPrimary, strokeWidth: 2),
                         )
-                      : const Text('Book', style: TextStyle(color: AppColors.onPrimary)),
+                      : Text('Book', style: TextStyle(color: AppColors.onPrimary)),
                 ),
               ],
             );
@@ -458,7 +458,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   if (loading)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(vertical: 30),
                       child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
                     )
@@ -510,9 +510,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                                     padding: const EdgeInsets.symmetric(vertical: 8),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                                   ),
-                                  icon: const Icon(Icons.calendar_month_rounded, size: 15, color: Colors.white),
-                                  label: const Text('Book this provider',
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+                                  icon: Icon(Icons.calendar_month_rounded, size: 15, color: AppColors.textPrimary),
+                                  label: Text('Book this provider',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                                 ),
                               ),
                             ],
@@ -592,7 +592,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                               shape: BoxShape.circle,
                               border: Border.all(color: AppColors.cardBg, width: 2),
                             ),
-                            child: Icon(statusIcon, size: 11, color: Colors.white),
+                            child: Icon(statusIcon, size: 11, color: AppColors.textPrimary),
                           ),
                         ),
                       ],
@@ -612,7 +612,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                                   child: Text(product,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                           color: AppColors.textPrimary,
                                           fontSize: 15,
                                           fontWeight: FontWeight.w600)),
@@ -622,7 +622,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                             ),
                             const SizedBox(height: 3),
                             Text(brand,
-                                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                             const SizedBox(height: 8),
                             Row(
                               children: [
@@ -642,7 +642,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                                       child: Image.network(
                                         warrantyCardUrl,
                                         fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => const Icon(Icons.receipt_long,
+                                        errorBuilder: (_, __, ___) => Icon(Icons.receipt_long,
                                             size: 12, color: AppColors.textFaint),
                                       ),
                                     ),
@@ -657,7 +657,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                const Divider(color: AppColors.borderSubtle, height: 1),
+                Divider(color: AppColors.borderSubtle, height: 1),
                 const SizedBox(height: 12),
                 // Solid for expired, outlined for healthy.
                 SizedBox(
@@ -682,9 +682,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 9),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                          icon: const Icon(Icons.build_rounded, size: 15, color: Colors.white),
-                          label: const Text('Find repair near me',
-                              style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                          icon: Icon(Icons.build_rounded, size: 15, color: AppColors.textPrimary),
+                          label: Text('Find repair near me',
+                              style: TextStyle(color: AppColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
                         ),
                 ),
               ],
@@ -730,7 +730,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
     return PopupMenuButton<String>(
       padding: EdgeInsets.zero,
-      icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMuted, size: 18),
+      icon: Icon(Icons.more_vert_rounded, color: AppColors.textMuted, size: 18),
       color: AppColors.cardBg,
       onSelected: (value) {
         if (value == 'edit') _openEditDeviceDialog(item);
@@ -752,8 +752,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.scaffoldBg,
         elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.textPrimary),
-        title: Text(widget.roomName, style: const TextStyle(color: AppColors.textPrimary)),
+        iconTheme: IconThemeData(color: AppColors.textPrimary),
+        title: Text(widget.roomName, style: TextStyle(color: AppColors.textPrimary)),
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.primary,
@@ -774,12 +774,12 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             ),
           );
         },
-        icon: const Icon(Icons.qr_code_scanner_rounded, color: AppColors.onPrimary, size: 20),
-        label: const Text('Add appliance',
+        icon: Icon(Icons.qr_code_scanner_rounded, color: AppColors.onPrimary, size: 20),
+        label: Text('Add appliance',
             style: TextStyle(color: AppColors.onPrimary, fontWeight: FontWeight.w600)),
       ),
       body: _items.isEmpty
-          ? const Center(
+          ? Center(
               child: Text('No appliances in this room yet.\nScan one and pick this room.',
                   textAlign: TextAlign.center, style: TextStyle(color: AppColors.textMuted)),
             )

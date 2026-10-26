@@ -900,7 +900,7 @@ Map<String, int> _computeStats() {
                         color: AppColors.primarySoft,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.qr_code_scanner_rounded, color: AppColors.primary, size: 20),
@@ -955,12 +955,12 @@ Map<String, int> _computeStats() {
                           }
                         },
                   child: isSubmitting
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(color: AppColors.onPrimary, strokeWidth: 2),
                         )
-                      : const Text('Add appliance', style: TextStyle(color: AppColors.onPrimary)),
+                      : Text('Add appliance', style: TextStyle(color: AppColors.onPrimary)),
                 ),
               ],
             );
@@ -1049,7 +1049,7 @@ Map<String, int> _computeStats() {
       backgroundColor: AppColors.lightBg,
       body: SafeArea(
         child: _loading
-            ? const Center(child: CircularProgressIndicator(color: AppColors.lightPrimary))
+            ? Center(child: CircularProgressIndicator(color: AppColors.lightPrimary))
             : RefreshIndicator(
                 color: AppColors.lightPrimary,
                 onRefresh: () => _currentHomeId != null
@@ -1066,7 +1066,7 @@ Map<String, int> _computeStats() {
                           if (_error != null)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 16),
-                              child: Text(_error!, style: const TextStyle(color: AppColors.danger)),
+                              child: Text(_error!, style: TextStyle(color: AppColors.danger)),
                             )
                           else if (!hasHome) ...[
                             _buildRegisterHomeCard(),
@@ -1109,10 +1109,10 @@ Map<String, int> _computeStats() {
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
             child: Row(
               children: [
-                const Text(
+                Text(
                   'zhini',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.textPrimary,
                     fontSize: 26,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.5,
@@ -1133,7 +1133,7 @@ Map<String, int> _computeStats() {
                         ),
                       ],
                     ),
-                    child: const TextField(
+                    child: TextField(
                       style: TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         hintText: 'Search here...',
@@ -1153,7 +1153,7 @@ Map<String, int> _computeStats() {
                     backgroundColor: AppColors.lightSurface,
                     child: Text(
                       hasName ? _displayName[0].toUpperCase() : 'P',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.lightPrimary,
                         fontWeight: FontWeight.w700,
                         fontSize: 16,
@@ -1206,7 +1206,7 @@ Map<String, int> _computeStats() {
                   decoration: BoxDecoration(
                     color: i == _bannerIndex
                         ? AppColors.lightPrimary
-                        : Colors.white.withValues(alpha: 0.7),
+                        : AppColors.textPrimary.withValues(alpha: 0.7),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -1287,7 +1287,7 @@ Map<String, int> _computeStats() {
                       ),
                     ),
                 const PopupMenuDivider(),
-                const PopupMenuItem<int>(
+                PopupMenuItem<int>(
                   value: -1,
                   child: Row(
                     children: [
@@ -1309,14 +1309,14 @@ Map<String, int> _computeStats() {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.apartment_rounded, size: 18, color: AppColors.lightPrimary),
+                    Icon(Icons.apartment_rounded, size: 18, color: AppColors.lightPrimary),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.lightPrimary,
                           fontWeight: FontWeight.w600,
                           fontSize: 13.5,
@@ -1324,7 +1324,7 @@ Map<String, int> _computeStats() {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    const Icon(Icons.keyboard_arrow_down_rounded,
+                    Icon(Icons.keyboard_arrow_down_rounded,
                         size: 20, color: AppColors.lightPrimary),
                   ],
                 ),
@@ -1369,7 +1369,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
           const SizedBox(height: 6),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.lightTextDark,
               fontSize: 18,
               fontWeight: FontWeight.w800,
@@ -1379,7 +1379,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.lightTextMuted,
               fontSize: 10.5,
               fontWeight: FontWeight.w500,
@@ -1402,7 +1402,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
         decoration: AppDecor.lightCard(),
         child: Column(
           children: [
-            const Icon(Icons.devices_other_rounded, color: AppColors.lightChevron, size: 32),
+            Icon(Icons.devices_other_rounded, color: AppColors.lightChevron, size: 32),
             const SizedBox(height: 8),
             const Text('No appliances yet', style: AppText.lightCardTitle),
             const SizedBox(height: 4),
@@ -1421,7 +1421,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
           for (int i = 0; i < shown.length; i++) ...[
             _deviceRow(shown[i]),
             if (i != shown.length - 1)
-              const Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.lightBorder),
+              Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.lightBorder),
           ],
         ],
       ),
@@ -1512,7 +1512,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
             children: [
               Text(title, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
               if (subtitle != null)
-                Text(subtitle, style: const TextStyle(color: AppColors.lightTextMuted, fontSize: 9.5)),
+                Text(subtitle, style: TextStyle(color: AppColors.lightTextMuted, fontSize: 9.5)),
             ],
           ),
         ],
@@ -1526,11 +1526,11 @@ Widget _statCard(IconData icon, Color color, String value, String label,
       child: OutlinedButton.icon(
         onPressed: _openManualAddDialog,
         style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: AppColors.lightPrimary, width: 1.2),
+          side: BorderSide(color: AppColors.lightPrimary, width: 1.2),
           padding: const EdgeInsets.symmetric(vertical: 13),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
-        icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.lightPrimary, size: 18),
+        icon: Icon(Icons.add_circle_outline_rounded, color: AppColors.lightPrimary, size: 18),
         label: const Text('Add appliance manually', style: AppText.lightLink),
       ),
     );
@@ -1637,7 +1637,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
               ],
             ),
           ),
-          const Icon(Icons.chevron_right_rounded, color: AppColors.lightChevron, size: 18),
+          Icon(Icons.chevron_right_rounded, color: AppColors.lightChevron, size: 18),
         ],
       ),
     );
@@ -1658,15 +1658,15 @@ Widget _statCard(IconData icon, Color color, String value, String label,
               color: AppColors.primarySoft,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.add_home_rounded, color: AppColors.primary, size: 22),
+            child: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 22),
           ),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             'Set up your home',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Add your address to start tracking appliances, warranties, and get matched with nearby services.',
             style: TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4),
           ),
@@ -1676,8 +1676,8 @@ Widget _statCard(IconData icon, Color color, String value, String label,
             child: ElevatedButton.icon(
               onPressed: _openAddHomeDialog,
               style: AppDecor.primaryButton,
-              icon: const Icon(Icons.home_rounded, size: 18, color: AppColors.onPrimary),
-              label: const Text(
+              icon: Icon(Icons.home_rounded, size: 18, color: AppColors.onPrimary),
+              label: Text(
                 'Register',
                 style: TextStyle(color: AppColors.onPrimary, fontSize: 15, fontWeight: FontWeight.w600),
               ),
@@ -1708,11 +1708,11 @@ Widget _statCard(IconData icon, Color color, String value, String label,
         children: [
           Row(
             children: [
-              const Icon(Icons.inventory_2_outlined, size: 16, color: AppColors.textMuted),
+              Icon(Icons.inventory_2_outlined, size: 16, color: AppColors.textMuted),
               const SizedBox(width: 8),
               Text(
                 'Default devices (${allDevices.length})',
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ],
@@ -1753,9 +1753,9 @@ Widget _statCard(IconData icon, Color color, String value, String label,
                       child: Text(label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                     ),
-                    const Icon(Icons.chevron_right_rounded, color: AppColors.textFaint, size: 18),
+                    Icon(Icons.chevron_right_rounded, color: AppColors.textFaint, size: 18),
                   ],
                 ),
               ),
@@ -1768,7 +1768,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   '+${allDevices.length - 5} more',
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),

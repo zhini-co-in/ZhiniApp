@@ -146,7 +146,7 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
           accepted
               ? 'Accepted ${ticket.customerName}\'s ${ticket.appliance} request ✅'
               : 'Declined ${ticket.customerName}\'s request',
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: AppColors.textPrimary),
         ),
         duration: const Duration(seconds: 2),
       ),
@@ -194,7 +194,7 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
           backgroundColor: AppColors.cardBgAlt,
           content: Text(
             '${ticket.customerName}\'s job marked as completed ✅',
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: AppColors.textPrimary),
           ),
           duration: const Duration(seconds: 2),
         ),
@@ -220,8 +220,8 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.borderSubtle),
         ),
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.blue, strokeWidth: 2),
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
         ),
       );
     }
@@ -233,22 +233,22 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
         decoration: BoxDecoration(
           color: AppColors.cardBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+          border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
         ),
         child: Column(
           children: [
-            const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 28),
+            Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 28),
             const SizedBox(height: 8),
-            const Text('Couldn\'t load requests',
+            Text('Couldn\'t load requests',
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(height: 4),
             Text(_error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textDisabled, fontSize: 10.5)),
+                style: TextStyle(color: AppColors.textDisabled, fontSize: 10.5)),
             const SizedBox(height: 10),
             TextButton(
               onPressed: _loadTickets,
-              child: const Text('Retry', style: TextStyle(color: Colors.blue)),
+              child: Text('Retry', style: TextStyle(color: AppColors.primary)),
             ),
           ],
         ),
@@ -267,8 +267,8 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
         ],
         if (_acceptedTickets.isNotEmpty) ...[
           const SizedBox(height: 20),
-          const Text('In progress',
-              style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+          Text('In progress',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           _ticketList(_acceptedTickets, isInProgress: true),
         ],
@@ -325,12 +325,12 @@ Future<void> _respond(ServiceTicket ticket, bool accepted) async {
       ),
       child: Column(
         children: [
-          Icon(Icons.inbox_rounded, color: Colors.white.withValues(alpha: 0.2), size: 34),
+          Icon(Icons.inbox_rounded, color: AppColors.textPrimary.withValues(alpha: 0.2), size: 34),
           const SizedBox(height: 10),
-          const Text('No requests right now',
+          Text('No requests right now',
               style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
           const SizedBox(height: 2),
-          const Text('New tickets will show up here',
+          Text('New tickets will show up here',
               style: TextStyle(color: AppColors.textDisabled, fontSize: 11)),
         ],
       ),
@@ -381,11 +381,11 @@ class TicketCard extends StatelessWidget {
   (Color, String) get _urgencyMeta {
     switch (ticket.urgency) {
       case TicketUrgency.high:
-        return (Colors.redAccent, 'Urgent');
+        return (AppColors.danger, 'Urgent');
       case TicketUrgency.medium:
-        return (Colors.orangeAccent, 'Moderate');
+        return (AppColors.warning, 'Moderate');
       case TicketUrgency.low:
-        return (Colors.greenAccent, 'Low priority');
+        return (AppColors.success, 'Low priority');
     }
   }
 
@@ -410,11 +410,11 @@ class TicketCard extends StatelessWidget {
   Color get _statusColor {
     switch (ticket.status) {
       case 'IN_PROGRESS':
-        return Colors.greenAccent;
+        return AppColors.success;
       case 'WAITING_FOR_PARTS':
-        return Colors.amber;
+        return AppColors.warning;
       default:
-        return Colors.blue;
+        return AppColors.primary;
     }
   }
 
@@ -449,10 +449,10 @@ class TicketCard extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(9),
                           decoration: BoxDecoration(
-                            color: Colors.blue.withValues(alpha: 0.15),
+                            color: AppColors.primary.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(11),
                           ),
-                          child: Icon(_icon, color: Colors.blue, size: 20),
+                          child: Icon(_icon, color: AppColors.primary, size: 20),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -460,11 +460,11 @@ class TicketCard extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(ticket.appliance,
-                                  style: const TextStyle(
-                                      color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700)),
+                                  style: TextStyle(
+                                      color: AppColors.textPrimary, fontSize: 14.5, fontWeight: FontWeight.w700)),
                               const SizedBox(height: 2),
                               Text(ticket.customerName,
-                                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                                  style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
                             ],
                           ),
                         ),
@@ -483,25 +483,25 @@ class TicketCard extends StatelessWidget {
                                       color: urgencyColor, fontSize: 10, fontWeight: FontWeight.w700)),
                             ),
                             const SizedBox(height: 6),
-                            Text(_timeAgo, style: const TextStyle(color: AppColors.textDisabled, fontSize: 10)),
+                            Text(_timeAgo, style: TextStyle(color: AppColors.textDisabled, fontSize: 10)),
                           ],
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     Text(ticket.issue,
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.35)),
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.35)),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        const Icon(Icons.location_on_rounded, color: AppColors.textFaint, size: 14),
+                        Icon(Icons.location_on_rounded, color: AppColors.textFaint, size: 14),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             ticket.address,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: AppColors.textFaint, fontSize: 11.5),
+                            style: TextStyle(color: AppColors.textFaint, fontSize: 11.5),
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -509,12 +509,12 @@ class TicketCard extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.06),
+                              color: AppColors.textPrimary.withValues(alpha: 0.06),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
                               '${ticket.distanceKm.toStringAsFixed(1)} km',
-                              style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5),
+                              style: TextStyle(color: AppColors.textMuted, fontSize: 10.5),
                             ),
                           ),
                       ],
@@ -544,16 +544,16 @@ class TicketCard extends StatelessWidget {
                         child: ElevatedButton.icon(
                           onPressed: onStart,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
+                            backgroundColor: AppColors.primary,
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             elevation: 0,
                           ),
-                          icon: const Icon(Icons.play_arrow_rounded, size: 18, color: Colors.white),
+                          icon: Icon(Icons.play_arrow_rounded, size: 18, color: AppColors.textPrimary),
                           label: Text(
                             ticket.status == 'ACCEPTED' ? 'Start' : 'Open job',
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                                color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
@@ -561,9 +561,9 @@ class TicketCard extends StatelessWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          _CircleActionButton(icon: Icons.close_rounded, color: Colors.redAccent, onTap: onReject),
+                          _CircleActionButton(icon: Icons.close_rounded, color: AppColors.danger, onTap: onReject),
                           const SizedBox(width: 12),
-                          _CircleActionButton(icon: Icons.check_rounded, color: Colors.blue, onTap: onAccept, filled: true),
+                          _CircleActionButton(icon: Icons.check_rounded, color: AppColors.primary, onTap: onAccept, filled: true),
                         ],
                       ),
                     ],
@@ -604,7 +604,7 @@ class _CircleActionButton extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: Icon(icon, size: 20, color: filled ? Colors.white : color),
+          child: Icon(icon, size: 20, color: filled ? AppColors.textPrimary : color),
         ),
       ),
     );

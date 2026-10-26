@@ -368,6 +368,7 @@ class _AddressScreenState extends State<AddressScreen> {
           'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
           'address': address,
           'pincode': pincode,
+          'role': widget.isServiceProfessional ? 'service_provider' : 'user',
           'PlatformInfo': {
             'device': {
               'deviceId': deviceId,

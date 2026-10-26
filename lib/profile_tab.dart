@@ -155,7 +155,7 @@ class _ProfileTabState extends State<ProfileTab> {
         builder: (dialogContext, setDialogState) => AlertDialog(
           backgroundColor: AppColors.cardBg,
           shape: AppDecor.dialogShape,
-          title: const Text('Edit Profile', style: AppText.dialogTitle),
+          title: Text('Edit Profile', style: AppText.dialogTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,7 +168,7 @@ class _ProfileTabState extends State<ProfileTab> {
           actions: [
             TextButton(
               onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+              child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -223,11 +223,11 @@ class _ProfileTabState extends State<ProfileTab> {
                       );
                     },
               child: isSaving
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
-                  : const Text('Save', style: TextStyle(color: AppColors.textPrimary)),
+                  : Text('Save', style: TextStyle(color: AppColors.textPrimary)),
             ),
           ],
         ),
@@ -364,7 +364,7 @@ class _ProfileTabState extends State<ProfileTab> {
         builder: (dialogContext, setDialogState) => AlertDialog(
           backgroundColor: AppColors.cardBg,
           shape: AppDecor.dialogShape,
-          title: const Text('Edit Address', style: AppText.dialogTitle),
+          title: Text('Edit Address', style: AppText.dialogTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -381,7 +381,7 @@ class _ProfileTabState extends State<ProfileTab> {
           actions: [
             TextButton(
               onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+              child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -415,11 +415,11 @@ class _ProfileTabState extends State<ProfileTab> {
                       );
                     },
               child: isSaving
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
-                  : const Text('Save', style: TextStyle(color: AppColors.textPrimary)),
+                  : Text('Save', style: TextStyle(color: AppColors.textPrimary)),
             ),
           ],
         ),
@@ -450,11 +450,11 @@ class _ProfileTabState extends State<ProfileTab> {
               child: OutlinedButton(
                 onPressed: () => Navigator.pop(sheetContext),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.primary),
+                  side: BorderSide(color: AppColors.primary),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                child: const Text('Got it', style: TextStyle(color: AppColors.primary)),
+                child: Text('Got it', style: TextStyle(color: AppColors.primary)),
               ),
             ),
           ],
@@ -471,15 +471,15 @@ class _ProfileTabState extends State<ProfileTab> {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.cardBg,
         shape: AppDecor.dialogShape,
-        title: const Text('Refer a Neighbour', style: AppText.dialogTitle),
-        content: const Text(
+        title: Text('Refer a Neighbour', style: AppText.dialogTitle),
+        content: Text(
           "Share ZHINI with a neighbour — they'll be able to track their own home's appliances too.",
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close', style: TextStyle(color: AppColors.textMuted)),
+            child: Text('Close', style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -490,8 +490,8 @@ class _ProfileTabState extends State<ProfileTab> {
                 const SnackBar(content: Text('Referral message copied — paste it anywhere ✅')),
               );
             },
-            icon: const Icon(Icons.copy_rounded, size: 16, color: AppColors.textPrimary),
-            label: const Text('Copy Link', style: TextStyle(color: AppColors.textPrimary)),
+            icon: Icon(Icons.copy_rounded, size: 16, color: AppColors.textPrimary),
+            label: Text('Copy Link', style: TextStyle(color: AppColors.textPrimary)),
           ),
         ],
       ),
@@ -625,15 +625,19 @@ class _ProfileTabState extends State<ProfileTab> {
                           onPressed: _openAddHomeDialog,
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: const BorderSide(color: AppColors.borderMuted),
+                            side: BorderSide(color: AppColors.borderMuted),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          icon: const Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
-                          label: const Text('Add home',
+                          icon: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
+                          label: Text('Add home',
                               style: TextStyle(
                                   color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
                         ),
                       ),
+                      const SizedBox(height: 24),
+                      _sectionHeader('APPEARANCE'),
+                      const SizedBox(height: 10),
+                      const ThemeModeToggle(),
                       const SizedBox(height: 22),
                       _sectionHeader('ACCOUNT ACTIONS', color: AppColors.danger),
                       const SizedBox(height: 10),
@@ -667,11 +671,11 @@ class _ProfileTabState extends State<ProfileTab> {
                           onPressed: _openAddHomeDialog,
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: const BorderSide(color: AppColors.borderMuted),
+                            side: BorderSide(color: AppColors.borderMuted),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          icon: const Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
-                          label: const Text('Add another home',
+                          icon: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
+                          label: Text('Add another home',
                               style: TextStyle(
                                   color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
                         ),
@@ -803,7 +807,7 @@ class _ProfileTabState extends State<ProfileTab> {
                           }
                         },
                         borderRadius: BorderRadius.circular(8),
-                        child: const Padding(
+                        child: Padding(
                           padding: EdgeInsets.symmetric(vertical: 4, horizontal: 10),
                           child: Text(
                             'powered by Atom8',
@@ -1000,7 +1004,7 @@ class _ProfileTabState extends State<ProfileTab> {
               padding: const EdgeInsets.symmetric(vertical: 5),
               child: Row(
                 children: [
-                  const CircleAvatar(
+                  CircleAvatar(
                     radius: 16,
                     backgroundColor: AppColors.memberAvatarBg,
                     child: Icon(Icons.person, color: AppColors.textPrimary, size: 16),
@@ -1011,7 +1015,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(isMe ? '$name (You)' : name,
-                            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+                            style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
                         Text(isMe ? 'Owner' : 'Member', style: AppText.caption),
                       ],
                     ),
@@ -1022,7 +1026,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     InkWell(
                       onTap: () => _confirmDeleteMember(currentHome, name, mobile),
                       borderRadius: BorderRadius.circular(8),
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.all(4),
                         child: Icon(Icons.delete_outline, color: AppColors.danger, size: 18),
                       ),
@@ -1039,11 +1043,11 @@ class _ProfileTabState extends State<ProfileTab> {
             onPressed: currentHome == null ? null : () => _openAddMemberDialog(currentHome),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 11),
-              side: const BorderSide(color: AppColors.primary),
+              side: BorderSide(color: AppColors.primary),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            icon: const Icon(Icons.person_add, color: AppColors.primary, size: 18),
-            label: const Text('Add Member', style: TextStyle(color: AppColors.primary, fontSize: 14)),
+            icon: Icon(Icons.person_add, color: AppColors.primary, size: 18),
+            label: Text('Add Member', style: TextStyle(color: AppColors.primary, fontSize: 14)),
           ),
         ),
       ],
@@ -1097,12 +1101,12 @@ class _ProfileTabState extends State<ProfileTab> {
             return AlertDialog(
               backgroundColor: AppColors.cardBg,
               shape: AppDecor.dialogShape,
-              title: const Text('Add Member', style: AppText.dialogTitle),
+              title: Text('Add Member', style: AppText.dialogTitle),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'They will be able to see and manage all appliances in this home.',
                     style: AppText.faintCaption,
                   ),
@@ -1113,11 +1117,11 @@ class _ProfileTabState extends State<ProfileTab> {
                       onPressed: pickFromContacts,
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 11),
-                        side: const BorderSide(color: AppColors.primary),
+                        side: BorderSide(color: AppColors.primary),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      icon: const Icon(Icons.contacts_rounded, color: AppColors.primary, size: 18),
-                      label: const Text('Pick from Contacts', style: TextStyle(color: AppColors.primary)),
+                      icon: Icon(Icons.contacts_rounded, color: AppColors.primary, size: 18),
+                      label: Text('Pick from Contacts', style: TextStyle(color: AppColors.primary)),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -1132,7 +1136,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       ),
                       child: Row(
                         children: [
-                          const CircleAvatar(
+                          CircleAvatar(
                             radius: 16,
                             backgroundColor: AppColors.memberAvatarBg,
                             child: Icon(Icons.person, color: AppColors.textPrimary, size: 16),
@@ -1143,7 +1147,7 @@ class _ProfileTabState extends State<ProfileTab> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(pickedName!,
-                                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+                                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
                                 Text(pickedMobile!, style: AppText.caption),
                               ],
                             ),
@@ -1153,19 +1157,19 @@ class _ProfileTabState extends State<ProfileTab> {
                               pickedName = null;
                               pickedMobile = null;
                             }),
-                            child: const Icon(Icons.close, color: AppColors.textFaint, size: 18),
+                            child: Icon(Icons.close, color: AppColors.textFaint, size: 18),
                           ),
                         ],
                       ),
                     )
                   else
-                    const Text('No contact selected yet.', style: AppText.faintCaption),
+                    Text('No contact selected yet.', style: AppText.faintCaption),
                 ],
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+                  child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -1177,12 +1181,12 @@ class _ProfileTabState extends State<ProfileTab> {
                           if (dialogContext.mounted) Navigator.pop(dialogContext);
                         },
                   child: isSubmitting
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2),
                         )
-                      : const Text('Add', style: TextStyle(color: AppColors.textPrimary)),
+                      : Text('Add', style: TextStyle(color: AppColors.textPrimary)),
                 ),
               ],
             );
@@ -1295,11 +1299,11 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
               const SizedBox(height: 8),
               Text(value,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 2),
               Text(label,
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 10.5),
                   textAlign: TextAlign.center),
             ],
           ),
@@ -1344,13 +1348,13 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.shield_outlined, color: AppColors.primary, size: 22),
+            Icon(Icons.shield_outlined, color: AppColors.primary, size: 22),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('No active protection plan',
+                  Text('No active protection plan',
                       style: TextStyle(
                           color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
@@ -1361,7 +1365,7 @@ class _ProfileTabState extends State<ProfileTab> {
             TextButton(
               onPressed: () => _openComingSoon('Protection plans',
                   'Browse AMC plans that cover repairs and servicing for your appliances.'),
-              child: const Text('Explore', style: AppText.linkAction),
+              child: Text('Explore', style: AppText.linkAction),
             ),
           ],
         ),
@@ -1383,11 +1387,11 @@ class _ProfileTabState extends State<ProfileTab> {
         children: [
           Row(
             children: [
-              const Icon(Icons.shield_rounded, color: AppColors.success, size: 20),
+              Icon(Icons.shield_rounded, color: AppColors.success, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(plan.label,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
               ),
               if (plan.active)
@@ -1396,7 +1400,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   decoration: BoxDecoration(
                       color: AppColors.success.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(20)),
-                  child: const Text('ACTIVE',
+                  child: Text('ACTIVE',
                       style: TextStyle(
                           color: AppColors.success, fontSize: 10, fontWeight: FontWeight.w700)),
                 ),
@@ -1414,7 +1418,7 @@ class _ProfileTabState extends State<ProfileTab> {
               value: progress,
               minHeight: 6,
               backgroundColor: AppColors.borderSubtle,
-              valueColor: const AlwaysStoppedAnimation(AppColors.success),
+              valueColor: AlwaysStoppedAnimation(AppColors.success),
             ),
           ),
           const SizedBox(height: 8),
@@ -1488,7 +1492,7 @@ class _ProfileTabState extends State<ProfileTab> {
                         child: Text(title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w700)),
@@ -1501,7 +1505,7 @@ class _ProfileTabState extends State<ProfileTab> {
                             color: AppColors.primarySoft,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Text('PRIMARY',
+                          child: Text('PRIMARY',
                               style: TextStyle(
                                   color: AppColors.primary,
                                   fontSize: 9,
@@ -1526,8 +1530,8 @@ class _ProfileTabState extends State<ProfileTab> {
               borderRadius: BorderRadius.circular(20),
               child: Container(
                 padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(color: AppColors.primarySoft, shape: BoxShape.circle),
-                child: const Icon(Icons.edit_outlined, color: AppColors.primary, size: 16),
+                decoration: BoxDecoration(color: AppColors.primarySoft, shape: BoxShape.circle),
+                child: Icon(Icons.edit_outlined, color: AppColors.primary, size: 16),
               ),
             ),
           ],
@@ -1562,7 +1566,7 @@ class _ProfileTabState extends State<ProfileTab> {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(20)),
       child: Text(text,
-          style: const TextStyle(color: AppColors.primary, fontSize: 10.5, fontWeight: FontWeight.w600)),
+          style: TextStyle(color: AppColors.primary, fontSize: 10.5, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -1576,7 +1580,7 @@ class _ProfileTabState extends State<ProfileTab> {
           for (int i = 0; i < rows.length; i++) ...[
             rows[i],
             if (i != rows.length - 1)
-              const Divider(height: 1, indent: 62, endIndent: 14, color: AppColors.borderSubtle),
+              Divider(height: 1, indent: 62, endIndent: 14, color: AppColors.borderSubtle),
           ],
         ],
       ),
@@ -1622,7 +1626,7 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
             if (trailing != null) ...[trailing, const SizedBox(width: 6)],
-            const Icon(Icons.chevron_right_rounded, color: AppColors.textFaint, size: 20),
+            Icon(Icons.chevron_right_rounded, color: AppColors.textFaint, size: 20),
           ],
         ),
       ),

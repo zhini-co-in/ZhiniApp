@@ -64,8 +64,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? Colors.white : Colors.black87;
-    final inactiveDot = isDark ? Colors.white30 : Colors.black26;
+    final titleColor = isDark ? AppColors.textPrimary : Colors.black87;
+    final inactiveDot = isDark ? AppColors.textFaint : Colors.black26;
 
     return Scaffold(
       backgroundColor: AppColors.scaffoldBg,
@@ -137,7 +137,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           page["desc"]!,
                           textAlign: TextAlign.center,
                           maxLines: 3,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 16,
                             height: 1.5,
@@ -167,7 +167,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         height: 8,
                         decoration: BoxDecoration(
                           color: _currentPage == index
-                              ? Colors.blue
+                              ? AppColors.primary
                               : inactiveDot,
                           borderRadius: BorderRadius.circular(4),
                         ),
@@ -178,17 +178,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ? ElevatedButton(
                           onPressed: _goToNext,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
+                            backgroundColor: AppColors.primary,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 20, vertical: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(24),
                             ),
                           ),
-                          child: const Text(
+                          child: Text(
                             "Get Started",
                             style: TextStyle(
-                                color: Colors.white,
+                                color: AppColors.textPrimary,
                                 fontWeight: FontWeight.w600),
                           ),
                         )
@@ -198,13 +198,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           child: Container(
                             width: 52,
                             height: 52,
-                            decoration: const BoxDecoration(
-                              color: Colors.blue,
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.arrow_forward,
-                              color: Colors.white,
+                              color: AppColors.textPrimary,
                               size: 24,
                             ),
                           ),

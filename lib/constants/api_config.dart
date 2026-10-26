@@ -37,5 +37,6 @@ static String get providerTicketsUrl => '$baseUrl/service/provider-tickets';
     static String deleteRoomUrl(String homeId) => '$baseUrl/product/delete-room/$homeId';
     static const String crashLogUrl = '$baseUrl/crash/add';
     static const String sessionSyncUrl = '$baseUrl/product/session';
+    static String get updateProviderUrl => '$baseUrl/service/update-provider';
 
 }

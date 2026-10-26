@@ -203,7 +203,7 @@ class _ServiceTabState extends State<ServiceTab> {
       debugPrint('❌ Cancel ticket error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Network error. Please try again.'),
           backgroundColor: AppColors.danger,
         ),
@@ -475,14 +475,14 @@ class _ServiceTabState extends State<ServiceTab> {
                         color: AppColors.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.receipt_long_rounded, color: AppColors.primary, size: 20),
+                      child: Icon(Icons.receipt_long_rounded, color: AppColors.primary, size: 20),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Invoice',
+                          Text('Invoice',
                               style: TextStyle(
                                   color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
                           if (ticketId != null && ticketId.isNotEmpty)
@@ -496,7 +496,7 @@ class _ServiceTabState extends State<ServiceTab> {
                 if (bill.productName != null && bill.productName!.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(bill.productName!,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w600)),
                 ],
                 const SizedBox(height: 14),
@@ -513,10 +513,10 @@ class _ServiceTabState extends State<ServiceTab> {
                         children: [
                           Expanded(
                             child: Text(l.label,
-                                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
+                                style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
                           ),
                           Text(money(l.amount),
-                              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
+                              style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
                         ],
                       ),
                     )),
@@ -525,18 +525,18 @@ class _ServiceTabState extends State<ServiceTab> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    const Text('Subtotal', style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
+                    Text('Subtotal', style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
                     const Spacer(),
-                    Text(money(bill.subtotal), style: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
+                    Text(money(bill.subtotal), style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
                     Text('GST (${bill.gstPercent % 1 == 0 ? bill.gstPercent.toStringAsFixed(0) : bill.gstPercent}%)',
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
                     const Spacer(),
-                    Text(money(bill.gstAmount), style: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
+                    Text(money(bill.gstAmount), style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -544,18 +544,18 @@ class _ServiceTabState extends State<ServiceTab> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Text('Total',
+                    Text('Total',
                         style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
                     const Spacer(),
                     Text(money(bill.total),
-                        style: const TextStyle(color: AppColors.primary, fontSize: 17, fontWeight: FontWeight.w800)),
+                        style: TextStyle(color: AppColors.primary, fontSize: 17, fontWeight: FontWeight.w800)),
                   ],
                 ),
                 if (bill.warrantyDays != null) ...[
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      const Icon(Icons.verified_user_outlined, size: 13, color: AppColors.textMuted),
+                      Icon(Icons.verified_user_outlined, size: 13, color: AppColors.textMuted),
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text('${bill.warrantyDays} days warranty on this service', style: AppText.caption),
@@ -572,7 +572,7 @@ class _ServiceTabState extends State<ServiceTab> {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => Navigator.of(ctx).pop(),
-                    child: const Text('Close', style: TextStyle(color: AppColors.primary)),
+                    child: Text('Close', style: TextStyle(color: AppColors.primary)),
                   ),
                 ),
               ],
@@ -629,7 +629,7 @@ class _ServiceTabState extends State<ServiceTab> {
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppColors.cardBg,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
@@ -661,14 +661,14 @@ class _ServiceTabState extends State<ServiceTab> {
                         color: AppColors.danger.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.cancel_rounded, color: AppColors.danger, size: 20),
+                      child: Icon(Icons.cancel_rounded, color: AppColors.danger, size: 20),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Cancel this ticket?',
+                          Text('Cancel this ticket?',
                               style: TextStyle(
                                   color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
                           Text('Ticket #$ticketId', style: AppText.caption),
@@ -680,7 +680,7 @@ class _ServiceTabState extends State<ServiceTab> {
                 const SizedBox(height: 20),
 
                 // ---- Quick reason chips ----
-                const Text('Quick reasons',
+                Text('Quick reasons',
                     style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 12.5, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
@@ -718,7 +718,7 @@ class _ServiceTabState extends State<ServiceTab> {
                 const SizedBox(height: 16),
 
                 // ---- Custom reason field ----
-                const Text('Or type your own reason',
+                Text('Or type your own reason',
                     style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 12.5, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
@@ -726,7 +726,7 @@ class _ServiceTabState extends State<ServiceTab> {
                   controller: reasonController,
                   maxLines: 3,
                   onChanged: (_) => setSheetState(() => selectedQuickReason = null),
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 13.5),
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 13.5),
                   decoration: InputDecoration(
                     hintText: "Tell us why you're cancelling...",
                     hintStyle: AppText.faintCaption,
@@ -743,14 +743,14 @@ class _ServiceTabState extends State<ServiceTab> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: AppColors.primary),
+                      borderSide: BorderSide(color: AppColors.primary),
                     ),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(Icons.info_outline_rounded, size: 13, color: AppColors.textMuted),
+                    Icon(Icons.info_outline_rounded, size: 13, color: AppColors.textMuted),
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text('Your assigned technician will be notified once cancelled.',
@@ -768,7 +768,7 @@ class _ServiceTabState extends State<ServiceTab> {
                         onPressed: () => Navigator.of(ctx).pop(),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.textSecondary,
-                          side: const BorderSide(color: AppColors.borderSubtle),
+                          side: BorderSide(color: AppColors.borderSubtle),
                           padding: const EdgeInsets.symmetric(vertical: 13),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
@@ -791,7 +791,7 @@ class _ServiceTabState extends State<ServiceTab> {
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.danger,
-                          foregroundColor: Colors.white,
+                          foregroundColor: AppColors.textPrimary,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(vertical: 13),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -859,7 +859,7 @@ class _ServiceTabState extends State<ServiceTab> {
 ),
                   const SizedBox(height: 16),
                   if (loading)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(vertical: 30),
                       child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
                     )
@@ -956,20 +956,20 @@ if (response.statusCode == 200) {
                 backgroundColor: AppColors.cardBg,
                 onRefresh: _fetchTickets,
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                    ? Center(child: CircularProgressIndicator(color: AppColors.primary))
                     : ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
                         children: [
                           if (_error != null) ...[
                             const SizedBox(height: 40),
-                            const Icon(Icons.wifi_off_rounded, color: AppColors.textFaint, size: 36),
+                            Icon(Icons.wifi_off_rounded, color: AppColors.textFaint, size: 36),
                             const SizedBox(height: 12),
                             Text(_error!, textAlign: TextAlign.center, style: AppText.caption),
                             const SizedBox(height: 40),
                           ] else if (_filteredTickets.isEmpty) ...[
                             const SizedBox(height: 30),
-                            const Icon(Icons.receipt_long_rounded, color: AppColors.textFaint, size: 36),
+                            Icon(Icons.receipt_long_rounded, color: AppColors.textFaint, size: 36),
                             const SizedBox(height: 12),
                             Text(
                               _tickets.isEmpty
@@ -1008,7 +1008,7 @@ if (response.statusCode == 200) {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Service', style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+              Text('Service', style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 2),
               Text('$city · ${_tickets.length} ticket${_tickets.length == 1 ? '' : 's'}', style: AppText.caption),
             ],
@@ -1050,7 +1050,7 @@ if (response.statusCode == 200) {
   }
 
   Widget _sectionHeader(String title) {
-    return Text(title, style: const TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8));
+    return Text(title, style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8));
   }
 
   Widget _ticketCard(Map<String, dynamic> t) {
@@ -1083,7 +1083,7 @@ if (response.statusCode == 200) {
                   children: [
                     Text(
                       serviceLabel,
-                      style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+                      style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
                     ),
                     if (ticketId != null && ticketId.isNotEmpty) ...[
                       const SizedBox(height: 3),
@@ -1114,13 +1114,13 @@ if (response.statusCode == 200) {
             Row(
               children: [
                 if (assigned != null) ...[
-                  const Icon(Icons.person_outline_rounded, size: 14, color: AppColors.textMuted),
+                  Icon(Icons.person_outline_rounded, size: 14, color: AppColors.textMuted),
                   const SizedBox(width: 5),
                   Flexible(child: Text(assigned, style: AppText.caption, overflow: TextOverflow.ellipsis)),
                 ],
                 if (assigned != null && date != null) const SizedBox(width: 14),
                 if (date != null) ...[
-                  const Icon(Icons.event_rounded, size: 14, color: AppColors.textMuted),
+                  Icon(Icons.event_rounded, size: 14, color: AppColors.textMuted),
                   const SizedBox(width: 5),
                   Text(date, style: AppText.caption),
                 ],
@@ -1143,15 +1143,15 @@ if (response.statusCode == 200) {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('Total',
+                          Text('Total',
                               style: TextStyle(
                                   color: AppColors.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w700)),
                           const SizedBox(width: 5),
-                          const Icon(Icons.receipt_long_rounded, size: 14, color: AppColors.textMuted),
+                          Icon(Icons.receipt_long_rounded, size: 14, color: AppColors.textMuted),
                           const SizedBox(width: 6),
                           Text(
                             '₹${bill.total.toStringAsFixed(bill.total % 1 == 0 ? 0 : 2)}',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.primary, fontSize: 14.5, fontWeight: FontWeight.w700),
                           ),
                         ],
@@ -1172,7 +1172,7 @@ if (response.statusCode == 200) {
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: const [
+                        children: [
                           Icon(Icons.close_rounded, size: 13, color: AppColors.danger),
                           SizedBox(width: 4),
                           Text('Cancel',
@@ -1230,11 +1230,11 @@ if (response.statusCode == 200) {
                     children: [
                       Text(cat['label'] as String,
                           maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                          style: TextStyle(color: AppColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
                       Text(count == null ? '...' : '$count available now',
                           maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.success, fontSize: 10.5, fontWeight: FontWeight.w600)),
+                          style: TextStyle(color: AppColors.success, fontSize: 10.5, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),

@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'theme/app_theme.dart';
 import 'login_screen.dart';
 import 'service_ticket_card.dart';
-import 'service_provider_scan_tab.dart';
 import 'services/ticket_service.dart';
 import 'constants/api_config.dart';
 import '../manual_ticket_create_screen.dart';
-
+import 'widgets/theme_mode_toggle.dart';
+import 'edit_provider_profile_screen.dart';
 // ===========================================================================
 // SHELL — Home / Jobs / Scan / Customers / Profile
 // ===========================================================================
@@ -26,8 +26,53 @@ class ServiceProviderDashboard extends StatefulWidget {
 }
 
 class _ServiceProviderDashboardState extends State<ServiceProviderDashboard> {
-  int _tabIndex = 0; // 0 Home, 1 Jobs, 2 Scan, 3 Customers, 4 Profile
+  int _tabIndex = 0; // 0 Home, 1 Jobs, 2 Customers, 3 Profile
   bool _isAvailable = false;
+  late String _name = widget.name;
+Map<String, dynamic> _profileData = {};
+
+  int _homeRefreshTick = 0;
+  DateTime? _lastHomeTap;
+
+  Future<void> _refreshHome() async {
+    setState(() => _homeRefreshTick++);
+    await Future.delayed(const Duration(milliseconds: 600));
+  }
+
+  void _onTabTap(int i) {
+    if (i == 0 && _tabIndex == 0) {
+      final now = DateTime.now();
+      if (_lastHomeTap != null &&
+          now.difference(_lastHomeTap!) < const Duration(milliseconds: 400)) {
+        _lastHomeTap = null;
+        _refreshHome();
+        return;
+      }
+      _lastHomeTap = now;
+    }
+    setState(() => _tabIndex = i);
+  }
+
+  Future<void> _openEditProfile() async {
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditProviderProfileScreen(
+          mobileNumber: widget.mobileNumber,
+          initialData: {'name': _name, ..._profileData},
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _profileData = result;
+        _name = result['name']?.toString() ?? _name;
+        if (result['isAvailable'] is bool) {
+          _isAvailable = result['isAvailable'] as bool;
+        }
+      });
+    }
+  }
 
   // TODO: replace with real values from your backend.
   final double _todayEarnings = 1840;
@@ -48,7 +93,7 @@ class _ServiceProviderDashboardState extends State<ServiceProviderDashboard> {
         backgroundColor: AppColors.cardBgAlt,
         content: Text(
           value ? 'You are now available' : 'You are now unavailable',
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: AppColors.textPrimary),
         ),
         duration: const Duration(seconds: 2),
       ),
@@ -61,19 +106,19 @@ class _ServiceProviderDashboardState extends State<ServiceProviderDashboard> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Confirm Logout', style: TextStyle(color: Colors.white)),
-        content: const Text(
+        title: Text('Confirm Logout', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
           'Are you sure you want to logout?',
-          style: TextStyle(color: Colors.white60),
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Logout', style: TextStyle(color: Colors.blue)),
+            child: Text('Logout', style: TextStyle(color: AppColors.primary)),
           ),
         ],
       ),
@@ -88,45 +133,45 @@ class _ServiceProviderDashboardState extends State<ServiceProviderDashboard> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final providerMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
+    @override
+Widget build(BuildContext context) {
+  final providerMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
 
-    final tabs = [
-      _HomeTab(
-        name: widget.name,
-        mobileNumber: widget.mobileNumber,
-        rating: _rating,
-        category: _category,
-        isAvailable: _isAvailable,
-        onAvailabilityChanged: _toggleAvailability,
-        todayEarnings: _todayEarnings,
-        weekEarnings: _weekEarnings,
-        monthEarnings: _monthEarnings,
-      ),
-      _JobsTab(
-        providerMobile: providerMobile,
-        isActive: _tabIndex == 1,
-      ),
-      // Only mounted while this tab is actually selected — it opens the
-      // camera on init, so we don't want it alive in the background.
-      _tabIndex == 2 ? const ServiceProviderScanTab() : const SizedBox.shrink(),
-      const _CustomersTab(),
-      _ProfileTab(
-        name: widget.name,
-        mobileNumber: widget.mobileNumber,
-        rating: _rating,
-        category: _category,
-        onLogout: _logout,
-      ),
-    ];
+final tabs = [
+  _HomeTab(
+    name: _name,                       // widget.name -> _name
+    mobileNumber: widget.mobileNumber,
+    rating: _rating,
+    category: _category,
+    isAvailable: _isAvailable,
+    onAvailabilityChanged: _toggleAvailability,
+    todayEarnings: _todayEarnings,
+    weekEarnings: _weekEarnings,
+    monthEarnings: _monthEarnings,
+        refreshTick: _homeRefreshTick,
+    onRefresh: _refreshHome,
+  ),
+  _JobsTab(
+    providerMobile: providerMobile,
+    isActive: _tabIndex == 1,
+  ),
+  const _CustomersTab(),
+  _ProfileTab(
+    name: _name,                       // widget.name -> _name
+    mobileNumber: widget.mobileNumber,
+    rating: _rating,
+    category: _category,
+    onLogout: _logout,
+    onEditProfile: _openEditProfile,   // pudhusu
+  ),
+];
 
     return PopScope(
       canPop: false,
       child: Scaffold(
         backgroundColor: AppColors.scaffoldBg,
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
@@ -139,9 +184,9 @@ class _ServiceProviderDashboardState extends State<ServiceProviderDashboard> {
           ),
         ),
         bottomNavigationBar: _BottomNavBar(
-          currentIndex: _tabIndex,
-          onTap: (i) => setState(() => _tabIndex = i),
-        ),
+  currentIndex: _tabIndex,
+  onTap: _onTabTap,        // (i) => setState(...) badhila idhu
+),
       ),
     );
   }
@@ -171,7 +216,11 @@ class _HomeTab extends StatelessWidget {
     required this.todayEarnings,
     required this.weekEarnings,
     required this.monthEarnings,
+    required this.refreshTick,     // pudhusu
+  required this.onRefresh,
   });
+    final int refreshTick;
+  final Future<void> Function() onRefresh;
 
   String get _initials {
     final parts = name.trim().split(RegExp(r'\s+'));
@@ -193,9 +242,14 @@ class _HomeTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-      child: Column(
+    return RefreshIndicator(
+      color: AppColors.primary,
+      backgroundColor: AppColors.cardBg,
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ---- Profile row ----
@@ -203,11 +257,11 @@ class _HomeTab extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 26,
-                backgroundColor: Colors.blue.withValues(alpha: 0.2),
+                backgroundColor: AppColors.primary.withValues(alpha: 0.2),
                 child: Text(
                   _initials,
-                  style: const TextStyle(
-                      color: Colors.blue, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                      color: AppColors.primary, fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
               const SizedBox(width: 14),
@@ -217,17 +271,17 @@ class _HomeTab extends StatelessWidget {
                   children: [
                     Text(
                       name,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 3),
                     Row(
                       children: [
-                        const Icon(Icons.star_rounded, color: Colors.amber, size: 15),
+                        Icon(Icons.star_rounded, color: AppColors.warning, size: 15),
                         const SizedBox(width: 2),
                         Text(
                           '$rating · $category',
-                          style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
                         ),
                       ],
                     ),
@@ -237,18 +291,18 @@ class _HomeTab extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.15),
+                  color: AppColors.success.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.5)),
+                  border: Border.all(color: AppColors.success.withValues(alpha: 0.5)),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.verified_rounded, color: Colors.greenAccent, size: 13),
+                    Icon(Icons.verified_rounded, color: AppColors.success, size: 13),
                     SizedBox(width: 4),
                     Text('Verified',
                         style: TextStyle(
-                            color: Colors.greenAccent,
+                            color: AppColors.success,
                             fontSize: 11,
                             fontWeight: FontWeight.w600)),
                   ],
@@ -276,13 +330,13 @@ class _HomeTab extends StatelessWidget {
                     children: [
                       Text(
                         isAvailable ? 'Available' : 'Unavailable',
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                            color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         isAvailable ? 'Receiving new jobs' : 'Turn on to get new jobs',
-                        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                       ),
                     ],
                   ),
@@ -290,8 +344,8 @@ class _HomeTab extends StatelessWidget {
                 Switch(
                   value: isAvailable,
                   onChanged: onAvailabilityChanged,
-                  activeThumbColor: Colors.white,
-                  activeTrackColor: Colors.blue,
+                  activeThumbColor: AppColors.onPrimary,
+                  activeTrackColor: AppColors.primary,
                   inactiveThumbColor: AppColors.textSecondary,
                   inactiveTrackColor: AppColors.textDisabled,
                 ),
@@ -316,16 +370,17 @@ class _HomeTab extends StatelessWidget {
 
           // ---- New requests ----
           if (isAvailable) ...[
-            const Text(
+            Text(
               'New request',
-              style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
           ],
           IncomingTicketsSection(
-            isAvailable: isAvailable,
-            providerMobile: ApiConfig.stripCountryCode(mobileNumber),   // 🔄 sampleTickets-ku badhila idhu
-          ),
+  key: ValueKey('incoming-$refreshTick'),
+  isAvailable: isAvailable,
+  providerMobile: ApiConfig.stripCountryCode(mobileNumber),
+),
 
           if (!isAvailable) ...[
             const SizedBox(height: 8),
@@ -340,12 +395,12 @@ class _HomeTab extends StatelessWidget {
               child: Column(
                 children: [
                   Icon(Icons.power_settings_new_rounded,
-                      color: Colors.white.withValues(alpha: 0.2), size: 32),
+                      color: AppColors.textPrimary.withValues(alpha: 0.2), size: 32),
                   const SizedBox(height: 10),
-                  const Text('You are offline',
+                  Text('You are offline',
                       style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
                   const SizedBox(height: 2),
-                  const Text('Turn on availability to get started',
+                  Text('Turn on availability to get started',
                       style: TextStyle(color: AppColors.textDisabled, fontSize: 11)),
                 ],
               ),
@@ -353,6 +408,7 @@ class _HomeTab extends StatelessWidget {
           ],
         ],
       ),
+    ),
     );
   }
 }
@@ -375,10 +431,10 @@ class _StatCard extends StatelessWidget {
       child: Column(
         children: [
           Text(value,
-              style: const TextStyle(
-                  color: Colors.blue, fontSize: 15, fontWeight: FontWeight.bold)),
+              style: TextStyle(
+                  color: AppColors.primary, fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 3),
-          Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 11.5)),
+          Text(label, style: TextStyle(color: AppColors.textMuted, fontSize: 11.5)),
         ],
       ),
     );
@@ -469,11 +525,11 @@ class _JobsTabState extends State<_JobsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('My jobs',
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+          Text('My jobs',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
           Text('${_activeTickets.length} active · ${_completedTickets.length} completed',
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
           const SizedBox(height: 16),
           SizedBox(
           width: double.infinity,
@@ -487,9 +543,9 @@ class _JobsTabState extends State<_JobsTab> {
               );
               if (created == true) _loadJobs(); // refresh list after creating
             },
-            icon: const Icon(Icons.add, color: Colors.white),
-            label: const Text('Create Ticket', style: TextStyle(color: Colors.white)),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            icon: Icon(Icons.add, color: AppColors.onPrimary),
+            label: Text('Create Ticket', style: TextStyle(color: AppColors.onPrimary)),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
           ),
         ),
         const SizedBox(height: 16),
@@ -526,7 +582,7 @@ class _JobsTabState extends State<_JobsTab> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: Colors.blue));
+      return Center(child: CircularProgressIndicator(color: AppColors.primary));
     }
 
     if (_error != null) {
@@ -534,13 +590,13 @@ class _JobsTabState extends State<_JobsTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 28),
+            Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 28),
             const SizedBox(height: 8),
-            const Text('Couldn\'t load jobs', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+            Text('Couldn\'t load jobs', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(height: 10),
             TextButton(
               onPressed: _loadJobs,
-              child: const Text('Retry', style: TextStyle(color: Colors.blue)),
+              child: Text('Retry', style: TextStyle(color: AppColors.primary)),
             ),
           ],
         ),
@@ -548,7 +604,7 @@ class _JobsTabState extends State<_JobsTab> {
     }
 
     return RefreshIndicator(
-      color: Colors.blue,
+      color: AppColors.primary,
       backgroundColor: AppColors.cardBg,
       onRefresh: _loadJobs,
       child: _visibleTickets.isEmpty
@@ -556,9 +612,9 @@ class _JobsTabState extends State<_JobsTab> {
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 const SizedBox(height: 80),
-                Icon(Icons.work_off_rounded, color: Colors.white.withValues(alpha: 0.15), size: 40),
+                Icon(Icons.work_off_rounded, color: AppColors.textPrimary.withValues(alpha: 0.15), size: 40),
                 const SizedBox(height: 12),
-                const Center(
+                Center(
                   child: Text('No jobs here yet', style: TextStyle(color: AppColors.textFaint, fontSize: 13)),
                 ),
               ],
@@ -599,13 +655,13 @@ class _JobsTabState extends State<_JobsTab> {
   Color _statusColor(String status) {
     switch (status) {
       case 'ACCEPTED':
-        return Colors.blue;
+        return AppColors.primary;
       case 'IN_PROGRESS':
-        return Colors.orangeAccent;
+        return AppColors.warning;
       case 'WAITING_FOR_PARTS':
-        return Colors.amber;
+        return AppColors.warning;
       case 'COMPLETED':
-        return Colors.greenAccent;
+        return AppColors.success;
       default:
         return AppColors.textFaint;
     }
@@ -627,14 +683,14 @@ class _FilterChipButton extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? Colors.blue : AppColors.cardBg,
+          color: selected ? AppColors.primary : AppColors.cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? Colors.blue : AppColors.borderSubtle),
+          border: Border.all(color: selected ? AppColors.primary : AppColors.borderSubtle),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : Colors.white60,
+            color: selected ? AppColors.onPrimary : AppColors.textSecondary,
             fontSize: 12.5,
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
@@ -676,8 +732,8 @@ class _JobHistoryCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(title,
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700)),
+                    style: TextStyle(
+                        color: AppColors.textPrimary, fontSize: 14.5, fontWeight: FontWeight.w700)),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -693,10 +749,10 @@ class _JobHistoryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text(subtitle, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          Text(subtitle, style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
           if (location.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(location, style: const TextStyle(color: AppColors.textFaint, fontSize: 11.5)),
+            Text(location, style: TextStyle(color: AppColors.textFaint, fontSize: 11.5)),
           ],
         ],
       ),
@@ -716,9 +772,9 @@ class _CustomersTab extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.people_alt_rounded, color: Colors.white.withValues(alpha: 0.2), size: 48),
+          Icon(Icons.people_alt_rounded, color: AppColors.textPrimary.withValues(alpha: 0.2), size: 48),
           const SizedBox(height: 14),
-          const Text('Your customers will show up here',
+          Text('Your customers will show up here',
               style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
         ],
       ),
@@ -726,28 +782,47 @@ class _CustomersTab extends StatelessWidget {
   }
 }
 
-// ===========================================================================
-// PROFILE TAB
-// ===========================================================================
 class _ProfileTab extends StatelessWidget {
   final String name;
   final String mobileNumber;
   final double rating;
   final String category;
   final VoidCallback onLogout;
+  final VoidCallback onEditProfile;
 
   const _ProfileTab({
-    required this.name,
-    required this.mobileNumber,
-    required this.rating,
-    required this.category,
-    required this.onLogout,
-  });
+  required this.name,
+  required this.mobileNumber,
+  required this.rating,
+  required this.category,
+  required this.onLogout,
+  required this.onEditProfile,
+});
+
+  Widget _sectionHeader(String title, {Color? color}) {
+    final c = color ?? AppColors.textMuted;
+    return Row(
+      children: [
+        Container(
+          width: 3,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color ?? AppColors.primary,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(title,
+            style: TextStyle(
+                color: c, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1)),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -756,40 +831,56 @@ class _ProfileTab extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 34,
-                  backgroundColor: Colors.blue.withValues(alpha: 0.2),
-                  child: const Icon(Icons.person, color: Colors.blue, size: 32),
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.2),
+                  child: Icon(Icons.person, color: AppColors.primary, size: 32),
                 ),
                 const SizedBox(height: 12),
                 Text(name,
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                Text(mobileNumber, style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                Text(mobileNumber,
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
                 const SizedBox(height: 4),
                 Text('★ $rating · $category',
-                    style: const TextStyle(color: AppColors.textFaint, fontSize: 12)),
+                    style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
               ],
             ),
           ),
+          const SizedBox(height: 28),
+
+          // ---- APPEARANCE (same toggle as user app) ----
+          _sectionHeader('APPEARANCE'),
+          const SizedBox(height: 10),
+          const ThemeModeToggle(),
+          const SizedBox(height: 24),
+
+          _ProfileMenuTile(
+  icon: Icons.edit_outlined,
+  label: 'Edit profile',
+  onTap: onEditProfile,   // () {} badhila
+),
+          _ProfileMenuTile(
+              icon: Icons.receipt_long_outlined, label: 'Payouts & earnings', onTap: () {}),
+          _ProfileMenuTile(
+              icon: Icons.support_agent_outlined, label: 'Help & support', onTap: () {}),
           const SizedBox(height: 32),
-          _ProfileMenuTile(icon: Icons.edit_outlined, label: 'Edit profile', onTap: () {}),
-          _ProfileMenuTile(icon: Icons.receipt_long_outlined, label: 'Payouts & earnings', onTap: () {}),
-          _ProfileMenuTile(icon: Icons.support_agent_outlined, label: 'Help & support', onTap: () {}),
-          const Spacer(),
+
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: onLogout,
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                side: const BorderSide(color: Colors.redAccent),
+                side: BorderSide(color: AppColors.danger),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              icon: const Icon(Icons.logout, color: Colors.redAccent, size: 18),
-              label: const Text('Log out', style: TextStyle(color: Colors.redAccent)),
+              icon: Icon(Icons.logout, color: AppColors.danger, size: 18),
+              label: Text('Log out', style: TextStyle(color: AppColors.danger)),
             ),
           ),
-          const SizedBox(height: 12),
         ],
       ),
     );
@@ -812,12 +903,12 @@ class _ProfileMenuTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            Icon(icon, color: Colors.white60, size: 20),
+            Icon(icon, color: AppColors.textSecondary, size: 20),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 14)),
+              child: Text(label, style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
             ),
-            const Icon(Icons.chevron_right_rounded, color: AppColors.textDisabled, size: 20),
+            Icon(Icons.chevron_right_rounded, color: AppColors.textDisabled, size: 20),
           ],
         ),
       ),
@@ -840,17 +931,16 @@ class _BottomNavBar extends StatelessWidget {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom > 0 ? 8 : 14, top: 10),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+        border: Border(top: BorderSide(color: AppColors.textPrimary.withValues(alpha: 0.06))),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _NavItem(icon: Icons.home_rounded, label: 'Home', index: 0, currentIndex: currentIndex, onTap: onTap),
-          _NavItem(icon: Icons.work_rounded, label: 'Jobs', index: 1, currentIndex: currentIndex, onTap: onTap),
-          _ScanNavItem(index: 2, currentIndex: currentIndex, onTap: onTap),
-          _NavItem(icon: Icons.people_rounded, label: 'Customers', index: 3, currentIndex: currentIndex, onTap: onTap),
-          _NavItem(icon: Icons.person_rounded, label: 'Profile', index: 4, currentIndex: currentIndex, onTap: onTap),
-        ],
+  _NavItem(icon: Icons.home_rounded, label: 'Home', index: 0, currentIndex: currentIndex, onTap: onTap),
+  _NavItem(icon: Icons.work_rounded, label: 'Jobs', index: 1, currentIndex: currentIndex, onTap: onTap),
+  _NavItem(icon: Icons.people_rounded, label: 'Customers', index: 2, currentIndex: currentIndex, onTap: onTap),
+  _NavItem(icon: Icons.person_rounded, label: 'Profile', index: 3, currentIndex: currentIndex, onTap: onTap),
+],
       ),
     );
   }
@@ -874,7 +964,7 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = index == currentIndex;
-    final color = selected ? Colors.blue : AppColors.textFaint;
+    final color = selected ? AppColors.primary : AppColors.textFaint;
     return GestureDetector(
       onTap: () => onTap(index),
       behavior: HitTestBehavior.opaque,
@@ -910,12 +1000,12 @@ class _ScanNavItem extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 2),
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: selected ? Colors.blue : Colors.blue.withValues(alpha: 0.85),
+          color: selected ? AppColors.primary : AppColors.primary.withValues(alpha: 0.85),
           boxShadow: [
-            BoxShadow(color: Colors.blue.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3)),
+            BoxShadow(color: AppColors.primary.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3)),
           ],
         ),
-        child: const Icon(Icons.qr_code_scanner_rounded, color: Colors.white, size: 22),
+        child: Icon(Icons.qr_code_scanner_rounded, color: AppColors.onPrimary, size: 22),
       ),
     );
   }

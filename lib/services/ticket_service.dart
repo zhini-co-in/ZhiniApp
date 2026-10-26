@@ -3,8 +3,16 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
 import '../service_ticket_card.dart';
+import 'api_client.dart';
 
 class TicketService {
+  /// JSON + ngrok + x-auth-token / x-device-id (ApiClient la irundhu)
+  static Future<Map<String, String>> _headers() async => {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+        ...await ApiClient.authHeaders(),
+      };
+
 static Future<List<ServiceTicket>> fetchProviderTickets(
     String providerMobile) async {
   final uri = Uri.parse(ApiConfig.providerTicketsUrl);
@@ -12,10 +20,7 @@ static Future<List<ServiceTicket>> fetchProviderTickets(
 
   final response = await http.post(          // 🔄 GET -> POST
     uri,
-    headers: {
-      'Content-Type': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
-    },
+    headers: await _headers(),
     body: jsonEncode({'providerMobile': providerMobile}),   // 🔄 body-la anupurom
   );
   debugPrint('🎫 Ticket response: ${response.statusCode} ${response.body}');
@@ -51,10 +56,7 @@ static Future<String> createManualTicket({
   final uri = Uri.parse(ApiConfig.createServiceTicketUrl);
   final response = await http.post(
     uri,
-    headers: {
-      'Content-Type': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
-    },
+    headers: await _headers(),
     body: jsonEncode({
       'customerName': customerName,
       'cust_number': customerPhone,
@@ -82,10 +84,7 @@ static Future<String> createManualTicket({
     final uri = Uri.parse(ApiConfig.ticketRespondUrl);
     final response = await http.put(
       uri,
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
+      headers: await _headers(),
       body: jsonEncode({
         'ticketId': ticketId,
         'newStatus': accepted ? 'ACCEPTED' : 'REJECTED',   // 🔄 key + value maathirukkom
@@ -117,10 +116,7 @@ static Future<String> createManualTicket({
 
     final response = await http.post(
       uri,
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
+      headers: await _headers(),
       body: jsonEncode(billing), // flat body — no "billing" wrapper key
     );
     debugPrint('🧾 Billing response: ${response.statusCode} ${response.body}');
@@ -169,10 +165,7 @@ static Future<void> updateTicketStatus({
     final uri = Uri.parse(ApiConfig.ticketRespondUrl);
     final response = await http.put(
       uri,
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
+      headers: await _headers(),
       body: jsonEncode({'ticketId': ticketId, 'newStatus': newStatus}),
     );
     if (response.statusCode != 200) {

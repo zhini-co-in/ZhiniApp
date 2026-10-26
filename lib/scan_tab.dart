@@ -445,7 +445,7 @@ void _startLiveCountdown() {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -467,7 +467,7 @@ void _startLiveCountdown() {
                 }
               }
             },
-            child: const Text('Save', style: TextStyle(color: AppColors.textPrimary)),
+            child: Text('Save', style: TextStyle(color: AppColors.textPrimary)),
           ),
         ],
       ),
@@ -487,7 +487,7 @@ void _startLiveCountdown() {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -506,7 +506,7 @@ void _startLiveCountdown() {
                 }
               }
             },
-            child: const Text('Save', style: TextStyle(color: AppColors.textPrimary)),
+            child: Text('Save', style: TextStyle(color: AppColors.textPrimary)),
           ),
         ],
       ),
@@ -680,7 +680,7 @@ void _startLiveCountdown() {
     return Scaffold(
       backgroundColor: AppColors.scaffoldBg,
       body: !_isCameraReady || _cameraController == null
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : _showDetectedCard
               ? _buildDetectedCard()
               : _buildCameraView(),
@@ -711,10 +711,10 @@ void _startLiveCountdown() {
               children: [
                 GestureDetector(
                   onTap: () => widget.onBack?.call(),
-                  child: const Icon(Icons.arrow_back, color: AppColors.textSecondary),
+                  child: Icon(Icons.arrow_back, color: AppColors.textSecondary),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
   child: Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -759,14 +759,14 @@ if (!_reviewing && !_aiThinking)
                   Positioned.fill(
                     child: Image.file(_lastCapturedImage!, fit: BoxFit.contain),
                   ),
-                  const Positioned(
+                  Positioned(
                     top: 56,
                     left: 0,
                     right: 0,
                     child: Center(
                       child: Text('Captured product',
                           style: TextStyle(
-                              color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                              color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
                     ),
                   ),
                   Positioned(
@@ -780,11 +780,11 @@ if (!_reviewing && !_aiThinking)
                             onPressed: _cancelReview,
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 15),
-                              side: const BorderSide(color: Colors.white70),
+                              side: BorderSide(color: AppColors.textSecondary),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                             child: Text('Cancel ($_reviewCountdown)',
-                                style: const TextStyle(color: Colors.white, fontSize: 15)),
+                                style: TextStyle(color: AppColors.textPrimary, fontSize: 15)),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -796,8 +796,8 @@ if (!_reviewing && !_aiThinking)
                               padding: const EdgeInsets.symmetric(vertical: 15),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
-                            child: const Text('Proceed',
-                                style: TextStyle(color: Colors.white, fontSize: 15)),
+                            child: Text('Proceed',
+                                style: TextStyle(color: AppColors.textPrimary, fontSize: 15)),
                           ),
                         ),
                       ],
@@ -834,10 +834,10 @@ if (!_reviewing && !_aiThinking)
                     children: [
                       GestureDetector(
                         onTap: () => widget.onBack?.call(),
-                        child: const Icon(Icons.arrow_back, color: AppColors.textPrimary, size: 22),
+                        child: Icon(Icons.arrow_back, color: AppColors.textPrimary, size: 22),
                       ),
                       const SizedBox(width: 12),
-                      const Text('Product Detected',
+                      Text('Product Detected',
                           style: TextStyle(
                               color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
                     ],
@@ -850,7 +850,7 @@ if (!_reviewing && !_aiThinking)
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     ),
                     icon: _aiThinking
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 12,
                             height: 12,
                             child: CircularProgressIndicator(
@@ -858,7 +858,7 @@ if (!_reviewing && !_aiThinking)
                               strokeWidth: 2,
                             ),
                           )
-                        : const Icon(Icons.refresh_rounded, size: 14, color: AppColors.primary),
+                        : Icon(Icons.refresh_rounded, size: 14, color: AppColors.primary),
                     label: Text(
                       _aiThinking ? 'Checking...' : 'Ask ZHINI',
                       style: AppText.linkAction,
@@ -880,7 +880,7 @@ if (!_reviewing && !_aiThinking)
                     clipBehavior: Clip.antiAlias,
                     child: (_lastCapturedImage != null)
                         ? Image.file(_lastCapturedImage!, fit: BoxFit.cover)
-                        : const Icon(Icons.ac_unit, color: AppColors.textFaint),
+                        : Icon(Icons.ac_unit, color: AppColors.textFaint),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -925,7 +925,7 @@ if (!_reviewing && !_aiThinking)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.verified_user_outlined, size: 16, color: AppColors.textMuted),
+                  Icon(Icons.verified_user_outlined, size: 16, color: AppColors.textMuted),
                   const SizedBox(width: 8),
                   Expanded(
                     child: (_detectedWarranty ?? _manualWarranty) != null
@@ -934,7 +934,7 @@ if (!_reviewing && !_aiThinking)
                             '${_isUnderWarrantyNow ? " (Active)" : ""}',
                             style: AppText.body,
                           )
-                        : const Text(
+                        : Text(
                             'Warranty not added yet',
                             style: TextStyle(color: AppColors.danger, fontSize: 12.5),
                           ),
@@ -959,7 +959,7 @@ if (!_reviewing && !_aiThinking)
                         minimumSize: const Size(0, 0),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      icon: const Icon(Icons.edit_outlined, size: 14, color: AppColors.primary),
+                      icon: Icon(Icons.edit_outlined, size: 14, color: AppColors.primary),
                       label: const Text('Add manual', style: AppText.linkAction),
                     ),
                     const SizedBox(width: 16),
@@ -971,12 +971,12 @@ if (!_reviewing && !_aiThinking)
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       icon: _uploadingWarrantyCard
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 12,
                               height: 12,
                               child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
                             )
-                          : const Icon(Icons.add_a_photo_outlined, size: 14, color: AppColors.primary),
+                          : Icon(Icons.add_a_photo_outlined, size: 14, color: AppColors.primary),
                       label: const Text('Upload warranty card', style: AppText.linkAction),
                     ),
                   ],
@@ -987,9 +987,9 @@ if (!_reviewing && !_aiThinking)
                 Row(
                   children: [
                     const SizedBox(width: 24),
-                    const Icon(Icons.check_circle, size: 14, color: AppColors.success),
+                    Icon(Icons.check_circle, size: 14, color: AppColors.success),
                     const SizedBox(width: 6),
-                    const Text('Warranty card added',
+                    Text('Warranty card added',
                         style: TextStyle(color: AppColors.success, fontSize: 12)),
                     const Spacer(),
                     TextButton(
@@ -1083,7 +1083,7 @@ if (!_reviewing && !_aiThinking)
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   child: _isSubmitting
-                      ? const SizedBox(
+                      ? SizedBox(
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2),
@@ -1101,7 +1101,7 @@ if (!_reviewing && !_aiThinking)
                     side: BorderSide(color: AppColors.primaryBorder),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  child: const Text('Scan Another Appliance',
+                  child: Text('Scan Another Appliance',
                       style: TextStyle(color: AppColors.primary, fontSize: 16)),
                 ),
               ),

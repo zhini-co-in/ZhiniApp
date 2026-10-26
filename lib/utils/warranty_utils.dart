@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 /// Shared warranty-parsing logic used across the Home tab, Room detail
 /// screen, and Scan tab. Consolidates three previously-duplicated
@@ -81,10 +82,10 @@ class WarrantyUtils {
   static (String, Color, IconData) statusPill(String? warranty, {DateTime? createdAt}) {
     final days = daysLeft(warranty, createdAt: createdAt);
     if (days == null) {
-      return ('No warranty info', Colors.white38, Icons.help_outline_rounded);
+      return ('No warranty info', AppColors.textFaint, Icons.help_outline_rounded);
     }
-    if (days < 0) return ('Expired', Colors.redAccent, Icons.error_outline_rounded);
-    if (days <= 30) return ('Expiring soon', Colors.orangeAccent, Icons.access_time_rounded);
-    return ('Active', Colors.greenAccent, Icons.verified_rounded);
+    if (days < 0) return ('Expired', AppColors.danger, Icons.error_outline_rounded);
+    if (days <= 30) return ('Expiring soon', AppColors.warning, Icons.access_time_rounded);
+    return ('Active', AppColors.success, Icons.verified_rounded);
   }
 }

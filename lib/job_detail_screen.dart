@@ -100,8 +100,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   DateTime? _handoverTime;
   bool _updating = false;
 
-  static const _bg = AppColors.scaffoldBg;
-  static const _card = AppColors.cardBg;
+  static Color get _bg => AppColors.scaffoldBg;
+  static Color get _card => AppColors.cardBg;
   static const _accent = Color(0xFF2E7DFF);
   static const _amber = Color(0xFFFFB020);
   static const _green = Color(0xFF35D48A);
@@ -166,10 +166,10 @@ Future<void> _goToStage(LocalStage newStage, {DateTime? handoverTime}) async {
       if (mounted) {
         setState(() => _stage = previousStage); // rollback
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             backgroundColor: _card,
             content: Text('Could not update status. Try again.',
-                style: TextStyle(color: Colors.white)),
+                style: TextStyle(color: AppColors.textPrimary)),
           ),
         );
       }
@@ -221,7 +221,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
       lastDate: DateTime.now().add(const Duration(days: 60)),
       builder: (context, child) => Theme(
         data: ThemeData.dark().copyWith(
-          colorScheme: const ColorScheme.dark(primary: _accent, surface: _card),
+          colorScheme: ColorScheme.dark(primary: _accent, surface: _card),
         ),
         child: child!,
       ),
@@ -233,7 +233,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
       initialTime: TimeOfDay.now(),
       builder: (context, child) => Theme(
         data: ThemeData.dark().copyWith(
-          colorScheme: const ColorScheme.dark(primary: _accent, surface: _card),
+          colorScheme: ColorScheme.dark(primary: _accent, surface: _card),
         ),
         child: child!,
       ),
@@ -252,7 +252,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
         backgroundColor: _bg,
         elevation: 0,
         title: Text(widget.ticket.customerName,
-            style: const TextStyle(color: Colors.white, fontSize: 17)),
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
       ),
       body: SafeArea(
         child: Column(
@@ -303,13 +303,13 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(widget.ticket.appliance,
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700)),
+                    style: TextStyle(
+                        color: AppColors.textPrimary, fontSize: 14.5, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
                 Text(widget.ticket.issue,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
               ],
             ),
           ),
@@ -317,10 +317,10 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Icon(Icons.location_on_rounded, color: AppColors.textFaint, size: 14),
+              Icon(Icons.location_on_rounded, color: AppColors.textFaint, size: 14),
               const SizedBox(height: 2),
               Text('${widget.ticket.distanceKm.toStringAsFixed(1)} km',
-                  style: const TextStyle(color: AppColors.textFaint, fontSize: 11)),
+                  style: TextStyle(color: AppColors.textFaint, fontSize: 11)),
             ],
           ),
         ],
@@ -346,7 +346,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
               child: Container(
                 height: 2,
                 margin: const EdgeInsets.symmetric(horizontal: 2),
-                color: filled ? _green : Colors.white12,
+                color: filled ? _green : AppColors.borderSubtle,
               ),
             );
           }
@@ -367,13 +367,13 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
                     width: 2,
                   ),
                 ),
-                child: isDone ? const Icon(Icons.check, size: 8, color: Colors.white) : null,
+                child: isDone ? Icon(Icons.check, size: 8, color: AppColors.textPrimary) : null,
               ),
               const SizedBox(height: 6),
               Text(
                 labels[dotIndex],
                 style: TextStyle(
-                  color: isCurrent ? Colors.white : AppColors.textFaint,
+                  color: isCurrent ? AppColors.textPrimary : AppColors.textFaint,
                   fontSize: 10.5,
                   fontWeight: isCurrent ? FontWeight.w700 : FontWeight.normal,
                 ),
@@ -492,7 +492,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
                   Expanded(
                     child: Text(
                       'Handover: ${_formatDateTime(_handoverTime!)}',
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
                     ),
                   ),
                   TextButton(
@@ -505,7 +505,7 @@ Future<void> _maybeSendWhatsApp(LocalStage stage) async {
             ),
           ],
           const SizedBox(height: 20),
-          const Text('Current progress',
+          Text('Current progress',
               style: TextStyle(color: AppColors.textMuted, fontSize: 12.5, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           Row(
@@ -549,15 +549,15 @@ Future<void> _confirmComplete() async {
     builder: (ctx) => AlertDialog(
       backgroundColor: _card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('Mark as complete?', style: TextStyle(color: Colors.white)),
-      content: const Text(
+      title: Text('Mark as complete?', style: TextStyle(color: AppColors.textPrimary)),
+      content: Text(
         'This will close the job as completed. Make sure the work is fully done.',
-        style: TextStyle(color: Colors.white60),
+        style: TextStyle(color: AppColors.textSecondary),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+          child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
@@ -634,9 +634,9 @@ Future<void> _confirmComplete() async {
         ),
         const SizedBox(height: 14),
         Text(title,
-            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        Text(subtitle, style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5, height: 1.4)),
+        Text(subtitle, style: TextStyle(color: AppColors.textMuted, fontSize: 12.5, height: 1.4)),
       ],
     );
   }
@@ -676,15 +676,15 @@ Future<void> _confirmComplete() async {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title,
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700)),
+                        style: TextStyle(
+                            color: AppColors.textPrimary, fontSize: 14.5, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 3),
                     Text(subtitle,
-                        style: const TextStyle(color: AppColors.textMuted, fontSize: 11.5, height: 1.3)),
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 11.5, height: 1.3)),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: AppColors.textDisabled),
+              Icon(Icons.chevron_right_rounded, color: AppColors.textDisabled),
             ],
           ),
         ),
@@ -749,14 +749,14 @@ Future<void> _confirmComplete() async {
           elevation: 0,
         ),
         icon: _updating
-            ? const SizedBox(
+            ? SizedBox(
                 width: 16,
                 height: 16,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                child: CircularProgressIndicator(color: AppColors.onPrimary, strokeWidth: 2),
               )
-            : Icon(icon, color: Colors.white, size: 18),
+            : Icon(icon, color: AppColors.textPrimary, size: 18),
         label: Text(label,
-            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
       ),
     );
   }
