@@ -15,6 +15,7 @@
 //    block are optional constructor inputs with a graceful fallback state.
 
 import 'package:flutter/material.dart';
+import 'constants/app_strings.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'models/home_model.dart';
@@ -36,6 +37,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'services/device_id_service.dart';
 import 'dart:io';
 import 'widgets/theme_mode_toggle.dart';
+import 'utils/warranty_utils.dart';
 
 // Optional, backend-fed extras. Leave null/default until you have a real
 // source for them — the UI degrades gracefully either way.
@@ -155,12 +157,12 @@ class _ProfileTabState extends State<ProfileTab> {
         builder: (dialogContext, setDialogState) => AlertDialog(
           backgroundColor: AppColors.cardBg,
           shape: AppDecor.dialogShape,
-          title: Text('Edit Profile', style: AppText.dialogTitle),
+          title: Text(AppStrings.editProfile, style: AppText.dialogTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AppDialogField(controller: nameController, hint: 'Full name'),
+              AppDialogField(controller: nameController, hint: AppStrings.fullName),
               const SizedBox(height: 10),
               Text(widget.mobileNumber, style: AppText.caption),
             ],
@@ -168,7 +170,7 @@ class _ProfileTabState extends State<ProfileTab> {
           actions: [
             TextButton(
               onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
-              child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+              child: Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -178,7 +180,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       final value = nameController.text.trim();
                       if (value.isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Enter a name.')),
+                          const SnackBar(content: Text(AppStrings.enterName)),
                         );
                         return;
                       }
@@ -197,7 +199,7 @@ class _ProfileTabState extends State<ProfileTab> {
                         if (dialogContext.mounted) Navigator.pop(dialogContext);
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Name saved. It will sync once you register a home.')),
+                            const SnackBar(content: Text(AppStrings.nameSavedSyncLater)),
                           );
                         }
                         return;
@@ -218,8 +220,8 @@ class _ProfileTabState extends State<ProfileTab> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                             content: Text(result['success'] == true
-                                ? 'Name updated successfully ✅'
-                                : (result['message']?.toString() ?? 'Failed to update name'))),
+                                ? AppStrings.nameUpdated
+                                : (result['message']?.toString() ?? AppStrings.nameUpdateFailed))),
                       );
                     },
               child: isSaving
@@ -227,7 +229,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
-                  : Text('Save', style: TextStyle(color: AppColors.textPrimary)),
+                  : Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
             ),
           ],
         ),
@@ -273,8 +275,8 @@ class _ProfileTabState extends State<ProfileTab> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(updateResult['success'] == true
-              ? 'Home registered successfully ✅'
-              : (updateResult['message']?.toString() ?? 'Failed to register home')),
+              ? AppStrings.homeRegistered
+              : (updateResult['message']?.toString() ?? AppStrings.homeRegisterFailed)),
         ),
       );
       setState(() {}); // Hive listener refreshes once HomeTab re-fetches
@@ -293,14 +295,14 @@ class _ProfileTabState extends State<ProfileTab> {
 
     if (newHomeId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not create the new home. Try again.')),
+        const SnackBar(content: Text(AppStrings.couldNotCreateHome)),
       );
       return;
     }
 
     setState(() {}); // Hive listener refreshes once created
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Home added ✅')),
+      const SnackBar(content: Text(AppStrings.homeAdded)),
     );
   }
 
@@ -317,7 +319,7 @@ class _ProfileTabState extends State<ProfileTab> {
       if (authToken == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please sign in again to add a home.')),
+            const SnackBar(content: Text(AppStrings.signInAgainToAddHome)),
           );
         }
         return null;
@@ -364,16 +366,16 @@ class _ProfileTabState extends State<ProfileTab> {
         builder: (dialogContext, setDialogState) => AlertDialog(
           backgroundColor: AppColors.cardBg,
           shape: AppDecor.dialogShape,
-          title: Text('Edit Address', style: AppText.dialogTitle),
+          title: Text(AppStrings.editAddress, style: AppText.dialogTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AppDialogField(controller: addressController, hint: 'Address'),
+              AppDialogField(controller: addressController, hint: AppStrings.address),
               const SizedBox(height: 10),
               AppDialogField(
                   controller: pincodeController,
-                  hint: 'Pincode',
+                  hint: AppStrings.pincode,
                   keyboardType: TextInputType.number,
                   maxLength: 6),
             ],
@@ -381,7 +383,7 @@ class _ProfileTabState extends State<ProfileTab> {
           actions: [
             TextButton(
               onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
-              child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+              child: Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -392,7 +394,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       final newPincode = pincodeController.text.trim();
                       if (newAddress.isEmpty || homeId == null) {
                         ScaffoldMessenger.of(context)
-                            .showSnackBar(const SnackBar(content: Text('Enter the address.')));
+                            .showSnackBar(const SnackBar(content: Text(AppStrings.enterAddress)));
                         return;
                       }
                       setDialogState(() => isSaving = true);
@@ -410,8 +412,8 @@ class _ProfileTabState extends State<ProfileTab> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                             content: Text(result['success'] == true
-                                ? 'Address updated successfully ✅'
-                                : (result['message']?.toString() ?? 'Failed to update address'))),
+                                ? AppStrings.addressUpdated
+                                : (result['message']?.toString() ?? AppStrings.addressUpdateFailed))),
                       );
                     },
               child: isSaving
@@ -419,7 +421,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
-                  : Text('Save', style: TextStyle(color: AppColors.textPrimary)),
+                  : Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
             ),
           ],
         ),
@@ -454,7 +456,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                child: Text('Got it', style: TextStyle(color: AppColors.primary)),
+                child: Text(AppStrings.gotIt, style: TextStyle(color: AppColors.primary)),
               ),
             ),
           ],
@@ -464,22 +466,21 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   void _openReferSheet() {
-    const referralMessage =
-        "Hey! I've been using ZHINI to track all my home appliances, warranties, and find repair services in one place. Try it out 👉 https://play.google.com/store/apps/details?id=com.zhini.mobile";
+    const referralMessage = AppStrings.referralMessage;
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.cardBg,
         shape: AppDecor.dialogShape,
-        title: Text('Refer a Neighbour', style: AppText.dialogTitle),
+        title: Text(AppStrings.referNeighbour, style: AppText.dialogTitle),
         content: Text(
-          "Share ZHINI with a neighbour — they'll be able to track their own home's appliances too.",
+          AppStrings.referNeighbourDesc,
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: Text('Close', style: TextStyle(color: AppColors.textMuted)),
+            child: Text(AppStrings.close, style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -487,11 +488,11 @@ class _ProfileTabState extends State<ProfileTab> {
               Clipboard.setData(const ClipboardData(text: referralMessage));
               Navigator.pop(dialogContext);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Referral message copied — paste it anywhere ✅')),
+                const SnackBar(content: Text(AppStrings.referralCopied)),
               );
             },
             icon: Icon(Icons.copy_rounded, size: 16, color: AppColors.textPrimary),
-            label: Text('Copy Link', style: TextStyle(color: AppColors.textPrimary)),
+            label: Text(AppStrings.copyLink, style: TextStyle(color: AppColors.textPrimary)),
           ),
         ],
       ),
@@ -504,9 +505,9 @@ class _ProfileTabState extends State<ProfileTab> {
   Future<void> _handleLogout() async {
     final confirm = await showConfirmActionDialog(
       context,
-      title: 'Log out?',
-      content: "You'll need to verify your mobile number when you sign in again.",
-      confirmLabel: 'Log out',
+      title: AppStrings.logOutQ,
+      content: AppStrings.logOutContent,
+      confirmLabel: AppStrings.logOut,
     );
     if (confirm != true) return;
     ApiClient.reset();
@@ -581,7 +582,7 @@ class _ProfileTabState extends State<ProfileTab> {
       debugPrint('❌ Profile refresh error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not refresh. Try again.')),
+          const SnackBar(content: Text(AppStrings.couldNotRefresh)),
         );
       }
     }
@@ -629,23 +630,23 @@ class _ProfileTabState extends State<ProfileTab> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                           icon: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
-                          label: Text('Add home',
+                          label: Text(AppStrings.addHome,
                               style: TextStyle(
                                   color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
                         ),
                       ),
                       const SizedBox(height: 24),
-                      _sectionHeader('APPEARANCE'),
+                      _sectionHeader(AppStrings.appearance),
                       const SizedBox(height: 10),
                       const ThemeModeToggle(),
                       const SizedBox(height: 22),
-                      _sectionHeader('ACCOUNT ACTIONS', color: AppColors.danger),
+                      _sectionHeader(AppStrings.accountActions, color: AppColors.danger),
                       const SizedBox(height: 10),
                       _groupCard([
                         _accountRow(
                           icon: Icons.logout_rounded,
                           iconColor: AppColors.danger,
-                          title: 'Sign out',
+                          title: AppStrings.signOut,
                           titleColor: AppColors.danger,
                           onTap: _handleLogout,
                         ),
@@ -657,11 +658,11 @@ class _ProfileTabState extends State<ProfileTab> {
                       const SizedBox(height: 24),
                       _buildHouseholdSection(homes),
                       const SizedBox(height: 24),
-                      _sectionHeader('MY PROTECTION PLAN'),
+                      _sectionHeader(AppStrings.myProtectionPlan),
                       const SizedBox(height: 10),
                       _buildProtectionPlan(),
                       const SizedBox(height: 24),
-                      _sectionHeader('MY HOMES'),
+                      _sectionHeader(AppStrings.myHomes),
                       const SizedBox(height: 10),
                       ..._buildHomesList(homes),
                       const SizedBox(height: 4),
@@ -675,97 +676,97 @@ class _ProfileTabState extends State<ProfileTab> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                           icon: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
-                          label: Text('Add another home',
+                          label: Text(AppStrings.addAnotherHome,
                               style: TextStyle(
                                   color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
                         ),
                       ),
                       const SizedBox(height: 24),
 
-                      _sectionHeader('APPEARANCE'),
+                      _sectionHeader(AppStrings.appearance),
                       const SizedBox(height: 10),
                       const ThemeModeToggle(),
                       const SizedBox(height: 24),
 
-                      _sectionHeader('MY STUFF'),
+                      _sectionHeader(AppStrings.myStuff),
                       const SizedBox(height: 10),
                       _groupCard([
                         _accountRow(
                           icon: Icons.shield_outlined,
                           iconColor: AppColors.success,
-                          title: 'Warranty vault',
+                          title: AppStrings.warrantyVault,
                           subtitle: _warrantyVaultSubtitle(homes),
-                          onTap: () => _openComingSoon('Warranty vault',
-                              'A full list of active and expired warranties across all your homes will show up here.'),
+                          onTap: () => _openComingSoon(AppStrings.warrantyVault,
+                              AppStrings.warrantyVaultDesc),
                         ),
                         _accountRow(
                           icon: Icons.description_outlined,
                           iconColor: AppColors.primary,
-                          title: 'Document locker',
-                          subtitle: 'Bills · Manuals · Photos',
-                          trailing: _chipLabel('14 files'),
-                          onTap: () => _openComingSoon('Document locker',
-                              'Upload and store bills, manuals and photos against each appliance.'),
+                          title: AppStrings.documentLocker,
+                          subtitle: AppStrings.documentLockerSub,
+                          trailing: _chipLabel(AppStrings.documentLockerChip),
+                          onTap: () => _openComingSoon(AppStrings.documentLocker,
+                              AppStrings.documentLockerDesc),
                         ),
                         _accountRow(
                           icon: Icons.notifications_outlined,
                           iconColor: AppColors.warning,
-                          title: 'Reminders',
-                          subtitle: 'Warranty · Service · AMC',
-                          onTap: () => _openComingSoon('Reminders',
-                              'Get notified before warranties expire or a service is due.'),
+                          title: AppStrings.reminders,
+                          subtitle: AppStrings.remindersSub,
+                          onTap: () => _openComingSoon(AppStrings.reminders,
+                              AppStrings.remindersDesc),
                         ),
                       ]),
                       const SizedBox(height: 24),
 
-                      _sectionHeader('REWARDS & BILLING'),
+                      _sectionHeader(AppStrings.rewardsBilling),
                       const SizedBox(height: 10),
                       _groupCard([
                         _accountRow(
                           icon: Icons.people_outline_rounded,
                           iconColor: AppColors.primary,
-                          title: 'Refer a neighbour',
-                          subtitle: '2 referrals · ₹200 earned',
-                          trailing: _chipLabel('Earn ₹100'),
+                          title: AppStrings.referNeighbourRow,
+                          subtitle: AppStrings.referNeighbourSub,
+                          trailing: _chipLabel(AppStrings.referNeighbourChip),
                           onTap: _openReferSheet,
                         ),
                         _accountRow(
                           icon: Icons.credit_card_outlined,
                           iconColor: AppColors.success,
-                          title: 'Payments and billing',
-                          subtitle: 'UPI · Cards · History',
-                          onTap: () => _openComingSoon('Payments and billing',
-                              'Manage saved payment methods and view your billing history.'),
+                          title: AppStrings.paymentsBilling,
+                          subtitle: AppStrings.paymentsBillingSub,
+                          onTap: () => _openComingSoon(AppStrings.paymentsBilling,
+                              AppStrings.paymentsBillingDesc),
                         ),
                       ]),
                       const SizedBox(height: 24),
 
-                      _sectionHeader('SUPPORT'),
+                      _sectionHeader(AppStrings.supportSection),
                       const SizedBox(height: 10),
                       _groupCard([
                         _accountRow(
                           icon: Icons.settings_outlined,
                           iconColor: AppColors.textSecondary,
-                          title: 'Preferences',
-                          subtitle: 'Language · Notifications · Theme',
+                          title: AppStrings.preferences,
+                          subtitle: AppStrings.preferencesSub,
                           onTap: () => _openComingSoon(
-                              'Preferences', 'App language, notification and theme settings.'),
+                              AppStrings.preferences, AppStrings.preferencesDesc),
                         ),
                         _accountRow(
                           icon: Icons.help_outline_rounded,
                           iconColor: AppColors.primary,
-                          title: 'Help and support',
-                          subtitle: 'FAQ · Chat · Call ZHINI',
-                          onTap: () => _openComingSoon('Help and support',
-                              'Reach ZHINI support via chat, call, or browse the FAQ.'),
+                          title: AppStrings.helpSupport,
+                          subtitle: AppStrings.helpSupportSub,
+                          onTap: () => _openComingSoon(AppStrings.helpSupport,
+                              AppStrings.helpSupportDesc),
                         ),
                         _accountRow(
                           icon: Icons.info_outline_rounded,
                           iconColor: AppColors.textMuted,
-                          title: 'About ZHINI',
-                          subtitle: 'v1.0.0 · Built by two kids',
-                          onTap: () => _openComingSoon('About ZHINI',
-                              "ZHINI v1.0.0 — your home's appliance and warranty companion."),
+                          title: AppStrings.aboutZhini,
+                          subtitle: AppStrings.aboutZhiniSub,
+                          onTap: () => _openComingSoon(AppStrings.aboutZhini,
+                              AppStrings.aboutZhiniDesc),
                         ),
                       ]),
                       const SizedBox(height: 24),
@@ -774,7 +775,7 @@ class _ProfileTabState extends State<ProfileTab> {
                         _accountRow(
                           icon: Icons.logout_rounded,
                           iconColor: AppColors.danger,
-                          title: 'Sign out',
+                          title: AppStrings.signOut,
                           titleColor: AppColors.danger,
                           onTap: _handleLogout,
                         ),
@@ -783,7 +784,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
                     const SizedBox(height: 22),
                     Center(
-                      child: Text('Your data is never sold · DPDP compliant · v1.0.0',
+                      child: Text(AppStrings.profileFooter,
                           style: AppText.faintCaption, textAlign: TextAlign.center),
                     ),
                     const SizedBox(height: 10),
@@ -792,7 +793,7 @@ class _ProfileTabState extends State<ProfileTab> {
                         onTap: () async {
                           final Uri emailUri = Uri(
                             scheme: 'mailto',
-                            path: 'support@zhini.co.in',
+                            path: AppStrings.supportEmail,
                             query: 'subject=ZHINI App Support',
                           );
                           try {
@@ -801,7 +802,7 @@ class _ProfileTabState extends State<ProfileTab> {
                             debugPrint('Email launch error: $e');
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Could not open mail app.')),
+                                const SnackBar(content: Text(AppStrings.couldNotOpenMail)),
                               );
                             }
                           }
@@ -810,7 +811,7 @@ class _ProfileTabState extends State<ProfileTab> {
                         child: Padding(
                           padding: EdgeInsets.symmetric(vertical: 4, horizontal: 10),
                           child: Text(
-                            'powered by Atom8',
+                            AppStrings.poweredBy,
                             style: TextStyle(
                               color: AppColors.textFaint,
                               fontSize: 11,
@@ -860,7 +861,7 @@ class _ProfileTabState extends State<ProfileTab> {
         children: [
           Row(
             children: [
-              Text('My Profile',
+              Text(AppStrings.myProfile,
                   style: TextStyle(
                       color: AppColors.onPrimary.withValues(alpha: 0.85),
                       fontSize: 13,
@@ -881,7 +882,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     children: [
                       Icon(Icons.edit_outlined, size: 13, color: AppColors.onPrimary),
                       const SizedBox(width: 5),
-                      Text('Edit',
+                      Text(AppStrings.edit,
                           style: TextStyle(
                               color: AppColors.onPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
                     ],
@@ -914,7 +915,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(hasName ? name : 'Add your name',
+                    Text(hasName ? name : AppStrings.addYourName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -944,9 +945,9 @@ class _ProfileTabState extends State<ProfileTab> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                if (widget.verified) _heroChip(Icons.verified_rounded, 'Verified'),
+                if (widget.verified) _heroChip(Icons.verified_rounded, AppStrings.verified),
                 if (widget.memberSince != null)
-                  _heroChip(Icons.calendar_month_rounded, 'Since ${_monthYear(widget.memberSince!)}'),
+                  _heroChip(Icons.calendar_month_rounded, AppStrings.sinceDate(_monthYear(widget.memberSince!))),
               ],
             ),
           ],
@@ -988,16 +989,16 @@ class _ProfileTabState extends State<ProfileTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionHeader('HOUSEHOLD'),
+        _sectionHeader(AppStrings.household),
         const SizedBox(height: 10),
         if (members.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text('No members added yet.', style: AppText.faintCaption),
+            child: Text(AppStrings.noMembersYet, style: AppText.faintCaption),
           )
         else
           ...members.map((m) {
-            final name = m['name']?.toString() ?? 'Member';
+            final name = m['name']?.toString() ?? AppStrings.member;
             final mobile = m['mobile']?.toString() ?? '';
             final isMe = mobile == myPlain;
             return Padding(
@@ -1014,9 +1015,9 @@ class _ProfileTabState extends State<ProfileTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(isMe ? '$name (You)' : name,
+                        Text(isMe ? AppStrings.youSuffix(name) : name,
                             style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-                        Text(isMe ? 'Owner' : 'Member', style: AppText.caption),
+                        Text(isMe ? AppStrings.owner : AppStrings.member, style: AppText.caption),
                       ],
                     ),
                   ),
@@ -1047,7 +1048,7 @@ class _ProfileTabState extends State<ProfileTab> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             icon: Icon(Icons.person_add, color: AppColors.primary, size: 18),
-            label: Text('Add Member', style: TextStyle(color: AppColors.primary, fontSize: 14)),
+            label: Text(AppStrings.addMember, style: TextStyle(color: AppColors.primary, fontSize: 14)),
           ),
         ),
       ],
@@ -1069,7 +1070,7 @@ class _ProfileTabState extends State<ProfileTab> {
               if (!granted) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Contacts permission denied.')),
+                  const SnackBar(content: Text(AppStrings.contactsPermissionDenied)),
                 );
                 return;
               }
@@ -1086,7 +1087,7 @@ class _ProfileTabState extends State<ProfileTab> {
               if (phone.length != 10) {
                 if (dialogContext.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('This contact has no valid 10-digit number.')),
+                    const SnackBar(content: Text(AppStrings.noValid10Digit)),
                   );
                 }
                 return;
@@ -1101,13 +1102,13 @@ class _ProfileTabState extends State<ProfileTab> {
             return AlertDialog(
               backgroundColor: AppColors.cardBg,
               shape: AppDecor.dialogShape,
-              title: Text('Add Member', style: AppText.dialogTitle),
+              title: Text(AppStrings.addMember, style: AppText.dialogTitle),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'They will be able to see and manage all appliances in this home.',
+                    AppStrings.addMemberDesc,
                     style: AppText.faintCaption,
                   ),
                   const SizedBox(height: 14),
@@ -1121,7 +1122,7 @@ class _ProfileTabState extends State<ProfileTab> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       icon: Icon(Icons.contacts_rounded, color: AppColors.primary, size: 18),
-                      label: Text('Pick from Contacts', style: TextStyle(color: AppColors.primary)),
+                      label: Text(AppStrings.pickFromContacts, style: TextStyle(color: AppColors.primary)),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -1163,13 +1164,13 @@ class _ProfileTabState extends State<ProfileTab> {
                       ),
                     )
                   else
-                    Text('No contact selected yet.', style: AppText.faintCaption),
+                    Text(AppStrings.noContactSelected, style: AppText.faintCaption),
                 ],
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+                  child: Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -1186,7 +1187,7 @@ class _ProfileTabState extends State<ProfileTab> {
                           height: 16,
                           child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2),
                         )
-                      : Text('Add', style: TextStyle(color: AppColors.textPrimary)),
+                      : Text(AppStrings.add, style: TextStyle(color: AppColors.textPrimary)),
                 ),
               ],
             );
@@ -1201,7 +1202,7 @@ class _ProfileTabState extends State<ProfileTab> {
     if (homeId == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No home selected. Please select a home first.')),
+          const SnackBar(content: Text(AppStrings.noHomeSelected)),
         );
       }
       return;
@@ -1232,8 +1233,8 @@ class _ProfileTabState extends State<ProfileTab> {
     if (homeId == null) return;
     final confirm = await showConfirmActionDialog(
       context,
-      title: 'Remove member?',
-      content: '$name will lose access to this home.',
+      title: AppStrings.removeMemberQ,
+      content: AppStrings.memberLosesAccess(name),
     );
     if (confirm != true) return;
 
@@ -1242,7 +1243,7 @@ class _ProfileTabState extends State<ProfileTab> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content: Text(result['success'] == true ? '$name removed ✅' : (result['message']?.toString() ?? ''))),
+          content: Text(result['success'] == true ? AppStrings.memberRemoved(name) : (result['message']?.toString() ?? ''))),
     );
 
     if (result['success'] == true) {
@@ -1260,7 +1261,10 @@ class _ProfileTabState extends State<ProfileTab> {
         if (items is! List) return;
         for (final raw in items) {
           final item = Map<String, dynamic>.from(raw as Map);
-          final expiry = WarrantyUtilsLite.parseExpiry(item);
+          final expiry = WarrantyUtils.parseExpiry(
+  item['warranty']?.toString(),
+  referenceDate: DateTime.tryParse(item['createdAt']?.toString() ?? ''),
+);
           if (expiry != null && expiry.isAfter(DateTime.now())) {
             active++;
           } else if (expiry != null) {
@@ -1269,7 +1273,7 @@ class _ProfileTabState extends State<ProfileTab> {
         }
       });
     }
-    return '$active active · $expired expired';
+    return AppStrings.warrantyVaultSubtitle(active, expired);
   }
 
   String _monthYear(DateTime d) {
@@ -1323,7 +1327,7 @@ class _ProfileTabState extends State<ProfileTab> {
             Icons.savings_outlined,
             AppColors.success,
             widget.stats.savedViaWarranty != null ? '₹${_compact(widget.stats.savedViaWarranty!)}' : '—',
-            'Saved via\nwarranty'),
+            AppStrings.statSavedViaWarranty),
       ],
     );
   }
@@ -1354,18 +1358,18 @@ class _ProfileTabState extends State<ProfileTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('No active protection plan',
+                  Text(AppStrings.noActiveProtectionPlan,
                       style: TextStyle(
                           color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
-                  Text('Cover all your appliances under one AMC plan.', style: AppText.faintCaption),
+                  Text(AppStrings.coverAllAppliancesAmc, style: AppText.faintCaption),
                 ],
               ),
             ),
             TextButton(
-              onPressed: () => _openComingSoon('Protection plans',
-                  'Browse AMC plans that cover repairs and servicing for your appliances.'),
-              child: Text('Explore', style: AppText.linkAction),
+              onPressed: () => _openComingSoon(AppStrings.protectionPlans,
+                  AppStrings.protectionPlansDesc),
+              child: Text(AppStrings.explore, style: AppText.linkAction),
             ),
           ],
         ),
@@ -1400,7 +1404,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   decoration: BoxDecoration(
                       color: AppColors.success.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(20)),
-                  child: Text('ACTIVE',
+                  child: Text(AppStrings.activeBadge,
                       style: TextStyle(
                           color: AppColors.success, fontSize: 10, fontWeight: FontWeight.w700)),
                 ),
@@ -1408,7 +1412,7 @@ class _ProfileTabState extends State<ProfileTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            '${plan.slotsUsed} of ${plan.slotsTotal} appliance slots used · Renews ${_monthYear(plan.renewsOn)}',
+            AppStrings.slotsUsed(plan.slotsUsed, plan.slotsTotal, _monthYear(plan.renewsOn)),
             style: AppText.caption,
           ),
           const SizedBox(height: 10),
@@ -1425,11 +1429,11 @@ class _ProfileTabState extends State<ProfileTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('$daysLeft days remaining', style: AppText.caption),
+              Text(AppStrings.daysRemaining(daysLeft), style: AppText.caption),
               TextButton(
                 onPressed: () => _openComingSoon(
-                    'Upgrade plan', 'Upgrade your AMC to cover up to ${plan.upgradeToSlots} appliances.'),
-                child: Text('Upgrade to ${plan.upgradeToSlots} ↗', style: AppText.linkAction),
+                    AppStrings.upgradePlan, AppStrings.upgradePlanDesc(plan.upgradeToSlots)),
+                child: Text(AppStrings.upgradeTo(plan.upgradeToSlots), style: AppText.linkAction),
               ),
             ],
           ),
@@ -1446,14 +1450,14 @@ class _ProfileTabState extends State<ProfileTab> {
       return [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text('No homes yet.', style: AppText.faintCaption),
+          child: Text(AppStrings.noHomesYet, style: AppText.faintCaption),
         ),
       ];
     }
     return homes.asMap().entries.map((entry) {
       final home = entry.value;
       final address = home['address']?.toString() ?? '';
-      final title = address.isNotEmpty ? address.split(',').first.trim() : 'Home ${entry.key + 1}';
+      final title = address.isNotEmpty ? address.split(',').first.trim() : AppStrings.homeN(entry.key + 1);
       final locality = address.contains(',') ? address.split(',').skip(1).join(',').trim() : '';
       final deviceCount = _deviceCountForHome(home);
       final isSelected = entry.key == 0;
@@ -1505,7 +1509,7 @@ class _ProfileTabState extends State<ProfileTab> {
                             color: AppColors.primarySoft,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Text('PRIMARY',
+                          child: Text(AppStrings.primaryBadge,
                               style: TextStyle(
                                   color: AppColors.primary,
                                   fontSize: 9,
@@ -1520,7 +1524,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     Text(locality, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
                   ],
                   const SizedBox(height: 4),
-                  Text('$deviceCount devices · ${isSelected ? 'AMC active' : 'No AMC'}',
+                  Text(AppStrings.devicesAmc(deviceCount, isSelected),
                       style: AppText.caption),
                 ],
               ),
@@ -1631,26 +1635,5 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
       ),
     );
-  }
-}
-
-// Minimal, local warranty-expiry parser used only for the vault subtitle
-// count. If utils/warranty_utils.dart already exposes parseExpiry, you can
-// delete this shim and call that directly.
-class WarrantyUtilsLite {
-  static DateTime? parseExpiry(Map<String, dynamic> item) {
-    final warranty = item['warranty']?.toString();
-    final createdAt = DateTime.tryParse(item['createdAt']?.toString() ?? '');
-    if (warranty == null || warranty.trim().isEmpty || warranty.toUpperCase() == 'N/A') return null;
-
-    final yearMatch = RegExp(r'(\d+)\s*Year').firstMatch(warranty);
-    if (yearMatch != null) {
-      final years = int.tryParse(yearMatch.group(1) ?? '') ?? 0;
-      final base = createdAt ?? DateTime.now();
-      return DateTime(base.year + years, base.month, base.day);
-    }
-    final direct = DateTime.tryParse(warranty);
-    if (direct != null) return direct;
-    return null;
   }
 }

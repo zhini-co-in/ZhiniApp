@@ -5,6 +5,7 @@ import 'theme/app_theme.dart';
 import 'widgets/service_provider_card.dart';
 
 /// Bottom sheet listing nearby providers for one service category.
+/// All providers are shown in ONE scrollable list (no Previous / Next paging).
 class ServiceCategorySheet extends StatefulWidget {
   final String label;
   final Future<List<Map<String, dynamic>>> Function() fetchServices;
@@ -20,13 +21,11 @@ class ServiceCategorySheet extends StatefulWidget {
 }
 
 class _ServiceCategorySheetState extends State<ServiceCategorySheet> {
-  static const int _pageSize = 5;
   static const int _maxResults = 20;
 
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _services = [];
-  int _page = 0;
 
   @override
   void initState() {
@@ -38,10 +37,14 @@ class _ServiceCategorySheetState extends State<ServiceCategorySheet> {
     setState(() {
       _loading = true;
       _error = null;
-      _page = 0;
     });
 
-    final results = await widget.fetchServices();
+    List<Map<String, dynamic>> results = [];
+    try {
+      results = await widget.fetchServices().timeout(const Duration(seconds: 45));
+    } catch (e) {
+      debugPrint('❌ Service sheet load error: $e');
+    }
 
     if (!mounted) return;
     setState(() {
@@ -51,15 +54,6 @@ class _ServiceCategorySheetState extends State<ServiceCategorySheet> {
         _error = 'Could not find services near your current location.';
       }
     });
-  }
-
-  int get _totalPages =>
-      (_services.length / _pageSize).ceil().clamp(1, (_maxResults / _pageSize).ceil());
-
-  List<Map<String, dynamic>> get _pageItems {
-    final start = _page * _pageSize;
-    final end = (start + _pageSize).clamp(0, _services.length);
-    return start < end ? _services.sublist(start, end) : [];
   }
 
   Future<void> _callNumber(String phone) async {
@@ -117,15 +111,16 @@ class _ServiceCategorySheetState extends State<ServiceCategorySheet> {
               padding: const EdgeInsets.symmetric(vertical: 20),
               child: Text(_error!, style: AppText.faintCaption),
             )
-          else ...[
+          else
+            // All providers in one list, scroll to see more.
             ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.65),
               child: ListView.separated(
                 shrinkWrap: true,
-                itemCount: _pageItems.length,
+                itemCount: _services.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (context, i) {
-                  final s = _pageItems[i];
+                  final s = _services[i];
                   final phone = s['phone']?.toString();
                   final address = s['address']?.toString();
                   final ratingRaw = s['rating'];
@@ -149,26 +144,6 @@ class _ServiceCategorySheetState extends State<ServiceCategorySheet> {
                 },
               ),
             ),
-            if (_services.length > _pageSize) ...[
-              const SizedBox(height: 14),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  TextButton.icon(
-                    onPressed: _page > 0 ? () => setState(() => _page--) : null,
-                    icon: const Icon(Icons.chevron_left_rounded, size: 18),
-                    label: const Text('Previous'),
-                  ),
-                  Text('Page ${_page + 1} of $_totalPages', style: AppText.caption),
-                  TextButton.icon(
-                    onPressed: _page < _totalPages - 1 ? () => setState(() => _page++) : null,
-                    icon: const Icon(Icons.chevron_right_rounded, size: 18),
-                    label: const Text('Next'),
-                  ),
-                ],
-              ),
-            ],
-          ],
         ],
       ),
     );

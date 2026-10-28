@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'constants/app_strings.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'constants/api_config.dart';
@@ -16,6 +17,7 @@ import 'widgets/service_provider_card.dart';
 import 'package:geolocator/geolocator.dart';
 import 'widgets/scan_shutter_button.dart';
 import 'widgets/zhini_thinking_view.dart';
+import 'widgets/warranty_badge.dart';
 
 class ScanTab extends StatefulWidget {
   final String mobileNumber;
@@ -135,7 +137,7 @@ class _ScanTabState extends State<ScanTab> {
       _startLiveCountdown();
     } catch (e) {
       debugPrint('Camera init error: $e');
-      _showSnack('Could not open camera.');
+      _showSnack(AppStrings.couldNotOpenCamera);
     }
   }
 
@@ -251,17 +253,17 @@ void _startLiveCountdown() {
       debugPrint('🤖 AI body: ${response.body}');
 
       if (response.statusCode == 401) {
-        _showSnack('Session expired. Please login again.');
+        _showSnack(AppStrings.sessionExpired);
         return false;
       }
       if (response.statusCode != 200) {
-        if (!silent) _showSnack('Scan failed (${response.statusCode}). Try again.');
+        if (!silent) _showSnack(AppStrings.scanFailed(response.statusCode));
         return false;
       }
 
       final data = jsonDecode(response.body);
       if (data['success'] != true || data['data'] == null) {
-        if (!silent) _showSnack('Could not identify this. Try again with better lighting.');
+        if (!silent) _showSnack(AppStrings.couldNotIdentify);
         return false;
       }
 
@@ -276,7 +278,7 @@ void _startLiveCountdown() {
       final aiWarranty = clean(data['data']['warranty']);
 
       if (aiProduct == null) {
-        if (!silent) _showSnack('No appliance found. Point the camera at an appliance.');
+        if (!silent) _showSnack(AppStrings.noApplianceFoundPointCamera);
         return false;
       }
 
@@ -292,7 +294,7 @@ void _startLiveCountdown() {
       return true;
     } catch (e) {
       debugPrint('❌ AI error: $e');
-      if (!silent) _showSnack('Network error while scanning. Try again.');
+      if (!silent) _showSnack(AppStrings.networkErrorWhileScanning);
       return false;
     }
   }
@@ -310,7 +312,7 @@ void _startLiveCountdown() {
             _nearbyServices = services;
             _servicePage = 0;
           });
-          _showSnack('Updated: ${_effectiveBrand ?? "Unbranded"} • ${_resultLabel ?? "—"}');
+          _showSnack(AppStrings.updatedBrandProduct(_effectiveBrand ?? AppStrings.unbranded, _resultLabel ?? '—'));
         }
       }
     } finally {
@@ -413,18 +415,18 @@ void _startLiveCountdown() {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['url'] != null) {
           setState(() => _warrantyCardUrl = data['url'].toString());
-          _showSnack('Warranty card uploaded ✅');
+          _showSnack(AppStrings.warrantyCardUploaded);
         } else {
-          _showSnack('Could not upload warranty card.');
+          _showSnack(AppStrings.couldNotUploadWarrantyCard);
         }
       } else if (response.statusCode == 401) {
-        _showSnack('Session expired. Please login again.');
+        _showSnack(AppStrings.sessionExpired);
       } else {
-        _showSnack('Upload failed. Try again.');
+        _showSnack(AppStrings.uploadFailed);
       }
     } catch (e) {
       debugPrint('❌ Warranty card upload error: $e');
-      _showSnack('Network error while uploading.');
+      _showSnack(AppStrings.networkErrorWhileUploading);
     } finally {
       if (mounted) setState(() => _uploadingWarrantyCard = false);
     }
@@ -440,12 +442,12 @@ void _startLiveCountdown() {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.cardBg,
         shape: AppDecor.dialogShape,
-        title: const Text('Warranty', style: AppText.dialogTitle),
-        content: AppDialogField(controller: controller, hint: 'e.g. 2 Years or 12/2027'),
+        title: const Text(AppStrings.warranty, style: AppText.dialogTitle),
+        content: AppDialogField(controller: controller, hint: AppStrings.warrantyDialogHint),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            child: Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -467,7 +469,7 @@ void _startLiveCountdown() {
                 }
               }
             },
-            child: Text('Save', style: TextStyle(color: AppColors.textPrimary)),
+            child: Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
           ),
         ],
       ),
@@ -482,12 +484,12 @@ void _startLiveCountdown() {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.cardBg,
         shape: AppDecor.dialogShape,
-        title: const Text('Brand', style: AppText.dialogTitle),
-        content: AppDialogField(controller: controller, hint: 'e.g. LG, Samsung, Godrej'),
+        title: const Text(AppStrings.brandHint, style: AppText.dialogTitle),
+        content: AppDialogField(controller: controller, hint: AppStrings.brandDialogHint),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            child: Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -506,7 +508,7 @@ void _startLiveCountdown() {
                 }
               }
             },
-            child: Text('Save', style: TextStyle(color: AppColors.textPrimary)),
+            child: Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
           ),
         ],
       ),
@@ -523,7 +525,7 @@ void _startLiveCountdown() {
       if (_currentHomeId == null) {
         final createdHomeId = await _ensureHomeExists();
         if (createdHomeId == null) {
-          _showSnack('Could not set up your home. Try again.');
+          _showSnack(AppStrings.couldNotSetupHome);
           return;
         }
         _currentHomeId = createdHomeId;
@@ -561,12 +563,12 @@ void _startLiveCountdown() {
 
       if (!mounted) return;
       if (response.statusCode == 200 || response.statusCode == 201) {
-        _showSnack('$_resultLabel (${_effectiveBrand ?? "Unbranded"}) saved ✅');
+        _showSnack(AppStrings.applianceSaved(_resultLabel ?? '', _effectiveBrand ?? AppStrings.unbranded));
         _resetForNextScan();
       } else if (response.statusCode == 401) {
-        _showSnack('Session expired. Please login again.');
+        _showSnack(AppStrings.sessionExpired);
       } else {
-        String msg = 'Submit failed. Try again.';
+        String msg = AppStrings.submitFailed;
         try {
           final data = jsonDecode(response.body);
           msg = data['message']?.toString() ?? msg;
@@ -575,7 +577,7 @@ void _startLiveCountdown() {
       }
     } catch (e) {
       debugPrint('❌ Submit error: $e');
-      _showSnack('Network error. Try again.');
+      _showSnack(AppStrings.networkError);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -611,13 +613,13 @@ void _startLiveCountdown() {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
       debugPrint('Directions launch error: $e');
-      _showSnack('Could not open maps.');
+      _showSnack(AppStrings.couldNotOpenMaps);
     }
   }
 
   Future<void> _callService(String? phone) async {
     if (phone == null || phone.isEmpty) {
-      _showSnack('No phone number available.');
+      _showSnack(AppStrings.noPhoneAvailable);
       return;
     }
     final uri = Uri(scheme: 'tel', path: phone);
@@ -625,7 +627,7 @@ void _startLiveCountdown() {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
       debugPrint('Call launch error: $e');
-      _showSnack('Could not start call.');
+      _showSnack(AppStrings.couldNotStartCall);
     }
   }
 
@@ -718,13 +720,13 @@ void _startLiveCountdown() {
   child: Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('Scan Appliance',
+      Text(AppStrings.scanAppliance,
           style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: 18,
               fontWeight: FontWeight.w600)),
       SizedBox(height: 2),
-      Text('Point at the appliance, then tap the button.',
+      Text(AppStrings.scanHint,
           style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
     ],
   ),
@@ -764,7 +766,7 @@ if (!_reviewing && !_aiThinking)
                     left: 0,
                     right: 0,
                     child: Center(
-                      child: Text('Captured product',
+                      child: Text(AppStrings.capturedProduct,
                           style: TextStyle(
                               color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
                     ),
@@ -783,7 +785,7 @@ if (!_reviewing && !_aiThinking)
                               side: BorderSide(color: AppColors.textSecondary),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
-                            child: Text('Cancel ($_reviewCountdown)',
+                            child: Text(AppStrings.cancelWithCount(_reviewCountdown),
                                 style: TextStyle(color: AppColors.textPrimary, fontSize: 15)),
                           ),
                         ),
@@ -796,7 +798,7 @@ if (!_reviewing && !_aiThinking)
                               padding: const EdgeInsets.symmetric(vertical: 15),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
-                            child: Text('Proceed',
+                            child: Text(AppStrings.proceed,
                                 style: TextStyle(color: AppColors.textPrimary, fontSize: 15)),
                           ),
                         ),
@@ -837,7 +839,7 @@ if (!_reviewing && !_aiThinking)
                         child: Icon(Icons.arrow_back, color: AppColors.textPrimary, size: 22),
                       ),
                       const SizedBox(width: 12),
-                      Text('Product Detected',
+                      Text(AppStrings.productDetected,
                           style: TextStyle(
                               color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
                     ],
@@ -860,7 +862,7 @@ if (!_reviewing && !_aiThinking)
                           )
                         : Icon(Icons.refresh_rounded, size: 14, color: AppColors.primary),
                     label: Text(
-                      _aiThinking ? 'Checking...' : 'Ask ZHINI',
+                      _aiThinking ? AppStrings.checking : AppStrings.askZhini,
                       style: AppText.linkAction,
                     ),
                   ),
@@ -891,7 +893,7 @@ if (!_reviewing && !_aiThinking)
                           children: [
                             Expanded(
                               child: Text(
-                                _effectiveBrand ?? 'Unbranded',
+                                _effectiveBrand ?? AppStrings.unbranded,
                                 style: TextStyle(
                                   color: _effectiveBrand != null ? AppColors.textPrimary : AppColors.textFaint,
                                   fontSize: 16,
@@ -907,7 +909,7 @@ if (!_reviewing && !_aiThinking)
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               child: Text(
-                                _effectiveBrand != null ? 'Edit' : 'Add',
+                                _effectiveBrand != null ? AppStrings.edit : AppStrings.add,
                                 style: AppText.linkAction,
                               ),
                             ),
@@ -922,25 +924,15 @@ if (!_reviewing && !_aiThinking)
               ),
 
               const SizedBox(height: 14),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.verified_user_outlined, size: 16, color: AppColors.textMuted),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: (_detectedWarranty ?? _manualWarranty) != null
-                        ? Text(
-                            'Warranty: ${_detectedWarranty ?? _manualWarranty}'
-                            '${_isUnderWarrantyNow ? " (Active)" : ""}',
-                            style: AppText.body,
-                          )
-                        : Text(
-                            'Warranty not added yet',
-                            style: TextStyle(color: AppColors.danger, fontSize: 12.5),
-                          ),
-                  ),
-                ],
-              ),
+              Align(
+  alignment: Alignment.centerLeft,
+  child: WarrantyBadge(
+    expiry: WarrantyUtils.parseExpiry(
+      _detectedWarranty ?? _manualWarranty,
+      referenceDate: DateTime.now(),
+    ),
+  ),
+),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -949,7 +941,7 @@ if (!_reviewing && !_aiThinking)
                     TextButton(
                       onPressed: _openWarrantyDialog,
                       style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                      child: const Text('Edit', style: AppText.linkAction),
+                      child: const Text(AppStrings.edit, style: AppText.linkAction),
                     ),
                   ] else ...[
                     TextButton.icon(
@@ -960,7 +952,7 @@ if (!_reviewing && !_aiThinking)
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       icon: Icon(Icons.edit_outlined, size: 14, color: AppColors.primary),
-                      label: const Text('Add manual', style: AppText.linkAction),
+                      label: const Text(AppStrings.addManual, style: AppText.linkAction),
                     ),
                     const SizedBox(width: 16),
                     TextButton.icon(
@@ -977,7 +969,7 @@ if (!_reviewing && !_aiThinking)
                               child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
                             )
                           : Icon(Icons.add_a_photo_outlined, size: 14, color: AppColors.primary),
-                      label: const Text('Upload warranty card', style: AppText.linkAction),
+                      label: const Text(AppStrings.uploadWarrantyCard, style: AppText.linkAction),
                     ),
                   ],
                 ],
@@ -989,13 +981,13 @@ if (!_reviewing && !_aiThinking)
                     const SizedBox(width: 24),
                     Icon(Icons.check_circle, size: 14, color: AppColors.success),
                     const SizedBox(width: 6),
-                    Text('Warranty card added',
+                    Text(AppStrings.warrantyCardAdded,
                         style: TextStyle(color: AppColors.success, fontSize: 12)),
                     const Spacer(),
                     TextButton(
                       onPressed: _uploadingWarrantyCard ? null : _pickAndUploadWarrantyCard,
                       style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                      child: const Text('Change', style: AppText.linkAction),
+                      child: const Text(AppStrings.change, style: AppText.linkAction),
                     ),
                   ],
                 ),
@@ -1005,8 +997,8 @@ if (!_reviewing && !_aiThinking)
                 const SizedBox(height: 16),
                 Text(
                   _isUnderWarrantyNow
-                      ? 'Authorized Service Centers (by rating)'
-                      : 'Recommended Service Centers (by rating)',
+                      ? AppStrings.authorizedCentersByRating
+                      : AppStrings.recommendedCentersByRating,
                   style: AppText.faintCaption,
                 ),
                 const SizedBox(height: 8),
@@ -1021,7 +1013,7 @@ if (!_reviewing && !_aiThinking)
                     final reviewsRaw = s['reviews_count'] ?? s['reviewsCount'];
                     final neighborProof = s['neighborProof'];
                     return ServiceProviderCard(
-                      name: s['name']?.toString() ?? 'Not available',
+                      name: s['name']?.toString() ?? AppStrings.notAvailable,
                       address: s['address']?.toString(),
                       phone: s['phone']?.toString(),
                       rating: ratingRaw != null ? double.tryParse(ratingRaw.toString()) : null,
@@ -1041,15 +1033,15 @@ if (!_reviewing && !_aiThinking)
                       TextButton.icon(
                         onPressed: _servicePage > 0 ? () => setState(() => _servicePage--) : null,
                         icon: const Icon(Icons.chevron_left_rounded, size: 18),
-                        label: const Text('Previous'),
+                        label: const Text(AppStrings.previous),
                       ),
-                      Text('Page ${_servicePage + 1} of $_serviceTotalPages', style: AppText.caption),
+                      Text(AppStrings.pageOf(_servicePage + 1, _serviceTotalPages), style: AppText.caption),
                       TextButton.icon(
                         onPressed: _servicePage < _serviceTotalPages - 1
                             ? () => setState(() => _servicePage++)
                             : null,
                         icon: const Icon(Icons.chevron_right_rounded, size: 18),
-                        label: const Text('Next'),
+                        label: const Text(AppStrings.next),
                       ),
                     ],
                   ),
@@ -1065,8 +1057,8 @@ if (!_reviewing && !_aiThinking)
                   ),
                   child: Text(
                     _effectiveBrand == null
-                        ? 'Brand not identified — tap "Add" above to enter it, or "Ask ZHINI" to check again.'
-                        : 'No authorized service centers found nearby.',
+                        ? AppStrings.brandNotIdentified
+                        : AppStrings.noAuthorizedCentersFound,
                     style: AppText.faintCaption,
                   ),
                 ),
@@ -1088,7 +1080,7 @@ if (!_reviewing && !_aiThinking)
                           width: 20,
                           child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2),
                         )
-                      : const Text('OK', style: AppText.button),
+                      : const Text(AppStrings.ok, style: AppText.button),
                 ),
               ),
               const SizedBox(height: 12),
@@ -1101,7 +1093,7 @@ if (!_reviewing && !_aiThinking)
                     side: BorderSide(color: AppColors.primaryBorder),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  child: Text('Scan Another Appliance',
+                  child: Text(AppStrings.scanAnotherAppliance,
                       style: TextStyle(color: AppColors.primary, fontSize: 16)),
                 ),
               ),

@@ -11,6 +11,7 @@ import 'utils/warranty_utils.dart';
 import 'widgets/app_dialog_field.dart';
 import 'widgets/confirm_action_dialog.dart';
 import 'widgets/service_provider_card.dart';
+import 'widgets/warranty_badge.dart';
 
 /// Appliances list of one room (+ edit / delete / book service).
 class RoomDetailScreen extends StatefulWidget {
@@ -44,6 +45,7 @@ class RoomDetailScreen extends StatefulWidget {
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
   late List<Map<String, dynamic>> _items;
   bool _deleting = false;
+    String _filter = 'all'; // all, warranty, attention, expired, none
 
   // "brand|product|tier" -> fetched provider list (avoids re-hitting the API).
   final Map<String, List<Map<String, dynamic>>> _serviceCache = {};
@@ -217,23 +219,62 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     final expiry = _expiryOf(item);
     return expiry != null && expiry.isAfter(DateTime.now());
   }
-
-  // "8 months left", "Expired 12 days ago", or a fallback.
-  String _warrantyStatusText(Map<String, dynamic> item) {
+  bool _matchesFilter(Map<String, dynamic> item, String key) {
     final expiry = _expiryOf(item);
-    if (expiry == null) return 'Warranty status unknown';
-
-    final daysDiff = expiry.difference(DateTime.now()).inDays;
-    if (daysDiff < 0) {
-      final days = -daysDiff;
-      return 'Expired $days day${days == 1 ? '' : 's'} ago';
+    final now = DateTime.now();
+    switch (key) {
+      case 'warranty':
+        return expiry != null && expiry.isAfter(now);
+      case 'attention':
+        return expiry != null && expiry.difference(now).inDays <= 30; // expired + expiring soon
+      case 'expired':
+        return expiry != null && !expiry.isAfter(now);
+      case 'none':
+        return expiry == null;
+      default:
+        return true;
     }
-    if (daysDiff >= 60) {
-      final months = (daysDiff / 30).round();
-      return '$months month${months == 1 ? '' : 's'} left';
-    }
-    return '$daysDiff day${daysDiff == 1 ? '' : 's'} left';
   }
+
+  int _countFor(String key) => _items.where((i) => _matchesFilter(i, key)).length;
+
+  Widget _buildFilterBar() {
+        const options = [
+      {'key': 'all', 'label': 'All'},
+      {'key': 'warranty', 'label': 'Warranty'},
+      {'key': 'attention', 'label': 'Attention'},
+      {'key': 'none', 'label': 'No warranty'},
+    ];
+
+    return SizedBox(
+      height: 46,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
+        itemCount: options.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final key = options[i]['key']!;
+          final selected = _filter == key;
+          return ChoiceChip(
+            label: Text('${options[i]['label']} ${_countFor(key)}'),
+            selected: selected,
+            showCheckmark: false,
+            onSelected: (_) => setState(() => _filter = key),
+            backgroundColor: AppColors.cardBg,
+            selectedColor: AppColors.primary,
+            side: BorderSide(color: selected ? AppColors.primary : AppColors.borderMuted),
+            labelStyle: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: selected ? AppColors.onPrimary : AppColors.textSecondary,
+            ),
+          );
+        },
+      ),
+    );
+  }
+  // "8 months left", "Expired 12 days ago", or a fallback.
 
   // ---------------------------------------------------------------------
   // NEARBY PROVIDERS / BOOKING
@@ -403,21 +444,24 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  void _openServiceBookingSheet(Map<String, dynamic> item) {
-    final isUnderWarranty = _isItemUnderWarranty(item);
-    final product = item['product']?.toString() ?? 'Appliance';
-    final accent = isUnderWarranty ? AppColors.success : AppColors.danger;
+ void _openServiceBookingSheet(Map<String, dynamic> item) {
+  final isUnderWarranty = _isItemUnderWarranty(item);
+  final product = item['product']?.toString() ?? 'Appliance';
+  final accent = isUnderWarranty ? AppColors.success : AppColors.danger;
 
-    showModalBottomSheet(
+  final providersFuture = _fetchNearbyProviders(item, isUnderWarranty)
+      .timeout(const Duration(seconds: 30), onTimeout: () => <Map<String, dynamic>>[]);
+
+  showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.cardBg,
       isScrollControlled: true,
       shape: AppDecor.sheetShape,
-      builder: (sheetContext) {
-        return FutureBuilder<List<Map<String, dynamic>>>(
-          future: _fetchNearbyProviders(item, isUnderWarranty),
-          builder: (context, snapshot) {
-            final loading = snapshot.connectionState == ConnectionState.waiting;
+          builder: (sheetContext) {
+      return FutureBuilder<List<Map<String, dynamic>>>(
+        future: providersFuture,
+        builder: (context, snapshot) {
+          final loading = snapshot.connectionState != ConnectionState.done;
             final providers = snapshot.data ?? [];
 
             return Padding(
@@ -498,23 +542,30 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                                     ? () => _openMapDirections(address)
                                     : null,
                               ),
-                              const SizedBox(height: 6),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
+                                                            if (!isUnderWarranty) ...[
+                                const SizedBox(height: 6),
+                                SizedBox(
+                                  width: double.infinity,
+                                                                  child: ElevatedButton.icon(
                                   onPressed: hasPhone
                                       ? () => _openBookingDialog(p, item, isUnderWarranty)
                                       : null,
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: accent,
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: AppColors.onPrimary,
+                                    elevation: 0,
                                     padding: const EdgeInsets.symmetric(vertical: 8),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                                   ),
-                                  icon: Icon(Icons.calendar_month_rounded, size: 15, color: AppColors.textPrimary),
+                                  icon: Icon(Icons.calendar_month_rounded, size: 15, color: AppColors.onPrimary),
                                   label: Text('Book this provider',
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.onPrimary)),
                                 ),
-                              ),
+                                ),
+                              ],
                             ],
                           );
                         },
@@ -538,10 +589,15 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     final photoUrl = item['imageUrl']?.toString();
     final warrantyCardUrl = item['warrantyCardUrl']?.toString();
 
-    final isUnderWarranty = _isItemUnderWarranty(item);
-    final accent = isUnderWarranty ? AppColors.success : AppColors.danger;
-    final statusText = _warrantyStatusText(item);
-    final statusIcon = isUnderWarranty ? Icons.verified_rounded : Icons.error_rounded;
+    final expiry = _expiryOf(item);
+final isUnknown = expiry == null;
+final isUnderWarranty = _isItemUnderWarranty(item);
+final accent = isUnknown
+    ? AppColors.textMuted
+    : (isUnderWarranty ? AppColors.success : AppColors.danger);
+final statusIcon = isUnknown
+    ? Icons.help_outline_rounded
+    : (isUnderWarranty ? Icons.verified_rounded : Icons.error_rounded);
     final hasPhoto = photoUrl != null && photoUrl.isNotEmpty;
 
     return ClipRRect(
@@ -550,7 +606,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         children: [
           Container(
             decoration: AppDecor.flatCard(),
-            padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -626,7 +682,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                             const SizedBox(height: 8),
                             Row(
                               children: [
-                                _buildWarrantyPill(accent, isUnderWarranty, statusText),
+                                WarrantyBadge(expiry: expiry),
                                 if (warrantyCardUrl != null && warrantyCardUrl.isNotEmpty) ...[
                                   const SizedBox(width: 8),
                                   GestureDetector(
@@ -660,57 +716,30 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 Divider(color: AppColors.borderSubtle, height: 1),
                 const SizedBox(height: 12),
                 // Solid for expired, outlined for healthy.
-                SizedBox(
+                                                SizedBox(
                   width: double.infinity,
-                  child: isUnderWarranty
-                      ? OutlinedButton.icon(
-                          onPressed: () => _openServiceBookingSheet(item),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: accent.withValues(alpha: 0.5)),
-                            padding: const EdgeInsets.symmetric(vertical: 9),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          icon: Icon(Icons.shield_outlined, size: 15, color: accent),
-                          label: Text('Book authorized service',
-                              style: TextStyle(color: accent, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                        )
-                      : ElevatedButton.icon(
-                          onPressed: () => _openServiceBookingSheet(item),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: accent,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 9),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          icon: Icon(Icons.build_rounded, size: 15, color: AppColors.textPrimary),
-                          label: Text('Find repair near me',
-                              style: TextStyle(color: AppColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                        ),
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openServiceBookingSheet(item),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: AppColors.primary.withValues(alpha: 0.6)),
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: Icon(
+                      isUnderWarranty ? Icons.shield_outlined : Icons.build_rounded,
+                      size: 15,
+                      color: AppColors.primary,
+                    ),
+                    label: Text(
+                      isUnderWarranty ? 'Book authorized service' : 'Find repair near you',
+                      style: TextStyle(
+                          color: AppColors.primary, fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          // Left accent strip — warranty status at a glance.
-          Positioned(left: 0, top: 0, bottom: 0, child: Container(width: 4, color: accent)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWarrantyPill(Color accent, bool isUnderWarranty, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(isUnderWarranty ? Icons.shield_outlined : Icons.access_time_filled_rounded,
-              size: 12, color: accent),
-          const SizedBox(width: 5),
-          Text(text, style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -747,6 +776,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+        final visible = _items.where((i) => _matchesFilter(i, _filter)).toList();
     return Scaffold(
       backgroundColor: AppColors.scaffoldBg,
       appBar: AppBar(
@@ -756,7 +786,15 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         title: Text(widget.roomName, style: TextStyle(color: AppColors.textPrimary)),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.primary,
+                backgroundColor: AppColors.cardBg,
+        elevation: 0,
+        focusElevation: 0,
+        hoverElevation: 0,
+        highlightElevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: AppColors.primary.withValues(alpha: 0.6)),
+        ),
         onPressed: () {
           Navigator.push(
             context,
@@ -774,20 +812,33 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             ),
           );
         },
-        icon: Icon(Icons.qr_code_scanner_rounded, color: AppColors.onPrimary, size: 20),
-        label: Text('Add appliance',
-            style: TextStyle(color: AppColors.onPrimary, fontWeight: FontWeight.w600)),
+                icon: Icon(Icons.qr_code_scanner_rounded, color: AppColors.primary, size: 15),
+                label: Text('Add appliance',
+            style: TextStyle(
+                color: AppColors.primary, fontSize: 12.5, fontWeight: FontWeight.w600)),
       ),
-      body: _items.isEmpty
+            body: _items.isEmpty
           ? Center(
               child: Text('No appliances in this room yet.\nScan one and pick this room.',
                   textAlign: TextAlign.center, style: TextStyle(color: AppColors.textMuted)),
             )
-          : ListView.separated(
-              padding: const EdgeInsets.all(20),
-              itemCount: _items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) => _buildItemCard(_items[index]),
+          : Column(
+              children: [
+                _buildFilterBar(),
+                Expanded(
+                  child: visible.isEmpty
+                      ? Center(
+                          child: Text('No devices in this filter',
+                              style: TextStyle(color: AppColors.textMuted)),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 90),
+                          itemCount: visible.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) => _buildItemCard(visible[index]),
+                        ),
+                ),
+              ],
             ),
     );
   }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'constants/app_strings.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:http/http.dart' as http;
@@ -22,6 +23,7 @@ import 'widgets/light_card.dart';
 import 'widgets/section_header.dart';
 import 'dart:async';
 import 'utils/devices_filter_bus.dart';
+import 'widgets/warranty_badge.dart';
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
@@ -88,7 +90,7 @@ class HomeTabState extends State<HomeTab> {
   // Every new appliance is saved under this room name.
   static const String _defaultRoomName = 'Default';
 
-  static const int _maxDevicesOnHome = 4;
+  static const int _maxDevicesOnHome = 3;
 
   static const Map<String, IconData> _applianceIcons = {
     'fridge': Icons.kitchen_rounded,
@@ -110,12 +112,12 @@ class HomeTabState extends State<HomeTab> {
 
   // Services near you — backed by scrapeHomeServices(serviceType, pincode).
     static const List<Map<String, dynamic>> _serviceCategories = [
-    {'label': 'Electrician', 'type': 'electrician', 'icon': Icons.bolt_rounded, 'color': Color(0xFFFF9800)},
-    {'label': 'Plumber', 'type': 'plumber', 'icon': Icons.build_rounded, 'color': Color(0xFF1E6BFF)},
-    {'label': 'AC Service', 'type': 'AC service', 'icon': Icons.ac_unit_rounded, 'color': Color(0xFF2196F3)},
-    {'label': 'Carpenter', 'type': 'carpenter', 'icon': Icons.hardware_rounded, 'color': Color(0xFF7C4DFF)},
-    {'label': 'Painter', 'type': 'painter', 'icon': Icons.format_paint_rounded, 'color': Color(0xFFE91E63)},
-    {'label': 'Pest Control', 'type': 'pest control', 'icon': Icons.pest_control_rounded, 'color': Color(0xFF00A86B)},
+    {'label': AppStrings.electrician, 'type': 'electrician', 'icon': Icons.bolt_rounded, 'color': Color(0xFFFF9800)},
+    {'label': AppStrings.plumber, 'type': 'plumber', 'icon': Icons.build_rounded, 'color': Color(0xFF1E6BFF)},
+    {'label': AppStrings.acService, 'type': 'AC service', 'icon': Icons.ac_unit_rounded, 'color': Color(0xFF2196F3)},
+    {'label': AppStrings.carpenter, 'type': 'carpenter', 'icon': Icons.hardware_rounded, 'color': Color(0xFF7C4DFF)},
+    {'label': AppStrings.painter, 'type': 'painter', 'icon': Icons.format_paint_rounded, 'color': Color(0xFFE91E63)},
+    {'label': AppStrings.pestControl, 'type': 'pest control', 'icon': Icons.pest_control_rounded, 'color': Color(0xFF00A86B)},
   ];
 
   // serviceType -> provider count, shown as "X nearby".
@@ -354,28 +356,33 @@ class HomeTabState extends State<HomeTab> {
             final Map<String, String> roomIds = {}; // roomKey -> backend room _id
 
             if (roomsRaw is List) {
-              for (final roomObj in roomsRaw) {
-                if (roomObj is! Map) continue;
-                final roomName = roomObj['roomName']?.toString();
-                final devicesRaw = roomObj['devices'];
-                if (roomName == null || devicesRaw is! List) continue;
-                if (roomName.toLowerCase() == _hiddenSetupRoomKey) continue;
+  for (final roomObj in roomsRaw) {
+    if (roomObj is! Map) continue;
+    final roomName = roomObj['roomName']?.toString();
+    final devicesRaw = roomObj['devices'];
+    if (roomName == null || devicesRaw is! List) continue;
+    if (roomName.toLowerCase() == _hiddenSetupRoomKey) continue;
 
-                final key = roomName.toLowerCase();
-                rooms[key] = devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    final key = roomName.toLowerCase();
 
-                final rid = (roomObj['_id'] ?? roomObj['roomId'])?.toString();
-                if (rid != null && rid.isNotEmpty) roomIds[key] = rid;
-              }
-            } else if (roomsRaw is Map) {
-              roomsRaw.forEach((key, value) {
-                if (value is List) {
-                  if (key.toString().toLowerCase() == _hiddenSetupRoomKey) return;
-                  rooms[key.toString().toLowerCase()] =
-                      value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-                }
-              });
-            }
+    // overwrite pannama, append pannunga
+    rooms.putIfAbsent(key, () => []).addAll(
+      devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)),
+    );
+
+    final rid = (roomObj['_id'] ?? roomObj['roomId'])?.toString();
+    if (rid != null && rid.isNotEmpty) roomIds[key] = rid;
+  }
+} else if (roomsRaw is Map) {
+  roomsRaw.forEach((key, value) {
+    if (value is List) {
+      if (key.toString().toLowerCase() == _hiddenSetupRoomKey) return;
+      rooms.putIfAbsent(key.toString().toLowerCase(), () => []).addAll(
+        value.map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+    }
+  });
+}
 
             final membersRaw = h['members'];
             final List<Map<String, dynamic>> members = membersRaw is List
@@ -470,7 +477,7 @@ class HomeTabState extends State<HomeTab> {
       if (mounted) {
         setState(() {
           if (_homeBox.isEmpty) {
-            _error = 'Could not load your home. Pull down to retry.';
+            _error = AppStrings.homeLoadError;
           }
           _loading = false;
         });
@@ -574,7 +581,7 @@ class HomeTabState extends State<HomeTab> {
   String _homeLabel(Map<String, dynamic> home, int index) {
     final address = home['address']?.toString() ?? '';
     final firstPart = address.split(',').first.trim();
-    return firstPart.isNotEmpty ? firstPart : 'Home ${index + 1}';
+    return firstPart.isNotEmpty ? firstPart : AppStrings.homeN(index + 1);
   }
 
   bool _isDefaultHome(Map<String, dynamic> home) {
@@ -613,11 +620,6 @@ class HomeTabState extends State<HomeTab> {
     );
   }
 
-  String _fmtDate(DateTime d) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${d.day.toString().padLeft(2, '0')} ${months[d.month - 1]} ${d.year}';
-  }
-
   // ---------------------------------------------------------------------
   // STATS
   // ---------------------------------------------------------------------
@@ -650,7 +652,7 @@ Map<String, int> _computeStats() {
       MaterialPageRoute(
         builder: (_) => RoomDetailScreen(
           roomKey: _defaultRoomName.toLowerCase(),
-          roomName: 'All devices',
+          roomName: AppStrings.allDevices,
           items: _allDevices,
           iconForAppliance: _iconForAppliance,
           mobileNumber: widget.mobileNumber,
@@ -681,7 +683,7 @@ Map<String, int> _computeStats() {
       MaterialPageRoute(
         builder: (_) => RoomDetailScreen(
           roomKey: _defaultRoomName.toLowerCase(),
-          roomName: 'All devices',
+          roomName: AppStrings.allDevices,
           items: items,
           iconForAppliance: _iconForAppliance,
           mobileNumber: widget.mobileNumber,
@@ -763,11 +765,11 @@ Map<String, int> _computeStats() {
       address: newAddress,
       pincode: newPincode,
       name: newName.isNotEmpty ? newName : _displayName,
-      homeName: firstPart.isNotEmpty ? firstPart : 'Home ${_homes.length + 1}',
+      homeName: firstPart.isNotEmpty ? firstPart : AppStrings.homeN(_homes.length + 1),
     );
 
     if (newHomeId == null) {
-      _snack('Could not create the new home. Try again.');
+      _snack(AppStrings.couldNotCreateHome);
       return;
     }
 
@@ -784,7 +786,7 @@ Map<String, int> _computeStats() {
     await SessionManager.updateHomeId(newHomeId);
     _notifySelectedHome();
     _prefetchServiceCounts();
-    _snack('Home added ✅');
+    _snack(AppStrings.homeAdded);
   }
 
   // Creates a brand-new home on the backend and returns its homeId.
@@ -801,7 +803,7 @@ Map<String, int> _computeStats() {
 
       if (authToken == null) {
         debugPrint('❌ No Firebase auth token — user not signed in?');
-        _snack('Please sign in again to add a home.');
+        _snack(AppStrings.signInAgainToAddHome);
         return null;
       }
 
@@ -857,8 +859,8 @@ Map<String, int> _computeStats() {
     if (!mounted) return false;
 
     _snack(result['success'] == true
-        ? 'Address updated successfully ✅'
-        : (result['message']?.toString() ?? 'Failed to update address'));
+        ? AppStrings.addressUpdated
+        : (result['message']?.toString() ?? AppStrings.addressUpdateFailed));
     return result['success'] == true;
   }
 
@@ -887,7 +889,7 @@ Map<String, int> _computeStats() {
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Add Appliance', style: AppText.dialogTitle),
+                  const Text(AppStrings.addApplianceTitle, style: AppText.dialogTitle),
                   InkWell(
                     onTap: () {
                       Navigator.pop(dialogContext);
@@ -905,7 +907,7 @@ Map<String, int> _computeStats() {
                         children: [
                           Icon(Icons.qr_code_scanner_rounded, color: AppColors.primary, size: 20),
                           SizedBox(width: 4),
-                          Text('Scan', style: AppText.linkAction),
+                          Text(AppStrings.scan, style: AppText.linkAction),
                         ],
                       ),
                     ),
@@ -919,20 +921,20 @@ Map<String, int> _computeStats() {
                   children: [
                     AppDialogField(
                       controller: productController,
-                      hint: 'Product name (e.g. Refrigerator)',
+                      hint: AppStrings.productNameHintExample,
                     ),
                     const SizedBox(height: 10),
-                    AppDialogField(controller: brandController, hint: 'Brand (optional)'),
+                    AppDialogField(controller: brandController, hint: AppStrings.brandOptionalHint),
                     const SizedBox(height: 10),
                     AppDialogField(
-                        controller: warrantyController, hint: 'Warranty (e.g. 2 Years, optional)'),
+                        controller: warrantyController, hint: AppStrings.warrantyOptionalHint),
                   ],
                 ),
               ),
               actions: [
                 TextButton(
                   onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel', style: AppText.cancelAction),
+                  child: const Text(AppStrings.cancel, style: AppText.cancelAction),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -960,7 +962,7 @@ Map<String, int> _computeStats() {
                           height: 16,
                           child: CircularProgressIndicator(color: AppColors.onPrimary, strokeWidth: 2),
                         )
-                      : Text('Add appliance', style: TextStyle(color: AppColors.onPrimary)),
+                      : Text(AppStrings.addApplianceButton, style: TextStyle(color: AppColors.onPrimary)),
                 ),
               ],
             );
@@ -991,7 +993,7 @@ Map<String, int> _computeStats() {
           }
         }
         if (homeIdToUse == null) {
-          _snack('Could not set up your home. Try again.');
+          _snack(AppStrings.couldNotSetupHome);
           return false;
         }
         await SessionManager.updateHomeId(homeIdToUse);
@@ -1017,15 +1019,15 @@ Map<String, int> _computeStats() {
       if (!mounted) return false;
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        _snack('$product added ✅');
+        _snack(AppStrings.applianceAdded(product));
         return true;
       }
       final data = jsonDecode(response.body);
-      _snack(data['message']?.toString() ?? 'Could not add appliance. Try again.');
+      _snack(data['message']?.toString() ?? AppStrings.couldNotAddAppliance);
       return false;
     } catch (e) {
       debugPrint('❌ Manual submit error: $e');
-      _snack('Network error. Try again.');
+      _snack(AppStrings.networkError);
       return false;
     }
   }
@@ -1078,8 +1080,11 @@ Map<String, int> _computeStats() {
                             const SizedBox(height: 16),
                             _buildStatsRow(stats!),
                             const SizedBox(height: 24),
-                            SectionHeader('Devices (${stats['devices']})',
-                                actionLabel: 'View all', onManage: _openDevicesScreen),
+                            SectionHeader(
+  AppStrings.devicesCount(stats['devices']!),
+  actionLabel: stats['devices']! > _maxDevicesOnHome ? AppStrings.viewAll : null,
+  onManage: stats['devices']! > _maxDevicesOnHome ? _openDevicesScreen : null,
+),
                             const SizedBox(height: 12),
                             _buildDevicesList(),
                             const SizedBox(height: 28),
@@ -1110,7 +1115,7 @@ Map<String, int> _computeStats() {
             child: Row(
               children: [
                 Text(
-                  'zhini',
+                  'ZHINI',
                   style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 26,
@@ -1136,7 +1141,7 @@ Map<String, int> _computeStats() {
                     child: TextField(
                       style: TextStyle(fontSize: 13),
                       decoration: InputDecoration(
-                        hintText: 'Search here...',
+                        hintText: AppStrings.searchHere,
                         hintStyle: TextStyle(color: AppColors.lightHint, fontSize: 12),
                         prefixIcon: Icon(Icons.search_rounded, color: AppColors.lightHint, size: 20),
                         border: InputBorder.none,
@@ -1221,11 +1226,11 @@ Map<String, int> _computeStats() {
     // ── Buildings title + dropdown to choose the building ──
   Widget _buildBuildingsHeader() {
     final current = _currentHome;
-    final label = current == null ? 'Select' : _homeLabel(current, _selectedHomeIndex);
+    final label = current == null ? AppStrings.select : _homeLabel(current, _selectedHomeIndex);
 
     return Row(
       children: [
-        const Text('Buildings', style: AppText.lightSectionTitle),
+        const Text(AppStrings.buildings, style: AppText.lightSectionTitle),
         const SizedBox(width: 12),
         Expanded(
           child: Align(
@@ -1293,7 +1298,7 @@ Map<String, int> _computeStats() {
                     children: [
                       Icon(Icons.add_circle_outline_rounded, size: 18, color: AppColors.lightPrimary),
                       SizedBox(width: 10),
-                      Text('Add new building', style: AppText.lightLink),
+                      Text(AppStrings.addNewBuilding, style: AppText.lightLink),
                     ],
                   ),
                 ),
@@ -1340,14 +1345,14 @@ Map<String, int> _computeStats() {
 Widget _buildStatsRow(Map<String, int> stats) {
   return Row(
     children: [
-      _statCard(Icons.devices_other_rounded, AppColors.lightPrimary, '${stats['devices']}', 'Appliances',
+      _statCard(Icons.devices_other_rounded, AppColors.lightPrimary, '${stats['devices']}', AppStrings.statAppliances,
           onTap: () => _openDevicesTabWith('All')),
       const SizedBox(width: 10),
       _statCard(Icons.verified_user_outlined, AppColors.lightSuccess, '${stats['active']}',
-          'Active Warranties',
+          AppStrings.statActiveWarranties,
           onTap: () => _openDevicesTabWith('Warranty')),
       const SizedBox(width: 10),
-      _statCard(Icons.warning_amber_rounded, AppColors.lightWarning, '${stats['attention']}', 'Attention',
+      _statCard(Icons.warning_amber_rounded, AppColors.lightWarning, '${stats['attention']}', AppStrings.statAttention,
           highlight: (stats['attention'] ?? 0) > 0,
           onTap: () => _openDevicesTabWith('Attention')),
     ],
@@ -1392,44 +1397,45 @@ Widget _statCard(IconData icon, Color color, String value, String label,
 }
 
   // ── Devices list (flat, first few) ──
-  Widget _buildDevicesList() {
-    final devices = _allDevices;
+Widget _buildDevicesList() {
+  final devices = _allDevices;
 
-    if (devices.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: AppDecor.lightCard(),
-        child: Column(
-          children: [
-            Icon(Icons.devices_other_rounded, color: AppColors.lightChevron, size: 32),
-            const SizedBox(height: 8),
-            const Text('No appliances yet', style: AppText.lightCardTitle),
-            const SizedBox(height: 4),
-                        const Text('Tap + Add Device below to add one.', style: AppText.lightCaption),
-          ],
-        ),
-      );
-    }
-
-    final shown = devices.take(_maxDevicesOnHome).toList();
-
+  if (devices.isEmpty) {
     return Container(
-      decoration: AppDecor.lightCard(),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: AppDecor.lightCard(), 
       child: Column(
         children: [
-          for (int i = 0; i < shown.length; i++) ...[
-            _deviceRow(shown[i]),
-            if (i != shown.length - 1)
-              Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.lightBorder),
-          ],
+          Icon(Icons.devices_other_rounded, color: AppColors.lightChevron, size: 32),
+          const SizedBox(height: 8),
+          const Text(AppStrings.noAppliancesYet, style: AppText.lightCardTitle),
+          const SizedBox(height: 4),
+          const Text(AppStrings.tapAddDeviceBelow, style: AppText.lightCaption),
         ],
       ),
     );
   }
 
+    final shown = devices.take(_maxDevicesOnHome).toList();
+
+  return Container(
+    decoration: AppDecor.lightCard(),
+    child: Column(
+      children: [
+        for (int i = 0; i < shown.length; i++) ...[
+          _deviceRow(shown[i]),
+          if (i != shown.length - 1)
+            Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.lightBorder),
+        ],
+      ],
+    ),
+  );   
+}
+  
+
   Widget _deviceRow(Map<String, dynamic> item) {
-    final product = item['product']?.toString() ?? 'Appliance';
+    final product = item['product']?.toString() ?? AppStrings.appliance;
     final brand = item['brand']?.toString() ?? '';
     final hasBrand = brand.isNotEmpty && brand.toLowerCase() != 'unknown' && brand.toUpperCase() != 'N/A';
     final imageUrl = item['imageUrl']?.toString();
@@ -1458,64 +1464,15 @@ Widget _statCard(IconData icon, Color color, String value, String label,
                 children: [
                   Text(product, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCardTitle),
                   const SizedBox(height: 2),
-                  Text(hasBrand ? brand : 'Brand not added',
+                  Text(hasBrand ? brand : AppStrings.brandNotAdded,
                       maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCaption),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            _warrantyBadge(item),
+            WarrantyBadge(expiry: _expiryOf(item)),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _warrantyBadge(Map<String, dynamic> item) {
-    final expiry = _expiryOf(item);
-    final now = DateTime.now();
-
-    Color color;
-    IconData icon;
-    String title;
-    String? subtitle;
-
-    if (expiry == null) {
-      color = AppColors.lightTextMuted;
-      icon = Icons.help_outline_rounded;
-      title = 'No warranty info';
-    } else if (expiry.isAfter(now)) {
-      color = AppColors.lightSuccess;
-      icon = Icons.verified_user_rounded;
-      title = 'Warranty Active';
-      subtitle = 'Valid till ${_fmtDate(expiry)}';
-    } else {
-      color = AppColors.danger;
-      icon = Icons.error_rounded;
-      title = 'Warranty Expired';
-      subtitle = 'Expired on ${_fmtDate(expiry)}';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 6),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
-              if (subtitle != null)
-                Text(subtitle, style: TextStyle(color: AppColors.lightTextMuted, fontSize: 9.5)),
-            ],
-          ),
-        ],
       ),
     );
   }
@@ -1531,7 +1488,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         icon: Icon(Icons.add_circle_outline_rounded, color: AppColors.lightPrimary, size: 18),
-        label: const Text('Add appliance manually', style: AppText.lightLink),
+        label: const Text(AppStrings.addApplianceManually, style: AppText.lightLink),
       ),
     );
   }
@@ -1541,7 +1498,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionHeader('Services near you'),
+        const SectionHeader(AppStrings.servicesNearYou),
         const SizedBox(height: 12),
                 LayoutBuilder(
           builder: (context, constraints) {
@@ -1589,7 +1546,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            count == null ? '...' : '$count nearby',
+                            count == null ? '...' : AppStrings.nearbyCount(count),
                             maxLines: 1,
                             softWrap: false,
                             style: AppText.lightSuccessCaption,
@@ -1602,20 +1559,6 @@ Widget _statCard(IconData icon, Color color, String value, String label,
               ),
             );
           },
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _infoCard(Icons.build_rounded, AppColors.lightPrimary, 'Installation',
-                  'Get expert setup at your home'),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _infoCard(Icons.headset_mic_rounded, AppColors.lightPurple, 'Support',
-                  'Quick help, anytime'),
-            ),
-          ],
         ),
       ],
     );
@@ -1662,12 +1605,12 @@ Widget _statCard(IconData icon, Color color, String value, String label,
           ),
           const SizedBox(height: 14),
           Text(
-            'Set up your home',
+            AppStrings.setUpYourHome,
             style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
-            'Add your address to start tracking appliances, warranties, and get matched with nearby services.',
+            AppStrings.setUpYourHomeDesc,
             style: TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4),
           ),
           const SizedBox(height: 16),
@@ -1678,7 +1621,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
               style: AppDecor.primaryButton,
               icon: Icon(Icons.home_rounded, size: 18, color: AppColors.onPrimary),
               label: Text(
-                'Register',
+                AppStrings.register,
                 style: TextStyle(color: AppColors.onPrimary, fontSize: 15, fontWeight: FontWeight.w600),
               ),
             ),
@@ -1711,17 +1654,17 @@ Widget _statCard(IconData icon, Color color, String value, String label,
               Icon(Icons.inventory_2_outlined, size: 16, color: AppColors.textMuted),
               const SizedBox(width: 8),
               Text(
-                'Default devices (${allDevices.length})',
+                AppStrings.defaultDevices(allDevices.length),
                 style: TextStyle(
                     color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ],
           ),
           const SizedBox(height: 4),
-          const Text('These will move into your home once you register.', style: AppText.faintCaption),
+          const Text(AppStrings.defaultDevicesNote, style: AppText.faintCaption),
           const SizedBox(height: 12),
           ...allDevices.take(5).map((item) {
-            final product = item['product']?.toString() ?? 'Appliance';
+            final product = item['product']?.toString() ?? AppStrings.appliance;
             final brand = item['brand']?.toString() ?? '';
             final label =
                 brand.isNotEmpty && brand.toUpperCase() != 'N/A' ? '$brand $product' : product;
@@ -1767,7 +1710,7 @@ Widget _statCard(IconData icon, Color color, String value, String label,
               child: Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '+${allDevices.length - 5} more',
+                  AppStrings.moreCount(allDevices.length - 5),
                   style: TextStyle(
                       color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600),
                 ),

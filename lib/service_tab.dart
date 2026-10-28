@@ -7,6 +7,7 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'constants/app_strings.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
@@ -41,12 +42,12 @@ class ServiceTab extends StatefulWidget {
 
 class _ServiceTabState extends State<ServiceTab> {
       static const List<Map<String, dynamic>> _quickBookCategories = [
-    {'label': 'Electrician', 'type': 'electrician', 'icon': Icons.bolt_rounded, 'color': Color(0xFFFF9800)},
-    {'label': 'Plumber', 'type': 'plumber', 'icon': Icons.build_rounded, 'color': Color(0xFF1E6BFF)},
-    {'label': 'AC Service', 'type': 'AC service', 'icon': Icons.ac_unit_rounded, 'color': Color(0xFF2196F3)},
-    {'label': 'Carpenter', 'type': 'carpenter', 'icon': Icons.hardware_rounded, 'color': Color(0xFF7C4DFF)},
-    {'label': 'Painter', 'type': 'painter', 'icon': Icons.format_paint_rounded, 'color': Color(0xFFE91E63)},
-    {'label': 'Pest Control', 'type': 'pest control', 'icon': Icons.pest_control_rounded, 'color': Color(0xFF00A86B)},
+    {'label': AppStrings.electrician, 'type': 'electrician', 'icon': Icons.bolt_rounded, 'color': Color(0xFFFF9800)},
+    {'label': AppStrings.plumber, 'type': 'plumber', 'icon': Icons.build_rounded, 'color': Color(0xFF1E6BFF)},
+    {'label': AppStrings.acService, 'type': 'AC service', 'icon': Icons.ac_unit_rounded, 'color': Color(0xFF2196F3)},
+    {'label': AppStrings.carpenter, 'type': 'carpenter', 'icon': Icons.hardware_rounded, 'color': Color(0xFF7C4DFF)},
+    {'label': AppStrings.painter, 'type': 'painter', 'icon': Icons.format_paint_rounded, 'color': Color(0xFFE91E63)},
+    {'label': AppStrings.pestControl, 'type': 'pest control', 'icon': Icons.pest_control_rounded, 'color': Color(0xFF00A86B)},
   ];
 
   bool _loading = true;
@@ -56,11 +57,11 @@ class _ServiceTabState extends State<ServiceTab> {
   final Map<String, int> _quickBookCounts = {};
 
   static const List<Map<String, String>> _filterOptions = [
-    {'key': 'all', 'label': 'All'},
-    {'key': 'open', 'label': 'Open'},
-    {'key': 'in_progress', 'label': 'In Progress'},
-    {'key': 'completed', 'label': 'Completed'},
-    {'key': 'cancelled', 'label': 'Cancelled'},
+    {'key': 'all', 'label': AppStrings.filterAll},
+    {'key': 'open', 'label': AppStrings.filterOpen},
+    {'key': 'in_progress', 'label': AppStrings.filterInProgress},
+    {'key': 'completed', 'label': AppStrings.filterCompleted},
+    {'key': 'cancelled', 'label': AppStrings.filterCancelled},
   ];
 
   static const double _defaultGstPercent = 18;
@@ -146,7 +147,7 @@ class _ServiceTabState extends State<ServiceTab> {
         }
         if (mounted) {
           setState(() {
-            _error = data['message']?.toString() ?? 'Could not load tickets.';
+            _error = data['message']?.toString() ?? AppStrings.couldNotLoadTickets;
             _loading = false;
           });
         }
@@ -155,7 +156,7 @@ class _ServiceTabState extends State<ServiceTab> {
 
       if (mounted) {
         setState(() {
-          _error = 'Could not load tickets (${response.statusCode}).';
+          _error = AppStrings.couldNotLoadTicketsCode(response.statusCode);
           _loading = false;
         });
       }
@@ -163,7 +164,7 @@ class _ServiceTabState extends State<ServiceTab> {
       debugPrint('❌ Service tickets fetch error: $e');
       if (mounted) {
         setState(() {
-          _error = 'Network error. Pull down to retry.';
+          _error = AppStrings.networkErrorPullRetry;
           _loading = false;
         });
       }
@@ -192,8 +193,8 @@ class _ServiceTabState extends State<ServiceTab> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(ok
-              ? 'Ticket cancelled successfully.'
-              : (data?['message']?.toString() ?? 'Could not cancel ticket (${response.statusCode}).')),
+              ? AppStrings.ticketCancelledOk
+              : (data?['message']?.toString() ?? AppStrings.couldNotCancelTicket(response.statusCode))),
           backgroundColor: ok ? AppColors.success : AppColors.danger,
         ),
       );
@@ -204,7 +205,7 @@ class _ServiceTabState extends State<ServiceTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Network error. Please try again.'),
+          content: Text(AppStrings.networkErrorPleaseRetry),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -336,7 +337,7 @@ class _ServiceTabState extends State<ServiceTab> {
   }
 
   String _statusLabel(String status) {
-    if (status.isEmpty || status == 'unknown') return 'Status unknown';
+    if (status.isEmpty || status == 'unknown') return AppStrings.statusUnknown;
     return status
         .replaceAll('_', ' ')
         .split(' ')
@@ -367,7 +368,7 @@ class _ServiceTabState extends State<ServiceTab> {
     }
     final billingProduct = t['billing'] is Map ? t['billing']['productName']?.toString() : null;
     if (billingProduct != null && billingProduct.isNotEmpty) return billingProduct;
-    return 'Service request';
+    return AppStrings.serviceRequest;
   }
 
   String? _formattedDate(Map<String, dynamic> t) {
@@ -419,7 +420,7 @@ class _ServiceTabState extends State<ServiceTab> {
     }
 
     final lines = <_BillLine>[
-      if (laborCharge > 0) _BillLine('Labour Charge', laborCharge),
+      if (laborCharge > 0) _BillLine(AppStrings.labourCharge, laborCharge),
       ...partLines,
     ];
 
@@ -482,7 +483,7 @@ class _ServiceTabState extends State<ServiceTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Invoice',
+                          Text(AppStrings.invoice,
                               style: TextStyle(
                                   color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
                           if (ticketId != null && ticketId.isNotEmpty)
@@ -505,7 +506,7 @@ class _ServiceTabState extends State<ServiceTab> {
                 if (bill.lines.isEmpty)
                   const Padding(
                     padding: EdgeInsets.only(bottom: 10),
-                    child: Text('No itemized breakdown available.', style: AppText.caption),
+                    child: Text(AppStrings.noItemizedBreakdown, style: AppText.caption),
                   ),
                 ...bill.lines.map((l) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -525,7 +526,7 @@ class _ServiceTabState extends State<ServiceTab> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Text('Subtotal', style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
+                    Text(AppStrings.subtotal, style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
                     const Spacer(),
                     Text(money(bill.subtotal), style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
                   ],
@@ -533,7 +534,7 @@ class _ServiceTabState extends State<ServiceTab> {
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Text('GST (${bill.gstPercent % 1 == 0 ? bill.gstPercent.toStringAsFixed(0) : bill.gstPercent}%)',
+                    Text(AppStrings.gstLabel((bill.gstPercent % 1 == 0 ? bill.gstPercent.toStringAsFixed(0) : bill.gstPercent).toString()),
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
                     const Spacer(),
                     Text(money(bill.gstAmount), style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5)),
@@ -544,7 +545,7 @@ class _ServiceTabState extends State<ServiceTab> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Text('Total',
+                    Text(AppStrings.total,
                         style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
                     const Spacer(),
                     Text(money(bill.total),
@@ -558,7 +559,7 @@ class _ServiceTabState extends State<ServiceTab> {
                       Icon(Icons.verified_user_outlined, size: 13, color: AppColors.textMuted),
                       const SizedBox(width: 5),
                       Expanded(
-                        child: Text('${bill.warrantyDays} days warranty on this service', style: AppText.caption),
+                        child: Text(AppStrings.warrantyOnService(bill.warrantyDays), style: AppText.caption),
                       ),
                     ],
                   ),
@@ -572,7 +573,7 @@ class _ServiceTabState extends State<ServiceTab> {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => Navigator.of(ctx).pop(),
-                    child: Text('Close', style: TextStyle(color: AppColors.primary)),
+                    child: Text(AppStrings.close, style: TextStyle(color: AppColors.primary)),
                   ),
                 ),
               ],
@@ -613,12 +614,7 @@ class _ServiceTabState extends State<ServiceTab> {
     if (ticketId == null || ticketId.isEmpty) return;
 
     final reasonController = TextEditingController();
-    const quickReasons = [
-      'Found a local technician',
-      'Changed my mind',
-      'Price too high',
-      'Taking too long',
-    ];
+    const quickReasons = AppStrings.quickReasonList;
     String? selectedQuickReason;
 
     showModalBottomSheet(
@@ -668,10 +664,10 @@ class _ServiceTabState extends State<ServiceTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Cancel this ticket?',
+                          Text(AppStrings.cancelThisTicket,
                               style: TextStyle(
                                   color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
-                          Text('Ticket #$ticketId', style: AppText.caption),
+                          Text(AppStrings.ticketNumber(ticketId), style: AppText.caption),
                         ],
                       ),
                     ),
@@ -680,7 +676,7 @@ class _ServiceTabState extends State<ServiceTab> {
                 const SizedBox(height: 20),
 
                 // ---- Quick reason chips ----
-                Text('Quick reasons',
+                Text(AppStrings.quickReasons,
                     style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 12.5, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
@@ -718,7 +714,7 @@ class _ServiceTabState extends State<ServiceTab> {
                 const SizedBox(height: 16),
 
                 // ---- Custom reason field ----
-                Text('Or type your own reason',
+                Text(AppStrings.orTypeYourOwnReason,
                     style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 12.5, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
@@ -728,7 +724,7 @@ class _ServiceTabState extends State<ServiceTab> {
                   onChanged: (_) => setSheetState(() => selectedQuickReason = null),
                   style: TextStyle(color: AppColors.textPrimary, fontSize: 13.5),
                   decoration: InputDecoration(
-                    hintText: "Tell us why you're cancelling...",
+                    hintText: AppStrings.tellUsWhy,
                     hintStyle: AppText.faintCaption,
                     filled: true,
                     fillColor: AppColors.scaffoldBg,
@@ -753,7 +749,7 @@ class _ServiceTabState extends State<ServiceTab> {
                     Icon(Icons.info_outline_rounded, size: 13, color: AppColors.textMuted),
                     const SizedBox(width: 5),
                     Expanded(
-                      child: Text('Your assigned technician will be notified once cancelled.',
+                      child: Text(AppStrings.technicianWillBeNotified,
                           style: AppText.caption),
                     ),
                   ],
@@ -772,7 +768,7 @@ class _ServiceTabState extends State<ServiceTab> {
                           padding: const EdgeInsets.symmetric(vertical: 13),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Keep ticket', style: TextStyle(fontWeight: FontWeight.w600)),
+                        child: const Text(AppStrings.keepTicket, style: TextStyle(fontWeight: FontWeight.w600)),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -782,7 +778,7 @@ class _ServiceTabState extends State<ServiceTab> {
                           final reason = reasonController.text.trim();
                           if (reason.isEmpty) {
                             ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(content: Text('Please add a reason to cancel.')),
+                              const SnackBar(content: Text(AppStrings.pleaseAddReason)),
                             );
                             return;
                           }
@@ -796,7 +792,7 @@ class _ServiceTabState extends State<ServiceTab> {
                           padding: const EdgeInsets.symmetric(vertical: 13),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Confirm cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+                        child: const Text(AppStrings.confirmCancel, style: TextStyle(fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],
@@ -853,8 +849,8 @@ class _ServiceTabState extends State<ServiceTab> {
                   const SizedBox(height: 4),
                   Text(
   widget.pincode.trim().isNotEmpty
-      ? 'Near pincode ${widget.pincode}'
-      : 'Near your current location',
+      ? AppStrings.nearPincode(widget.pincode)
+      : AppStrings.nearYourLocation,
   style: AppText.caption,
 ),
                   const SizedBox(height: 16),
@@ -866,7 +862,7 @@ class _ServiceTabState extends State<ServiceTab> {
                   else if (providers.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Text('No service providers found nearby.', style: AppText.faintCaption),
+                      child: Text(AppStrings.noProvidersFound, style: AppText.faintCaption),
                     )
                   else
                     ConstrainedBox(
@@ -884,7 +880,7 @@ class _ServiceTabState extends State<ServiceTab> {
                               ? double.tryParse(ratingRaw.toString())
                               : null;
                           return ServiceProviderCard(
-                            name: s['name']?.toString() ?? 'Not available',
+                            name: s['name']?.toString() ?? AppStrings.notAvailable,
                             address: address,
                             phone: phone,
                             rating: rating,
@@ -973,8 +969,8 @@ if (response.statusCode == 200) {
                             const SizedBox(height: 12),
                             Text(
                               _tickets.isEmpty
-                                  ? 'No tickets yet.\nBook a repair from any appliance to see it here.'
-                                  : 'No tickets match this filter.',
+                                  ? AppStrings.noTicketsYet
+                                  : AppStrings.noTicketsMatchFilter,
                               textAlign: TextAlign.center,
                               style: AppText.faintCaption,
                             ),
@@ -986,7 +982,7 @@ if (response.statusCode == 200) {
                                 )),
                           ],
                           const SizedBox(height: 12),
-                          _sectionHeader('⚡ QUICK BOOK'),
+                          _sectionHeader(AppStrings.quickBook),
                           const SizedBox(height: 10),
                           _buildQuickBookGrid(),
                         ],
@@ -1008,9 +1004,9 @@ if (response.statusCode == 200) {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Service', style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+              Text(AppStrings.service, style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 2),
-              Text('$city · ${_tickets.length} ticket${_tickets.length == 1 ? '' : 's'}', style: AppText.caption),
+              Text(AppStrings.ticketsSummary(city, _tickets.length), style: AppText.caption),
             ],
           ),
         ),
@@ -1029,20 +1025,26 @@ if (response.statusCode == 200) {
         itemBuilder: (context, index) {
           final option = _filterOptions[index];
           final isSelected = _selectedFilter == option['key'];
-          return ChoiceChip(
-            label: Text(option['label']!),
-            selected: isSelected,
-            onSelected: (_) => setState(() => _selectedFilter = option['key']!),
-            backgroundColor: AppColors.cardBg,
-            selectedColor: AppColors.primary.withValues(alpha: 0.15),
-            labelStyle: TextStyle(
-              color: isSelected ? AppColors.primary : AppColors.textSecondary,
-              fontSize: 12.5,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                              return InkWell(
+            onTap: () => setState(() => _selectedFilter = option['key']!),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: isSelected ? AppColors.primary : AppColors.cardBg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: isSelected ? AppColors.primary : AppColors.borderMuted),
+              ),
+              child: Text(
+                option['label']!,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? AppColors.onPrimary : AppColors.textSecondary,
+                ),
+              ),
             ),
-            side: BorderSide(color: isSelected ? AppColors.primary : AppColors.borderSubtle),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            showCheckmark: false,
           );
         },
       ),
@@ -1087,7 +1089,7 @@ if (response.statusCode == 200) {
                     ),
                     if (ticketId != null && ticketId.isNotEmpty) ...[
                       const SizedBox(height: 3),
-                      Text('Ticket #$ticketId', style: AppText.caption),
+                      Text(AppStrings.ticketNumber(ticketId), style: AppText.caption),
                     ],
                   ],
                 ),
@@ -1143,7 +1145,7 @@ if (response.statusCode == 200) {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Total',
+                          Text(AppStrings.total,
                               style: TextStyle(
                                   color: AppColors.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w700)),
                           const SizedBox(width: 5),
@@ -1175,7 +1177,7 @@ if (response.statusCode == 200) {
                         children: [
                           Icon(Icons.close_rounded, size: 13, color: AppColors.danger),
                           SizedBox(width: 4),
-                          Text('Cancel',
+                          Text(AppStrings.cancel,
                               style: TextStyle(
                                   color: AppColors.danger, fontSize: 12, fontWeight: FontWeight.w700)),
                         ],
@@ -1201,12 +1203,12 @@ if (response.statusCode == 200) {
         childAspectRatio: 2.2,
       ),
       itemCount: _quickBookCategories.length,
-      itemBuilder: (context, i) {
-  final cat = _quickBookCategories[i];
-  final type = cat['type'] as String;
-  final count = _quickBookCounts[type];
-  final color = cat['color'] as Color;
-  return InkWell(
+            itemBuilder: (context, i) {
+        final cat = _quickBookCategories[i];
+        final type = cat['type'] as String;
+        final count = _quickBookCounts[type];
+        final color = cat['color'] as Color;
+        return InkWell(
           onTap: () => _openQuickBookSheet(cat),
           borderRadius: BorderRadius.circular(14),
           child: Container(
@@ -1215,26 +1217,31 @@ if (response.statusCode == 200) {
             child: Row(
               children: [
                 Container(
-  width: 40,
-  height: 40,
-  decoration: BoxDecoration(
-    color: color.withValues(alpha: 0.12),
-    borderRadius: BorderRadius.circular(12),
-  ),
-  child: Icon(cat['icon'] as IconData, color: color, size: 22),
-),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(cat['icon'] as IconData, color: color, size: 22),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(cat['label'] as String,
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: AppColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: AppColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
-                      Text(count == null ? '...' : '$count available now',
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: AppColors.success, fontSize: 10.5, fontWeight: FontWeight.w600)),
+                      Text(count == null ? '...' : AppStrings.availableNow(count),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: AppColors.success, fontSize: 10.5, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),

@@ -7,6 +7,7 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'constants/app_strings.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'constants/api_config.dart';
 import 'models/home_model.dart';
@@ -20,6 +21,7 @@ import 'home_tab.dart' show ScanRequest;
 import 'package:url_launcher/url_launcher.dart';
 import 'services/api_client.dart';
 import 'utils/devices_filter_bus.dart';
+import 'widgets/warranty_badge.dart';
 
 class DevicesTab extends StatefulWidget {
   final String mobileNumber;
@@ -123,11 +125,11 @@ class _DevicesTabState extends State<DevicesTab> {
   String? _currentHomeIdCache;
 
   static const List<Map<String, String>> _categories = [
-    {'label': 'AC', 'key': 'ac'},
-    {'label': 'Fridge', 'key': 'fridge|refrigerator'},
-    {'label': 'Wt. Machine', 'key': 'washing machine'},
-    {'label': 'TV', 'key': 'tv|television'},
-    {'label': 'Fan', 'key': 'fan'},
+    {'label': AppStrings.catAc, 'key': 'ac'},
+    {'label': AppStrings.catFridge, 'key': 'fridge|refrigerator'},
+    {'label': AppStrings.catWashingMachine, 'key': 'washing machine'},
+    {'label': AppStrings.catTv, 'key': 'tv|television'},
+    {'label': AppStrings.catFan, 'key': 'fan'},
   ];
   String? _categoryFilter;
 
@@ -155,6 +157,7 @@ class _DevicesTabState extends State<DevicesTab> {
       _quickFilters.clear();
       _roomFilter = null;
       _categoryFilter = null;
+      _clearAdvanced();
     }
 
     if (initial) {
@@ -234,6 +237,8 @@ class _DevicesTabState extends State<DevicesTab> {
         return e.isAttention;
       case 'Expired':
         return e.isExpired;
+      case 'No warranty':
+        return e.warrantyUnknown;
       case 'Service':
         return e.isServiceDue;
       default:
@@ -262,6 +267,7 @@ class _DevicesTabState extends State<DevicesTab> {
         .where(_matchesTab)
         .where(_matchesQuickFilters)
         .where(_matchesCategory)
+        .where(_matchesAdvanced)
         .where((e) => _matchesQuery(e, _query))
         .toList();
   }
@@ -335,7 +341,14 @@ class _DevicesTabState extends State<DevicesTab> {
     return [];
   }
 
+  // ---------------------------------------------------------------------
+  // SERVICE SHEET — authorized (under warranty) / local (out of warranty)
+  // Book button shows ONLY for local providers.
+  // ---------------------------------------------------------------------
   void _openServiceSheet(_DeviceEntry e) {
+    final providersFuture = _fetchNearbyProviders(e)
+        .timeout(const Duration(seconds: 30), onTimeout: () => <Map<String, dynamic>>[]);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.cardBg,
@@ -343,9 +356,9 @@ class _DevicesTabState extends State<DevicesTab> {
       shape: AppDecor.sheetShape,
       builder: (sheetContext) {
         return FutureBuilder<List<Map<String, dynamic>>>(
-          future: _fetchNearbyProviders(e),
+          future: providersFuture,
           builder: (context, snapshot) {
-            final loading = snapshot.connectionState == ConnectionState.waiting;
+            final loading = snapshot.connectionState != ConnectionState.done;
             final providers = snapshot.data ?? [];
             return Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
@@ -353,10 +366,13 @@ class _DevicesTabState extends State<DevicesTab> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(e.isUnderWarranty ? 'Authorized service centers' : 'Local repair providers',
+                  Text(
+                      e.isUnderWarranty
+                          ? AppStrings.authorizedServiceCenters
+                          : AppStrings.localRepairProviders,
                       style: AppText.dialogTitle),
                   const SizedBox(height: 2),
-                  Text('${e.product} · Pincode ${e.pincode}', style: AppText.caption),
+                  Text(AppStrings.productPincode(e.product, e.pincode), style: AppText.caption),
                   const SizedBox(height: 16),
                   if (loading)
                     const Padding(
@@ -366,7 +382,7 @@ class _DevicesTabState extends State<DevicesTab> {
                   else if (providers.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Text('No service providers found nearby.', style: AppText.faintCaption),
+                      child: Text(AppStrings.noProvidersFound, style: AppText.faintCaption),
                     )
                   else
                     ConstrainedBox(
@@ -383,18 +399,45 @@ class _DevicesTabState extends State<DevicesTab> {
                           final rating = ratingRaw != null && ratingRaw.toString() != 'N/A'
                               ? double.tryParse(ratingRaw.toString())
                               : null;
-                          return ServiceProviderCard(
-                            name: p['name']?.toString() ?? 'Not available',
-                            address: address,
-                            phone: phone,
-                            rating: rating,
-                            onCall: (phone != null && phone.isNotEmpty && phone != 'N/A')
-                                ? () => _callNumber(phone)
-                                : null,
-                            onDirections:
-                                (address != null && address.isNotEmpty && address != 'Address not available')
+                          final hasPhone = phone != null && phone.isNotEmpty && phone != 'N/A';
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ServiceProviderCard(
+                                name: p['name']?.toString() ?? AppStrings.notAvailable,
+                                address: address,
+                                phone: phone,
+                                rating: rating,
+                                onCall: (phone != null && phone.isNotEmpty && phone != 'N/A')
+                                    ? () => _callNumber(phone)
+                                    : null,
+                                onDirections: (address != null &&
+                                        address.isNotEmpty &&
+                                        address != 'Address not available')
                                     ? () => _openMapDirections(address)
                                     : null,
+                              ),
+                              // Book button -> LOCAL (out of warranty) mattum
+                              if (!e.isUnderWarranty) ...[
+                                const SizedBox(height: 6),
+                                ElevatedButton.icon(
+                                  onPressed: hasPhone ? () => _openBookingDialog(sheetContext, p, e) : null,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.danger,
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  ),
+                                  icon: const Icon(Icons.calendar_month_rounded,
+                                      size: 15, color: AppColors.textPrimary),
+                                  label: const Text('Book this provider',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.textPrimary)),
+                                ),
+                              ],
+                            ],
                           );
                         },
                       ),
@@ -408,59 +451,154 @@ class _DevicesTabState extends State<DevicesTab> {
     );
   }
 
-  void _bookAllForResults(List<_DeviceEntry> results) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Requesting service for ${results.length} appliance${results.length == 1 ? '' : 's'}…')),
+  // POST /createServiceTicket
+  Future<bool> _submitServiceTicket({
+    required Map<String, dynamic> provider,
+    required _DeviceEntry device,
+    String? availableTime,
+  }) async {
+    final providerMobile = (provider['mobile'] ?? provider['phone'])?.toString();
+    if (providerMobile == null || providerMobile.isEmpty || providerMobile == 'N/A') {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('This provider has no contact number on file.')));
+      return false;
+    }
+
+    final label = device.brand.isNotEmpty && device.brand.toUpperCase() != 'N/A'
+        ? '${device.brand} ${device.product}'
+        : device.product;
+
+    try {
+      final response = await ApiClient.post(ApiConfig.createServiceTicketUrl, body: {
+        'customerName': widget.name.isNotEmpty ? widget.name : 'Customer',
+        'cust_number': ApiConfig.stripCountryCode(widget.mobileNumber),
+        'address': device.homeAddress,
+        'description': '$label — Out of warranty. Room: ${device.roomName}.',
+        'providerMobile': providerMobile,
+        if (availableTime != null && availableTime.trim().isNotEmpty)
+          'availableTime': availableTime.trim(),
+      });
+      if (!mounted) return false;
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Service booked ✅ — the provider will reach out shortly.')));
+        return true;
+      }
+      final data = jsonDecode(response.body);
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message']?.toString() ?? 'Could not book this provider.')));
+      return false;
+    } catch (err) {
+      debugPrint('❌ Create ticket error: $err');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(AppStrings.networkError)));
+      }
+      return false;
+    }
+  }
+
+  void _openBookingDialog(BuildContext sheetContext, Map<String, dynamic> provider, _DeviceEntry device) {
+    final timeController = TextEditingController();
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.cardBg,
+          shape: AppDecor.dialogShape,
+          title: const Text('Confirm booking', style: AppText.dialogTitle),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${provider['name'] ?? 'Provider'} will be notified about your ${device.product}.',
+                  style: AppText.faintCaption),
+              const SizedBox(height: 14),
+              AppDialogField(
+                controller: timeController,
+                hint: 'Preferred time (optional, e.g. Tomorrow 10 AM)',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext),
+              child: const Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      setDialogState(() => isSubmitting = true);
+                      final ok = await _submitServiceTicket(
+                        provider: provider,
+                        device: device,
+                        availableTime: timeController.text,
+                      );
+                      if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      if (ok && sheetContext.mounted) Navigator.pop(sheetContext); // provider sheet um close
+                    },
+              child: isSubmitting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
+                  : const Text('Book', style: TextStyle(color: AppColors.textPrimary)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  void _openDeviceActions(_DeviceEntry e) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.cardBg,
-      shape: AppDecor.sheetShape,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              ListTile(
-                leading: const Icon(Icons.edit_outlined, color: AppColors.primary),
-                title: const Text('Edit', style: TextStyle(color: AppColors.textPrimary)),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _openEditDialog(e);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.build_rounded, color: AppColors.primary),
-                title: const Text('Find service', style: TextStyle(color: AppColors.textPrimary)),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _openServiceSheet(e);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: AppColors.danger),
-                title: const Text('Remove', style: TextStyle(color: AppColors.danger)),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _confirmRemove(e);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
+  void _bookAllForResults(List<_DeviceEntry> results) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppStrings.requestingService(results.length))),
+    );
+  }
+
+  // Three-dot popup menu shown on every device card.
+  Widget _buildItemMenu(_DeviceEntry e) {
+    PopupMenuItem<String> entry(String value, IconData icon, Color iconColor, String text, Color textColor) {
+      return PopupMenuItem(
+        value: value,
+        child: Row(children: [
+          Icon(icon, size: 16, color: iconColor),
+          const SizedBox(width: 8),
+          Text(text, style: TextStyle(color: textColor)),
+        ]),
+      );
+    }
+
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: PopupMenuButton<String>(
+        padding: EdgeInsets.zero,
+        icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMuted, size: 18),
+        color: AppColors.cardBg,
+        onSelected: (value) {
+          if (value == 'edit') _openEditDialog(e);
+          if (value == 'service') _openServiceSheet(e);
+          if (value == 'delete') _confirmRemove(e);
+        },
+        itemBuilder: (context) => [
+          entry('edit', Icons.edit_outlined, AppColors.primary, AppStrings.edit, AppColors.textPrimary),
+          entry('service', Icons.build_rounded, AppColors.primary, AppStrings.findService,
+              AppColors.textPrimary),
+          entry('delete', Icons.delete_outline, AppColors.danger, AppStrings.remove, AppColors.danger),
+        ],
+      ),
     );
   }
 
   void _openEditDialog(_DeviceEntry e) {
     if (e.deviceId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This item has no deviceId, cannot edit.')),
+        const SnackBar(content: Text(AppStrings.noDeviceIdCannotEdit)),
       );
       return;
     }
@@ -474,19 +612,19 @@ class _DevicesTabState extends State<DevicesTab> {
         builder: (dialogContext, setDialogState) => AlertDialog(
           backgroundColor: AppColors.cardBg,
           shape: AppDecor.dialogShape,
-          title: const Text('Edit Appliance', style: AppText.dialogTitle),
+          title: const Text(AppStrings.editAppliance, style: AppText.dialogTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AppDialogField(controller: productController, hint: 'Product name'),
+              AppDialogField(controller: productController, hint: AppStrings.productNameHint),
               const SizedBox(height: 10),
-              AppDialogField(controller: brandController, hint: 'Brand'),
+              AppDialogField(controller: brandController, hint: AppStrings.brandHint),
             ],
           ),
           actions: [
             TextButton(
               onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+              child: const Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -505,8 +643,8 @@ class _DevicesTabState extends State<DevicesTab> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                             content: Text(result['success'] == true
-                                ? 'Appliance updated ✅'
-                                : (result['message']?.toString() ?? 'Update failed'))),
+                                ? AppStrings.applianceUpdated
+                                : (result['message']?.toString() ?? AppStrings.updateFailed))),
                       );
                       if (result['success'] == true) {
                         setState(() {
@@ -520,7 +658,7 @@ class _DevicesTabState extends State<DevicesTab> {
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
-                  : const Text('Save', style: TextStyle(color: AppColors.textPrimary)),
+                  : const Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
             ),
           ],
         ),
@@ -531,8 +669,8 @@ class _DevicesTabState extends State<DevicesTab> {
   Future<void> _confirmRemove(_DeviceEntry e) async {
     final ok = await showConfirmActionDialog(
       context,
-      title: 'Remove appliance?',
-      content: '${e.product} will be removed from ${e.roomName}.',
+      title: AppStrings.removeApplianceQ,
+      content: AppStrings.removeApplianceContent(e.product, e.roomName),
     );
     if (ok != true || e.homeId == null) return;
     try {
@@ -543,15 +681,15 @@ class _DevicesTabState extends State<DevicesTab> {
       if (!mounted) return;
       if (response.statusCode == 200) {
         setState(() {}); // Hive box listener will refresh once HomeTab re-fetches.
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${e.product} removed ✅')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppStrings.applianceRemoved(e.product))));
       } else {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Could not remove appliance.')));
+            .showSnackBar(const SnackBar(content: Text(AppStrings.couldNotRemoveAppliance)));
       }
     } catch (err) {
       debugPrint('❌ Delete device error: $err');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Network error. Try again.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(AppStrings.networkError)));
       }
     }
   }
@@ -582,14 +720,22 @@ class _DevicesTabState extends State<DevicesTab> {
                 const SizedBox(height: 12),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _buildSearchBar(),
+                  child: Row(
+                    children: [
+                      Expanded(child: _buildSearchBar()),
+                      const SizedBox(width: 10),
+                      _buildFilterButton(allDevices),
+                    ],
+                  ),
                 ),
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
                     child: _searchActive
                         ? _buildSearchMode(allDevices, filtered)
-                        : _buildDashboard(allDevices),
+                        : (_advancedActive
+                            ? _buildFilteredView(allDevices, filtered)
+                            : _buildDashboard(allDevices)),
                   ),
                 ),
               ],
@@ -608,10 +754,10 @@ class _DevicesTabState extends State<DevicesTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('My Devices',
+              const Text(AppStrings.myDevices,
                   style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 2),
-              Text('$city · $total registered', style: AppText.caption),
+              Text(AppStrings.citySummary(city, total), style: AppText.caption),
             ],
           ),
         ),
@@ -624,7 +770,7 @@ class _DevicesTabState extends State<DevicesTab> {
               children: [
                 Icon(Icons.qr_code_scanner_rounded, size: 15, color: AppColors.primary),
                 SizedBox(width: 4),
-                Text('Scan new', style: AppText.linkAction),
+                Text(AppStrings.scanNew, style: AppText.linkAction),
               ],
             ),
           ),
@@ -664,7 +810,7 @@ class _DevicesTabState extends State<DevicesTab> {
               onSubmitted: _submitSearch,
               style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
               decoration: const InputDecoration(
-                hintText: 'Search appliances, brand, room…',
+                hintText: AppStrings.searchApplianceHint,
                 hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
                 border: InputBorder.none,
                 isDense: true,
@@ -680,17 +826,408 @@ class _DevicesTabState extends State<DevicesTab> {
                 child: Icon(Icons.close_rounded, size: 16, color: AppColors.textMuted),
               ),
             )
-          else if (!_searchActive)
-            InkWell(
-              onTap: () => _searchFocus.requestFocus(),
-              borderRadius: BorderRadius.circular(20),
-              child: const Padding(
-                padding: EdgeInsets.all(6),
-                child: Icon(Icons.tune_rounded, size: 18, color: AppColors.primary),
+        ],
+      ),
+    );
+  }
+
+  // ---------------- ADVANCED FILTER (Amazon / Flipkart style) ----------------
+  // Multi-select. OR inside one group, AND between groups.
+  final Set<String> _fStatus = {};
+  final Set<String> _fCategories = {};
+  final Set<String> _fBrands = {};
+
+  int get _advancedCount => _fStatus.length + _fCategories.length + _fBrands.length;
+  bool get _advancedActive => _advancedCount > 0;
+
+  void _clearAdvanced() {
+    _fStatus.clear();
+    _fCategories.clear();
+    _fBrands.clear();
+  }
+
+  static const List<Map<String, String>> _statusOptions = [
+    {'key': 'active', 'label': 'Under warranty'},
+    {'key': 'expiring', 'label': 'Expiring in 30 days'},
+    {'key': 'expired', 'label': 'Warranty expired'},
+    {'key': 'unknown', 'label': 'Warranty unknown'},
+    {'key': 'service', 'label': 'Service due'},
+  ];
+
+  bool _statusMatch(_DeviceEntry e, String key) {
+    switch (key) {
+      case 'active':
+        return e.isUnderWarranty;
+      case 'expiring':
+        return e.isUnderWarranty && e.expiry!.difference(DateTime.now()).inDays <= 30;
+      case 'expired':
+        return e.isExpired;
+      case 'unknown':
+        return e.warrantyUnknown;
+      case 'service':
+        return e.isServiceDue;
+    }
+    return false;
+  }
+
+  bool _matchesAdvancedWith(
+    _DeviceEntry e,
+    Set<String> status,
+    Set<String> cats,
+    Set<String> brands,
+  ) {
+    if (status.isNotEmpty && !status.any((k) => _statusMatch(e, k))) return false;
+    if (cats.isNotEmpty) {
+      final text = e.product.toLowerCase();
+      if (!cats.any((c) => c.split('|').any((k) => text.contains(k)))) return false;
+    }
+    if (brands.isNotEmpty && !brands.contains(e.brand.trim().toLowerCase())) return false;
+    return true;
+  }
+
+  bool _matchesAdvanced(_DeviceEntry e) =>
+      _matchesAdvancedWith(e, _fStatus, _fCategories, _fBrands);
+
+  String _cap(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+  Map<String, String> _brandMap(List<_DeviceEntry> all) {
+    final map = <String, String>{};
+    for (final e in all) {
+      final b = e.brand.trim();
+      if (b.isEmpty || b.toLowerCase() == 'unknown' || b.toUpperCase() == 'N/A') continue;
+      map.putIfAbsent(b.toLowerCase(), () => b);
+    }
+    return map;
+  }
+
+  Widget _buildFilterButton(List<_DeviceEntry> all) {
+    final count = _advancedCount;
+    return InkWell(
+      onTap: () => _openFilterSheet(all),
+      borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: count > 0 ? AppColors.primarySoft : AppColors.cardBg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: count > 0 ? AppColors.primary : AppColors.borderSubtle),
+            ),
+            child: const Icon(Icons.tune_rounded, size: 20, color: AppColors.primary),
+          ),
+          if (count > 0)
+            Positioned(
+              top: -5,
+              right: -5,
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                child: Text('$count',
+                    style: const TextStyle(
+                        color: AppColors.onPrimary, fontSize: 10, fontWeight: FontWeight.w700)),
               ),
             ),
         ],
       ),
+    );
+  }
+
+  void _openFilterSheet(List<_DeviceEntry> all) {
+    final status = {..._fStatus};
+    final cats = {..._fCategories};
+    final brands = {..._fBrands};
+    String section = 'status';
+
+    final brandMap = _brandMap(all);
+    final brandKeys = brandMap.keys.toList()..sort();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardBg,
+      isScrollControlled: true,
+      shape: AppDecor.sheetShape,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheet) {
+          final resultCount =
+              all.where((e) => _matchesAdvancedWith(e, status, cats, brands)).length;
+
+          final sections = <Map<String, dynamic>>[
+            {'key': 'status', 'label': 'Warranty', 'n': status.length},
+            {'key': 'category', 'label': 'Appliance', 'n': cats.length},
+            {'key': 'brand', 'label': 'Brand', 'n': brands.length},
+          ];
+
+          final Set<String> selected;
+          final List<MapEntry<String, String>> opts;
+          final int Function(String) countFor;
+          switch (section) {
+            case 'status':
+              selected = status;
+              opts = _statusOptions.map((o) => MapEntry(o['key']!, o['label']!)).toList();
+              countFor = (k) => all.where((e) => _statusMatch(e, k)).length;
+              break;
+            case 'category':
+              selected = cats;
+              opts = _categories.map((c) => MapEntry(c['key']!, c['label']!)).toList();
+              countFor = (k) => all.where((e) {
+                    final t = e.product.toLowerCase();
+                    return k.split('|').any((x) => t.contains(x));
+                  }).length;
+              break;
+            default:
+              selected = brands;
+              opts = brandKeys.map((b) => MapEntry(b, brandMap[b]!)).toList();
+              countFor = (k) => all.where((e) => e.brand.trim().toLowerCase() == k).length;
+          }
+
+          return SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * 0.8,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 8, 6),
+                  child: Row(
+                    children: [
+                      const Text('Filters', style: AppText.dialogTitle),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close_rounded, color: AppColors.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: AppColors.borderSubtle),
+                Expanded(
+                  child: Row(
+                    children: [
+                      // LEFT: filter groups
+                      Container(
+                        width: 118,
+                        color: AppColors.scaffoldBg,
+                        child: ListView(
+                          children: sections.map((s) {
+                            final isSel = section == s['key'];
+                            final n = s['n'] as int;
+                            return InkWell(
+                              onTap: () => setSheet(() => section = s['key'] as String),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                                decoration: BoxDecoration(
+                                  color: isSel ? AppColors.cardBg : Colors.transparent,
+                                  border: Border(
+                                    left: BorderSide(
+                                      color: isSel ? AppColors.primary : Colors.transparent,
+                                      width: 3,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        s['label'] as String,
+                                        style: TextStyle(
+                                          color: isSel ? AppColors.primary : AppColors.textSecondary,
+                                          fontSize: 13,
+                                          fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    if (n > 0)
+                                      Container(
+                                        padding: const EdgeInsets.all(5),
+                                        decoration: const BoxDecoration(
+                                            color: AppColors.primary, shape: BoxShape.circle),
+                                        child: Text('$n',
+                                            style: const TextStyle(
+                                                color: AppColors.onPrimary,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700)),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      // RIGHT: options with checkboxes
+                      Expanded(
+                        child: opts.isEmpty
+                            ? const Center(
+                                child: Text('No options available', style: AppText.faintCaption))
+                            : ListView(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                children: opts.map((o) {
+                                  final checked = selected.contains(o.key);
+                                  return InkWell(
+                                    onTap: () => setSheet(() {
+                                      if (!selected.remove(o.key)) selected.add(o.key);
+                                    }),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      child: Row(
+                                        children: [
+                                          Checkbox(
+                                            value: checked,
+                                            activeColor: AppColors.primary,
+                                            checkColor: AppColors.onPrimary,
+                                            visualDensity: VisualDensity.compact,
+                                            onChanged: (_) => setSheet(() {
+                                              if (!selected.remove(o.key)) selected.add(o.key);
+                                            }),
+                                          ),
+                                          Expanded(
+                                            child: Text(o.value,
+                                                style: const TextStyle(
+                                                    color: AppColors.textPrimary, fontSize: 13.5)),
+                                          ),
+                                          Text('${countFor(o.key)}', style: AppText.caption),
+                                          const SizedBox(width: 8),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: AppColors.borderSubtle),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => setSheet(() {
+                              status.clear();
+                              cats.clear();
+                              brands.clear();
+                            }),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppColors.borderSubtle),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: const Text('Clear all',
+                                style: TextStyle(
+                                    color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _fStatus
+                                  ..clear()
+                                  ..addAll(status);
+                                _fCategories
+                                  ..clear()
+                                  ..addAll(cats);
+                                _fBrands
+                                  ..clear()
+                                  ..addAll(brands);
+                              });
+                              Navigator.pop(sheetContext);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: Text('Show $resultCount device${resultCount == 1 ? '' : 's'}',
+                                style: const TextStyle(
+                                    color: AppColors.onPrimary, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Removable chips for the currently applied filters.
+  Widget _buildActiveFilterChips(List<_DeviceEntry> all) {
+    final brandMap = _brandMap(all);
+
+    Widget chip(String label, VoidCallback onRemove) {
+      return InkWell(
+        onTap: () => setState(onRemove),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.primary),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, style: const TextStyle(color: AppColors.primary, fontSize: 12.5)),
+              const SizedBox(width: 6),
+              const Icon(Icons.close_rounded, size: 14, color: AppColors.primary),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final chips = <Widget>[
+      for (final k in _fStatus.toList())
+        chip(_statusOptions.firstWhere((o) => o['key'] == k)['label']!, () => _fStatus.remove(k)),
+      for (final k in _fCategories.toList())
+        chip(_categories.firstWhere((c) => c['key'] == k)['label']!, () => _fCategories.remove(k)),
+      for (final k in _fBrands.toList()) chip(brandMap[k] ?? _cap(k), () => _fBrands.remove(k)),
+    ];
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        ...chips,
+        InkWell(
+          onTap: () => setState(_clearAdvanced),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            child: Text('Clear all', style: AppText.linkAction),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Shown on the Devices screen when filters are applied (no search text).
+  Widget _buildFilteredView(List<_DeviceEntry> all, List<_DeviceEntry> filtered) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildActiveFilterChips(all),
+        const SizedBox(height: 14),
+        Text('${filtered.length} DEVICE${filtered.length == 1 ? '' : 'S'}',
+            style: const TextStyle(
+                color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+        const SizedBox(height: 12),
+        ..._buildResultsList(filtered),
+      ],
     );
   }
 
@@ -706,17 +1243,17 @@ class _DevicesTabState extends State<DevicesTab> {
           _buildQuickFilters(all),
           const SizedBox(height: 20),
           if (_recentSearches.isNotEmpty) ...[
-            const Text('RECENT SEARCHES',
+            const Text(AppStrings.recentSearches,
                 style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
             const SizedBox(height: 10),
             Wrap(spacing: 8, runSpacing: 8, children: _recentSearches.map(_recentChip).toList()),
             const SizedBox(height: 20),
           ],
-          const Text('BROWSE BY CATEGORY',
+          const Text(AppStrings.browseByCategory,
               style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 8, children: _categories.map(_categoryChip).toList()),
-          if (_quickFilters.isNotEmpty || _categoryFilter != null || _roomFilter != null) ...[
+          if (_quickFilters.isNotEmpty || _categoryFilter != null || _roomFilter != null || _advancedActive) ...[
             const SizedBox(height: 20),
             ..._buildResultsList(filtered),
           ],
@@ -727,7 +1264,7 @@ class _DevicesTabState extends State<DevicesTab> {
   }
 
   Widget _buildTabsRow() {
-    const tabs = ['All', 'Warranty', 'Attention', 'Expired', 'Service'];
+        const tabs = ['All', 'Warranty', 'Attention', 'No warranty',];
     return SizedBox(
       height: 34,
       child: ListView.separated(
@@ -737,15 +1274,7 @@ class _DevicesTabState extends State<DevicesTab> {
         itemBuilder: (context, i) {
           final t = tabs[i];
           final selected = _activeTab == t;
-          return ChoiceChip(
-            label: Text(t),
-            selected: selected,
-            onSelected: (_) => setState(() => _activeTab = t),
-            backgroundColor: AppColors.cardBg,
-            selectedColor: AppColors.primary,
-            labelStyle: selected ? AppText.chipSelected : AppText.chipUnselected,
-            side: BorderSide(color: selected ? AppColors.primary : AppColors.borderMuted),
-          );
+                                        return _dashPill(t, selected, () => setState(() => _activeTab = t));
         },
       ),
     );
@@ -780,25 +1309,25 @@ class _DevicesTabState extends State<DevicesTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('QUICK FILTERS',
+        const Text(AppStrings.quickFilters,
             style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
-            chip('Expired warranty', Icons.error_outline_rounded, _quickFilters.contains('expired'), () {
+            chip(AppStrings.filterExpiredWarranty, Icons.error_outline_rounded, _quickFilters.contains('expired'), () {
               setState(() {
                 if (!_quickFilters.remove('expired')) _quickFilters.add('expired');
               });
             }),
-            chip('Service due', Icons.build_outlined, _quickFilters.contains('service'), () {
+            chip(AppStrings.filterServiceDue, Icons.build_outlined, _quickFilters.contains('service'), () {
               setState(() {
                 if (!_quickFilters.remove('service')) _quickFilters.add('service');
               });
             }),
-            chip('By room', Icons.door_front_door_outlined, _roomFilter != null, () => _openRoomPicker(rooms)),
-            chip('Healthy', Icons.check_circle_outline_rounded, _quickFilters.contains('healthy'), () {
+            chip(AppStrings.filterByRoom, Icons.door_front_door_outlined, _roomFilter != null, () => _openRoomPicker(rooms)),
+            chip(AppStrings.filterHealthy, Icons.check_circle_outline_rounded, _quickFilters.contains('healthy'), () {
               setState(() {
                 if (!_quickFilters.remove('healthy')) _quickFilters.add('healthy');
               });
@@ -820,7 +1349,7 @@ class _DevicesTabState extends State<DevicesTab> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 8),
-              const Text('Filter by room', style: AppText.dialogTitle),
+              const Text(AppStrings.filterByRoomTitle, style: AppText.dialogTitle),
               const SizedBox(height: 8),
               ...rooms.map((r) => ListTile(
                     title: Text(r[0].toUpperCase() + r.substring(1), style: const TextStyle(color: AppColors.textPrimary)),
@@ -888,7 +1417,7 @@ class _DevicesTabState extends State<DevicesTab> {
     }
     return [
       if (showHeader) ...[
-        Text('${results.length} RESULT${results.length == 1 ? '' : 'S'} FOR "${_query.trim()}"',
+        Text(AppStrings.resultsFor(results.length, _query.trim()),
             style: const TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
         const SizedBox(height: 12),
       ],
@@ -908,7 +1437,7 @@ class _DevicesTabState extends State<DevicesTab> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             icon: const Icon(Icons.build_rounded, size: 15, color: AppColors.primary),
-            label: Text('Book service for all ${results.length}',
+            label: Text(AppStrings.bookServiceForAll(results.length),
                 style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
           ),
         ),
@@ -916,73 +1445,50 @@ class _DevicesTabState extends State<DevicesTab> {
     ];
   }
 
+  // Search-result card: plain border, three-dot menu only.
   Widget _buildResultCard(_DeviceEntry e) {
-    String badgeText;
-    Color badgeColor;
-    if (e.warrantyUnknown) {
-      badgeText = 'Unregistered';
-      badgeColor = AppColors.textMuted;
-    } else if (e.isExpired) {
-      final days = DateTime.now().difference(e.expiry!).inDays;
-      badgeText = 'Warranty expired · $days d ago';
-      badgeColor = AppColors.danger;
-    } else {
-      final daysLeft = e.expiry!.difference(DateTime.now()).inDays;
-      if (daysLeft <= 30) {
-        badgeText = 'Warranty expiring · $daysLeft days';
-        badgeColor = AppColors.warning;
-      } else {
-        final years = (daysLeft / 365).toStringAsFixed(daysLeft >= 365 ? 0 : 1);
-        badgeText = 'Warranty active · $years${daysLeft >= 365 ? 'yr' : ' yrs'}';
-        badgeColor = AppColors.success;
-      }
-    }
-
-    return InkWell(
-      onTap: () => _openDeviceActions(e),
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: badgeColor.withValues(alpha: 0.5)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(color: AppColors.borderSubtle, borderRadius: BorderRadius.circular(10)),
-              clipBehavior: Clip.antiAlias,
-              child: e.imageUrl != null && e.imageUrl!.isNotEmpty
-                  ? Image.network(e.imageUrl!, fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const Icon(Icons.devices_other_rounded, color: AppColors.textFaint))
-                  : const Icon(Icons.devices_other_rounded, color: AppColors.textFaint),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(color: AppColors.borderSubtle, borderRadius: BorderRadius.circular(10)),
+            clipBehavior: Clip.antiAlias,
+            child: e.imageUrl != null && e.imageUrl!.isNotEmpty
+                ? Image.network(e.imageUrl!, fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const Icon(Icons.devices_other_rounded, color: AppColors.textFaint))
+                : const Icon(Icons.devices_other_rounded, color: AppColors.textFaint),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${e.brand.isNotEmpty ? '${e.brand} ' : ''}${e.product}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text('${e.roomName} · ${e.purchasedYear}', style: AppText.caption),
+                const SizedBox(height: 6),
+                WarrantyBadge(expiry: e.expiry),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('${e.brand.isNotEmpty ? '${e.brand} ' : ''}${e.product}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text('${e.roomName} · ${e.purchasedYear}', style: AppText.caption),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                    decoration: BoxDecoration(color: badgeColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-                    child: Text(badgeText, style: TextStyle(color: badgeColor, fontSize: 11, fontWeight: FontWeight.w600)),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: AppColors.textFaint),
-          ],
-        ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _buildItemMenu(e),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -995,11 +1501,11 @@ class _DevicesTabState extends State<DevicesTab> {
         children: [
           const Icon(Icons.search_off_rounded, size: 40, color: AppColors.textFaint),
           const SizedBox(height: 14),
-          const Text('No appliance found',
+          const Text(AppStrings.noApplianceFound,
               style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text(
-            q.isNotEmpty ? '"$q" is not registered in your home yet.' : 'Try a different search or filter.',
+            q.isNotEmpty ? AppStrings.notRegisteredYet(q) : AppStrings.tryDifferentSearch,
             textAlign: TextAlign.center,
             style: AppText.faintCaption,
           ),
@@ -1014,21 +1520,21 @@ class _DevicesTabState extends State<DevicesTab> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               icon: const Icon(Icons.qr_code_scanner_rounded, size: 16, color: AppColors.primary),
-              label: Text(q.isNotEmpty ? 'Scan and add $q' : 'Scan and add appliance',
+              label: Text(q.isNotEmpty ? AppStrings.scanAndAdd(q) : AppStrings.scanAndAddAppliance,
                   style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
             ),
           ),
           const SizedBox(height: 16),
-          const Text('Or try searching for:', style: AppText.faintCaption),
+          const Text(AppStrings.orTrySearchingFor, style: AppText.faintCaption),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             alignment: WrapAlignment.center,
             children: [
-              _suggestionChip('By room', Icons.door_front_door_outlined, () {}),
-              _suggestionChip('By brand', Icons.sell_outlined, () {}),
-              _suggestionChip('All devices', Icons.devices_other_rounded, _exitSearch),
+              _suggestionChip(AppStrings.filterByRoom, Icons.door_front_door_outlined, () {}),
+              _suggestionChip(AppStrings.byBrand, Icons.sell_outlined, () {}),
+              _suggestionChip(AppStrings.allDevices, Icons.devices_other_rounded, _exitSearch),
             ],
           ),
         ],
@@ -1063,6 +1569,7 @@ class _DevicesTabState extends State<DevicesTab> {
   Widget _buildDashboard(List<_DeviceEntry> all) {
     final warrantyOk = all.where((e) => e.isUnderWarranty).length;
     final attentionCount = all.where((e) => e.isAttention).length;
+        final noWarrantyCount = all.where((e) => e.warrantyUnknown).length;
 
     // List follows the active pill
     final visible = all.where(_matchesTab).toList();
@@ -1078,33 +1585,38 @@ class _DevicesTabState extends State<DevicesTab> {
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: [
-              _dashPill('All ${all.length}', _activeTab == 'All', () => setState(() => _activeTab = 'All')),
+              _dashPill(AppStrings.pillAll(all.length), _activeTab == 'All', () => setState(() => _activeTab = 'All')),
               const SizedBox(width: 8),
-              _dashPill('Attention $attentionCount', _activeTab == 'Attention',
+              _dashPill(AppStrings.pillAttention(attentionCount), _activeTab == 'Attention',
                   () => setState(() => _activeTab = 'Attention')),
               const SizedBox(width: 8),
-              _dashPill('Warranty $warrantyOk', _activeTab == 'Warranty',
+              _dashPill(AppStrings.pillWarranty(warrantyOk), _activeTab == 'Warranty',
                   () => setState(() => _activeTab = 'Warranty')),
+                                const SizedBox(width: 8),
+              _dashPill('No warranty $noWarrantyCount', _activeTab == 'No warranty',
+                  () => setState(() => _activeTab = 'No warranty')),
             ],
           ),
         ),
         if (attention.isNotEmpty) ...[
           const SizedBox(height: 22),
-          _sectionHeader('⚠ NEEDS ATTENTION'),
+          _sectionHeader(AppStrings.needsAttention),
           const SizedBox(height: 10),
           ...attention.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'attention'))),
         ],
         if (serviceDue.isNotEmpty) ...[
           const SizedBox(height: 22),
-          _sectionHeader('🔧 SERVICE DUE'),
+          _sectionHeader(AppStrings.serviceDueHeader),
           const SizedBox(height: 10),
           ...serviceDue.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'service'))),
         ],
         if (healthy.isNotEmpty) ...[
           const SizedBox(height: 22),
-          _sectionHeader('✓ HEALTHY DEVICES'),
+                    _sectionHeader(_activeTab == 'No warranty'
+              ? 'NO WARRANTY DEVICES'
+              : AppStrings.healthyDevices),
           const SizedBox(height: 10),
           ...healthy.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'healthy'))),
@@ -1116,27 +1628,39 @@ class _DevicesTabState extends State<DevicesTab> {
               children: [
                 Icon(Icons.devices_other_rounded, size: 40, color: AppColors.textFaint),
                 SizedBox(height: 10),
-                Text('No appliances yet', style: TextStyle(color: AppColors.textMuted)),
+                Text(AppStrings.noAppliancesYet, style: TextStyle(color: AppColors.textMuted)),
               ],
             ),
           ),
         ] else if (visible.isEmpty) ...[
           const SizedBox(height: 40),
-          const Center(child: Text('No devices in this filter', style: TextStyle(color: AppColors.textMuted))),
+          const Center(child: Text(AppStrings.noDevicesInFilter, style: TextStyle(color: AppColors.textMuted))),
         ],
       ],
     );
   }
 
   Widget _dashPill(String label, bool selected, VoidCallback onTap) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-      backgroundColor: AppColors.cardBg,
-      selectedColor: AppColors.primary,
-      labelStyle: selected ? AppText.chipSelected : AppText.chipUnselected,
-      side: BorderSide(color: selected ? AppColors.primary : AppColors.borderMuted),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : AppColors.cardBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: selected ? AppColors.primary : AppColors.borderMuted),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selected ? AppColors.onPrimary : AppColors.textSecondary,
+          ),
+        ),
+      ),
     );
   }
 
@@ -1146,105 +1670,55 @@ class _DevicesTabState extends State<DevicesTab> {
             color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8));
   }
 
+  // Dashboard card: plain border, three-dot menu only.
   Widget _buildDashCard(_DeviceEntry e, String variant) {
-    Color accent;
-    String rightLabel;
-    IconData rightIcon;
-    List<Widget> badges;
+    final List<Widget> badges = variant == 'service'
+        ? [_pill(AppStrings.filterServiceDue, AppColors.warning), WarrantyBadge(expiry: e.expiry)]
+        : [WarrantyBadge(expiry: e.expiry)];
 
-    switch (variant) {
-      case 'attention':
-        accent = e.isExpired ? AppColors.danger : AppColors.warning;
-        rightLabel = e.ageLabel;
-        rightIcon = e.isExpired ? Icons.build_rounded : Icons.shield_outlined;
-        final days = e.isExpired
-            ? DateTime.now().difference(e.expiry!).inDays
-            : e.expiry!.difference(DateTime.now()).inDays;
-        badges = [
-          _pill(e.isExpired ? 'Warranty expired' : 'Expires in $days days', accent),
-          const SizedBox(width: 6),
-          _pill(e.isExpired ? '$days days ago' : '', AppColors.textMuted, plain: true),
-        ];
-        break;
-      case 'service':
-        accent = AppColors.warning;
-        rightLabel = e.ageLabel;
-        rightIcon = Icons.calendar_month_rounded;
-        badges = [
-          _pill('Service due', AppColors.warning),
-          const SizedBox(width: 6),
-          _pill(e.isUnderWarranty ? 'Warranty active' : 'Warranty expired',
-              e.isUnderWarranty ? AppColors.success : AppColors.danger),
-        ];
-        break;
-      default:
-        accent = AppColors.success;
-        rightLabel = e.ageLabel;
-        rightIcon = Icons.chevron_right_rounded;
-        badges = [
-          _pill(e.warrantyUnknown ? 'No warranty data' : 'Warranty active',
-              e.warrantyUnknown ? AppColors.textMuted : AppColors.success),
-        ];
-    }
-
-    return InkWell(
-      onTap: () => _openDeviceActions(e),
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: accent.withValues(alpha: 0.5)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(color: accent.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-              clipBehavior: Clip.antiAlias,
-              child: e.imageUrl != null && e.imageUrl!.isNotEmpty
-                  ? Image.network(e.imageUrl!, fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Icon(Icons.devices_other_rounded, color: accent))
-                  : Icon(Icons.devices_other_rounded, color: accent),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(e.product,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text('${e.roomName} · Purchased ${e.purchasedYear}', style: AppText.caption),
-                  const SizedBox(height: 6),
-                  Wrap(spacing: 6, runSpacing: 6, children: badges),
-                ],
-              ),
-            ),
-            const SizedBox(width: 6),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(color: AppColors.borderSubtle, borderRadius: BorderRadius.circular(10)),
+            clipBehavior: Clip.antiAlias,
+            child: e.imageUrl != null && e.imageUrl!.isNotEmpty
+                ? Image.network(e.imageUrl!, fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const Icon(Icons.devices_other_rounded, color: AppColors.textFaint))
+                : const Icon(Icons.devices_other_rounded, color: AppColors.textFaint),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (rightLabel.isNotEmpty)
-                  Text(rightLabel, style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
-                const SizedBox(height: 8),
-                InkWell(
-                  onTap: () => variant == 'healthy' ? _openDeviceActions(e) : _openServiceSheet(e),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(color: accent.withValues(alpha: 0.12), shape: BoxShape.circle),
-                    child: Icon(rightIcon, size: 14, color: accent),
-                  ),
-                ),
+                Text(e.product,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(AppStrings.roomPurchased(e.roomName, e.purchasedYear), style: AppText.caption),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: badges),
               ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _buildItemMenu(e),
+            ],
+          ),
+        ],
       ),
     );
   }

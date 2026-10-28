@@ -64,7 +64,8 @@ class AppStrings {
   static const String noAppliancesYet = 'No appliances yet';
   static const String tapAddDeviceBelow = 'Tap + Add Device below to add one.';
   static const String brandNotAdded = 'Brand not added';
-  static const String noWarrantyInfo = 'No warranty info';
+  static const String noWarrantyInfo = 'No warranty';
+    static const String noWarranty = 'No warranty';
   static const String warrantyActive = 'Warranty Active';
   static const String warrantyExpired = 'Warranty Expired';
   static String validTill(String date) => 'Valid till $date';
@@ -166,7 +167,7 @@ class AppStrings {
   static String daysAgo(int d) => '$d days ago';
   static const String serviceDueLabel = 'Service due';
   static const String warrantyActiveLabel = 'Warranty active';
-  static const String noWarrantyData = 'No warranty data';
+  static const String noWarrantyData = 'No warranty';
   static String roomPurchased(String room, String year) => '$room · Purchased $year';
 
   static const String findService = 'Find service';
@@ -418,4 +419,7 @@ class AppStrings {
   static const String supportEmail = 'support@zhini.co.in';
   static const String supportEmailSubject = 'ZHINI App Support';
   static const String couldNotOpenMail = 'Could not open mail app.';
+     static const String statusExpired = 'Expired';
+   static const String statusExpiringSoon = 'Expiring soon';
+   static const String statusActive = 'Active';
 }
