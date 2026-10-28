@@ -3,6 +3,7 @@ import 'theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'onboarding_screen.dart';
 import 'main_shell.dart';
+import 'service_provider_dashboard.dart'; // NEW
 import 'services/session_manager.dart';
 import 'services/log_service.dart';
 import 'widgets/zhini_logo.dart';
@@ -60,6 +61,21 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (session != null) {
       LogService.instance.mobile = session['mobileNumber'];
+
+      // NEW: service provider na dashboard ku po
+      if (session['role'] == 'provider') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ServiceProviderDashboard(
+              name: session['name'] ?? '',
+              mobileNumber: session['mobileNumber']!,
+            ),
+          ),
+        );
+        return;
+      }
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -122,11 +138,11 @@ class _SplashScreenState extends State<SplashScreen>
                     child: const Text(
                       'ZHINI',
                       style: TextStyle(
-  color: AppColors.textPrimary,
-  fontSize: 24,
-  fontWeight: FontWeight.w700,
-  letterSpacing: 7.0,
-),
+                        color: AppColors.textPrimary,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 7.0,
+                      ),
                     ),
                   ),
                 ),

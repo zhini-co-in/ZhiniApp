@@ -284,6 +284,7 @@ class _OtpScreenState extends State<OtpScreen> {
               pincode: existingPincode,
               name: existingName,
               homeId: existingHomeId,
+              role: 'user', // NEW: fresh login la role reset (provider na aduthu set aagum)
             );
 
             if (!mounted) return;
@@ -369,6 +370,11 @@ class _OtpScreenState extends State<OtpScreen> {
           if (providers.isNotEmpty) {
             final firstProvider = providers.first as Map<String, dynamic>;
             final existingName = (firstProvider['name'] ?? '').toString();
+
+            if (!mounted) return;
+
+            // NEW: provider role save pannu, appo app restart la dashboard ku pogum
+            await SessionManager.setRole('provider');
 
             if (!mounted) return;
             Navigator.pushReplacement(
@@ -710,18 +716,18 @@ class _OtpScreenState extends State<OtpScreen> {
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(
-  color: AppColors.onPrimary,
-  strokeWidth: 2,
-),
+                            color: AppColors.onPrimary,
+                            strokeWidth: 2,
+                          ),
                         )
                       : Text(
                           'Verify and continue',
                           style: TextStyle(
-  color: _enteredOtp.length == _otpLength
-      ? AppColors.onPrimary
-      : AppColors.textMuted,
-  fontSize: 16,
-),
+                            color: _enteredOtp.length == _otpLength
+                                ? AppColors.onPrimary
+                                : AppColors.textMuted,
+                            fontSize: 16,
+                          ),
                         ),
                 ),
               ),
@@ -784,8 +790,8 @@ class _OtpScreenState extends State<OtpScreen> {
                             color: AppColors.primary, size: 42),
                         Padding(
                           padding: EdgeInsets.only(top: 2),
-                          child:
-                              Icon(Icons.lock, color: AppColors.primary, size: 16),
+                          child: Icon(Icons.lock,
+                              color: AppColors.primary, size: 16),
                         ),
                       ],
                     ),

@@ -10,6 +10,7 @@ import 'service_provider_dashboard.dart';
 import 'login_screen.dart';
 import 'services/api_client.dart';
 import 'services/device_id_service.dart';
+import 'services/session_manager.dart';
 
 class ServiceProviderOnboardingScreen extends StatefulWidget {
   final String mobileNumber;
@@ -76,6 +77,7 @@ class _ServiceProviderOnboardingScreenState
   // User record already created in this session (retry la thirumba create
   // aagaama irukka).
   bool _userCreated = false;
+  String? _createdHomeId;
 
   String get _plainMobile => ApiConfig.stripCountryCode(widget.mobileNumber);
 
@@ -120,7 +122,10 @@ class _ServiceProviderOnboardingScreenState
       ),
     );
 
-    if (confirm == true && mounted) {
+        if (confirm == true && mounted) {
+      await SessionManager.clearSession(); // NEW
+      await FirebaseAuth.instance.signOut(); // NEW (optional, but recommended)
+      if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -244,14 +249,15 @@ class _ServiceProviderOnboardingScreenState
     try {
       // Step A: user record illa na mudhalla adhai create pannu.
       if (widget.createUserFirst && !_userCreated) {
-        final homeId = await _createUserRecord();
+                final homeId = await _createUserRecord();
         if (homeId == null) {
           if (mounted) {
             _showSnack('Could not create your account. Please try again.');
           }
-          return; // finally block _isSubmitting reset pannum
+          return;
         }
         _userCreated = true;
+        _createdHomeId = homeId; // NEW
       }
 
       // Step B: service provider create.
@@ -299,7 +305,24 @@ class _ServiceProviderOnboardingScreenState
 
       if (!mounted) return;
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
+            if (response.statusCode == 201 || response.statusCode == 200) {
+        if (widget.createUserFirst) {
+          // Puthu user: session ippo dhaan create aagudhu
+          final pincode = _pincodeController.text.trim();
+          await SessionManager.saveSession(
+            mobileNumber: widget.mobileNumber,
+            address: '${_addressController.text.trim()} - $pincode',
+            pincode: pincode,
+            name: _nameController.text.trim(),
+            homeId: _createdHomeId,
+            role: 'provider',
+          );
+        } else {
+          // Existing user: address maathaama role mattum set pannu
+          await SessionManager.setRole('provider');
+        }
+
+        if (!mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(

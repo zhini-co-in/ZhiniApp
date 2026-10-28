@@ -50,7 +50,6 @@ static Future<String> createManualTicket({
   required String customerPhone,
   required String address,
   required String description,
-  required String availableTime,
   required String providerMobile,
 }) async {
   final uri = Uri.parse(ApiConfig.createServiceTicketUrl);
@@ -62,7 +61,6 @@ static Future<String> createManualTicket({
       'cust_number': customerPhone,
       'address': address,
       'description': description,
-      'availableTime': availableTime,
       'providerMobile': providerMobile,
       'source': 'MANUAL',
     }),

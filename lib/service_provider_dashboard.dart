@@ -7,6 +7,7 @@ import 'constants/api_config.dart';
 import '../manual_ticket_create_screen.dart';
 import 'widgets/theme_mode_toggle.dart';
 import 'edit_provider_profile_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 // ===========================================================================
 // SHELL — Home / Jobs / Scan / Customers / Profile
 // ===========================================================================
@@ -798,6 +799,82 @@ class _ProfileTab extends StatelessWidget {
   required this.onLogout,
   required this.onEditProfile,
 });
+static const String _supportPhone = '1111111111';
+  static const String _supportEmail = 'support@zhini.co.in';
+
+  Future<void> _launch(BuildContext context, Uri uri) async {
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the app')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the app')),
+        );
+      }
+    }
+  }
+
+  void _showSupportSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Help & support',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text('How would you like to reach us?',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+              const SizedBox(height: 12),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.call_rounded, color: AppColors.primary),
+                title: Text('Call us',
+                    style: TextStyle(color: AppColors.textPrimary)),
+                subtitle: Text(_supportPhone,
+                    style: TextStyle(color: AppColors.textMuted)),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _launch(context, Uri(scheme: 'tel', path: _supportPhone));
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.email_rounded, color: AppColors.primary),
+                title: Text('Email us',
+                    style: TextStyle(color: AppColors.textPrimary)),
+                subtitle: Text(_supportEmail,
+                    style: TextStyle(color: AppColors.textMuted)),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _launch(
+                    context,
+                    Uri.parse('mailto:$_supportEmail?subject=Support%20request'),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _sectionHeader(String title, {Color? color}) {
     final c = color ?? AppColors.textMuted;
@@ -864,8 +941,10 @@ class _ProfileTab extends StatelessWidget {
 ),
           _ProfileMenuTile(
               icon: Icons.receipt_long_outlined, label: 'Payouts & earnings', onTap: () {}),
-          _ProfileMenuTile(
-              icon: Icons.support_agent_outlined, label: 'Help & support', onTap: () {}),
+                    _ProfileMenuTile(
+              icon: Icons.support_agent_outlined,
+              label: 'Help & support',
+              onTap: () => _showSupportSheet(context)),
           const SizedBox(height: 32),
 
           SizedBox(

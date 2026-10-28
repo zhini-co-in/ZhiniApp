@@ -8,6 +8,7 @@ class SessionManager {
   static const _keyPincode = 'pincode';
   static const _keyName = 'name';
   static const _keyHomeId = 'homeId';
+  static const _keyRole = 'role';
 
   static Box get _box => Hive.box(_boxName);
 
@@ -17,6 +18,7 @@ class SessionManager {
     required String pincode,
     required String name,
     String? homeId,
+    String? role, // null na existing role maaraadhu
   }) async {
     await _box.put(_keyMobile, mobileNumber);
     await _box.put(_keyAddress, address);
@@ -25,6 +27,13 @@ class SessionManager {
     if (homeId != null) {
       await _box.put(_keyHomeId, homeId);
     }
+    if (role != null) {
+      await _box.put(_keyRole, role);
+    }
+  }
+
+  static Future<void> setRole(String role) async {
+    await _box.put(_keyRole, role);
   }
 
   static Future<void> updateHomeId(String homeId) async {
@@ -40,6 +49,7 @@ class SessionManager {
       'pincode': (_box.get(_keyPincode) as String?) ?? '',
       'name': (_box.get(_keyName) as String?) ?? '',
       'homeId': (_box.get(_keyHomeId) as String?) ?? '',
+      'role': (_box.get(_keyRole) as String?) ?? 'user',
     };
   }
 

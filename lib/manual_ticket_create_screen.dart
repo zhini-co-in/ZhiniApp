@@ -28,7 +28,7 @@ class _ManualTicketCreateScreenState extends State<ManualTicketCreateScreen> {
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _timeController = TextEditingController();
+
 
   bool _submitting = false;
 
@@ -42,7 +42,6 @@ class _ManualTicketCreateScreenState extends State<ManualTicketCreateScreen> {
     _phoneController.dispose();
     _addressController.dispose();
     _descriptionController.dispose();
-    _timeController.dispose();
     super.dispose();
   }
 
@@ -56,7 +55,6 @@ Future<void> _submit() async {
         customerPhone: _phoneController.text.trim(),
         address: _addressController.text.trim(),
         description: _descriptionController.text.trim(),
-        availableTime: _timeController.text.trim(),
         providerMobile: widget.providerMobile,
       );
 
@@ -162,12 +160,6 @@ Future<void> _submit() async {
                   decoration: _decoration('Issue / appliance description',
                       hint: 'e.g. LG Fridge — Not cooling'),
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                const SizedBox(height: 14),
-                TextFormField(
-                  controller: _timeController,
-                  style: TextStyle(color: AppColors.textPrimary),
-                  decoration: _decoration('Available time', hint: 'e.g. Today evening 5-7 PM'),
                 ),
                 const SizedBox(height: 28),
                 SizedBox(
