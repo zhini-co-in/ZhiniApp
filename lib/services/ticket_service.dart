@@ -76,24 +76,13 @@ static Future<String> createManualTicket({
 }
 
  static Future<void> respondToTicket({
-    required String ticketId,
-    required bool accepted,
-  }) async {
-    final uri = Uri.parse(ApiConfig.ticketRespondUrl);
-    final response = await http.put(
-      uri,
-      headers: await _headers(),
-      body: jsonEncode({
-        'ticketId': ticketId,
-        'newStatus': accepted ? 'ACCEPTED' : 'REJECTED',   // 🔄 key + value maathirukkom
-      }),
+  required String ticketId,
+  required bool accepted,
+}) =>
+    updateTicketStatus(
+      ticketId: ticketId,
+      newStatus: accepted ? 'ACCEPTED' : 'CANCELLED',
     );
-
-    if (response.statusCode != 200) {
-      final decoded = jsonDecode(response.body);
-      throw Exception(decoded['message']?.toString() ?? 'Failed to update ticket');
-    }
-  }
 
   /// Attaches billing (product, parts, labour, GST, payment) to a ticket
   /// and marks it completed on the backend.
@@ -157,20 +146,22 @@ static ServiceTicket _mapToTicket(Map<String, dynamic> json) {
   }
 
 static Future<void> updateTicketStatus({
-    required String ticketId,
-    required String newStatus,
-  }) async {
-    final uri = Uri.parse(ApiConfig.ticketRespondUrl);
-    final response = await http.put(
-      uri,
-      headers: await _headers(),
-      body: jsonEncode({'ticketId': ticketId, 'newStatus': newStatus}),
-    );
-    if (response.statusCode != 200) {
-      final decoded = jsonDecode(response.body);
-      throw Exception(decoded['message']?.toString() ?? 'Failed to update status');
-    }
+  required String ticketId,
+  required String newStatus,
+}) async {
+  final response = await http.put(
+    Uri.parse(ApiConfig.ticketRespondUrl),
+    headers: await _headers(),
+    body: jsonEncode({'ticketId': ticketId, 'newStatus': newStatus}),
+  );
+  if (response.statusCode != 200) {
+    String msg = 'Failed to update status (${response.statusCode})';
+    try {
+      msg = jsonDecode(response.body)['message']?.toString() ?? msg;
+    } catch (_) {}
+    throw Exception(msg);
   }
+}
   static double _asDouble(dynamic v) {
     if (v is num) return v.toDouble();
     if (v is String) return double.tryParse(v) ?? 0.0;
