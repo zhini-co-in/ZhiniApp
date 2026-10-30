@@ -19,8 +19,9 @@ class ApiConfig {
   return '$baseUrl/product/update/$homeId';
 }
 static String get mediaUploadUrl => '$baseUrl/product/submit'; // 👈 adjust path to match your actual route
-static String memberDeleteUrl(String homeId) => '$baseUrl/product/delete-member/$homeId';
-  static String productDeleteUrl(String homeId) => '$baseUrl/product/delete-product/$homeId';
+static String memberDeleteUrl(String homeId) => '$baseUrl/product/delete/$homeId';
+  static String productDeleteUrl(String homeId) => '$baseUrl/product/delete/$homeId';
+  static String get commonDeleteUrl => '$baseUrl/product/delete';
   static String get createServiceProviderUrl => '$baseUrl/service/create-provider';
   static String getServiceProviderUrl(String mobileNumber) =>
     '$baseUrl/service/provider?mobile=$mobileNumber';

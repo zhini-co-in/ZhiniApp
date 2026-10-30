@@ -90,40 +90,49 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   // ---------------------------------------------------------------------
   // DELETE
   // ---------------------------------------------------------------------
-  Future<void> _submitDeleteProduct(String product) async {
-    if (widget.homeId == null || _deleting) return;
-    setState(() => _deleting = true);
-    try {
-      final response = await ApiClient.delete(
-        ApiConfig.productDeleteUrl(widget.homeId!),
-        body: {'roomName': widget.roomKey, 'product': product},
-      );
-      debugPrint('🗑️ Delete product status: ${response.statusCode}');
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        setState(() => _items.removeWhere((item) => item['product']?.toString() == product));
-        _snack('$product removed ✅');
-      } else {
-        final data = jsonDecode(response.body);
-        _snack(data['message']?.toString() ?? 'Could not remove appliance.');
-      }
-    } catch (e) {
-      debugPrint('❌ Delete product error: $e');
-      _snack('Network error. Try again.');
-    } finally {
-      if (mounted) setState(() => _deleting = false);
-    }
+Future<void> _submitDeleteProduct(Map<String, dynamic> item) async {
+  if (_deleting) return;
+  final deviceId = (item['deviceId'] ?? item['_id'])?.toString();
+  if (deviceId == null) {
+    _snack('This item has no deviceId, so it cannot be removed.');
+    return;
   }
+  final product = item['product']?.toString() ?? 'Appliance';
 
-  Future<void> _confirmDeleteProduct(String product) async {
-    final ok = await showConfirmActionDialog(
-      context,
-      title: 'Remove appliance?',
-      content: '$product will be removed from ${widget.roomName}.',
+  setState(() => _deleting = true);
+  try {
+    final response = await ApiClient.delete(
+      ApiConfig.commonDeleteUrl,
+      body: {'type': 'PRODUCT', 'id': deviceId},
     );
-    if (ok == true) _submitDeleteProduct(product);
+    debugPrint('🗑️ Delete product status: ${response.statusCode}');
+    if (!mounted) return;
+
+    if (response.statusCode == 200) {
+      setState(() => _items.removeWhere((i) =>
+          (i['deviceId'] ?? i['_id'])?.toString() == deviceId));
+      _snack('$product removed ✅');
+    } else {
+      final data = jsonDecode(response.body);
+      _snack(data['message']?.toString() ?? 'Could not remove appliance.');
+    }
+  } catch (e) {
+    debugPrint('❌ Delete product error: $e');
+    _snack('Network error. Try again.');
+  } finally {
+    if (mounted) setState(() => _deleting = false);
   }
+}
+
+Future<void> _confirmDeleteProduct(Map<String, dynamic> item) async {
+  final product = item['product']?.toString() ?? 'Appliance';
+  final ok = await showConfirmActionDialog(
+    context,
+    title: 'Remove appliance?',
+    content: '$product will be removed from ${widget.roomName}.',
+  );
+  if (ok == true) _submitDeleteProduct(item);
+}
 
   // ---------------------------------------------------------------------
   // EDIT
@@ -764,7 +773,6 @@ final statusIcon = isUnknown
       onSelected: (value) {
         if (value == 'edit') _openEditDeviceDialog(item);
         if (value == 'service') _openServiceBookingSheet(item);
-        if (value == 'delete' && !_deleting) _confirmDeleteProduct(product);
       },
       itemBuilder: (context) => [
         entry('edit', Icons.edit_outlined, AppColors.primary, 'Edit', AppColors.textPrimary),

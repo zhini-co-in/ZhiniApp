@@ -491,12 +491,11 @@ void showDeviceDetailsSheet(
 // EDIT
 // =====================================================================
 void showDeviceEditDialog(BuildContext context, DeviceEntry e, {VoidCallback? onChanged}) {
-  if (e.deviceId == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text(AppStrings.noDeviceIdCannotEdit)),
-    );
-    return;
-  }
+if (e.deviceId == null) {
+  ScaffoldMessenger.of(context)
+      .showSnackBar(const SnackBar(content: Text(AppStrings.couldNotRemoveAppliance)));
+  return;
+}
 
   final oldWarranty = e.raw['warranty']?.toString().trim() ?? '';
   final hadWarranty = oldWarranty.isNotEmpty && oldWarranty.toUpperCase() != 'N/A';
@@ -593,17 +592,17 @@ Future<void> confirmRemoveDevice(BuildContext context, DeviceEntry e, {VoidCallb
     content: AppStrings.removeApplianceContent(e.product, e.roomName),
   );
   if (ok != true) return;
+  if (!context.mounted) return;
 
-  if (e.homeId == null) {
-    debugPrint('❌ Remove failed: homeId is null');
+  if (e.deviceId == null) {
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text(AppStrings.couldNotRemoveAppliance)));
     return;
   }
 
   try {
-    final url = ApiConfig.productDeleteUrl(e.homeId!);
-    final body = {'roomName': e.roomKey, 'product': e.product};
+    final url = ApiConfig.commonDeleteUrl;
+    final body = {'type': 'PRODUCT', 'id': e.deviceId};
     debugPrint('🗑️ DELETE $url body=$body');
 
     final response = await ApiClient.delete(url, body: body);

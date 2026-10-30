@@ -4,6 +4,7 @@ import 'api_client.dart';
 import 'package:hive_ce/hive_ce.dart';
 import '../constants/api_config.dart';
 import '../models/home_model.dart';
+import 'package:flutter/foundation.dart';
 
 
 /// Shared Add/Delete-member calls + single-home Hive refresh, so every
@@ -40,24 +41,31 @@ class MemberService {
   /// DELETE deleteMember/:homeId — mobile in body. Backend blocks
   /// removing the primary owner (CANNOT_REMOVE_OWNER) — that message
   /// comes straight through, no special handling needed on our side.
-  static Future<Map<String, dynamic>> deleteMember({
-    required String homeId,
-    required String mobile,
-  }) async {
-    try {
-      final response = await ApiClient.delete(
-  ApiConfig.memberDeleteUrl(homeId),
-  body: {'mobile': mobile},
-);
-      final data = jsonDecode(response.body);
-      return {
-        'success': response.statusCode == 200 && data['success'] == true,
-        'message': data['message']?.toString() ?? 'Could not remove member.',
-      };
-    } catch (e) {
-      return {'success': false, 'message': 'Network error. Try again.'};
-    }
+static Future<Map<String, dynamic>> deleteMember({
+  required String homeId,
+  required String mobile,
+}) async {
+  try {
+    final response = await ApiClient.delete(
+      ApiConfig.commonDeleteUrl,
+      body: {
+        'type': 'MEMBER',
+        'id': mobile,
+        'homeId': homeId,
+      },
+    );
+    debugPrint('🗑️ Delete member: ${response.statusCode} | ${response.body}');
+
+    final data = jsonDecode(response.body);
+    return {
+      'success': response.statusCode == 200 && data['success'] == true,
+      'message': data['message']?.toString() ?? 'Could not remove member.',
+    };
+  } catch (e) {
+    debugPrint('❌ Delete member error: $e');
+    return {'success': false, 'message': 'Network error. Try again.'};
   }
+}
 
   /// Re-fetches just this one home (same &homeId= single-home path the
   /// backend already supports) and patches its members[] back into the
