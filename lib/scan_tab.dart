@@ -652,6 +652,39 @@ void _startLiveCountdown() {
     _cameraController?.resumePreview();
     _startLiveCountdown();
   }
+  Widget _warrantyIndicator() {
+  final expiry = WarrantyUtils.parseExpiry(
+    _detectedWarranty ?? _manualWarranty,
+    referenceDate: DateTime.now(),
+  );
+
+  // No warranty -> red
+  if (expiry == null) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.gpp_bad_outlined, size: 16, color: AppColors.danger),
+        const SizedBox(width: 4),
+        Text('No warranty',
+            style: TextStyle(color: AppColors.danger, fontSize: 11.5, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+  // Active -> green icon + "Warranty active" (no valid till)
+  if (expiry.isAfter(DateTime.now())) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.verified_user_rounded, size: 16, color: AppColors.success),
+        const SizedBox(width: 4),
+        Text('Warranty active',
+            style: TextStyle(color: AppColors.success, fontSize: 11.5, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+  // Expired -> old badge
+  return WarrantyBadge(expiry: expiry);
+}
 
   @override
   void dispose() {
@@ -926,12 +959,7 @@ if (!_reviewing && !_aiThinking)
               const SizedBox(height: 14),
               Align(
   alignment: Alignment.centerLeft,
-  child: WarrantyBadge(
-    expiry: WarrantyUtils.parseExpiry(
-      _detectedWarranty ?? _manualWarranty,
-      referenceDate: DateTime.now(),
-    ),
-  ),
+  child: _warrantyIndicator(),
 ),
               const SizedBox(height: 8),
               Row(

@@ -31,70 +31,85 @@ class ServiceProviderCard extends StatelessWidget {
       address != null && address!.isNotEmpty && address != 'Address not available';
   bool get _hasPhone => phone != null && phone!.isNotEmpty && phone != 'N/A';
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: AppDecor.outlinedCard(),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, style: AppText.cardTitle),
-                if (badge != null) ...[
-                  const SizedBox(height: 3),
-                  Text(badge!,
-                      style: const TextStyle(
-                          color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w500)),
-                ],
-                if (rating != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (showStarRow)
-                        ...List.generate(
-                          5,
-                          (i) => Icon(
-                            i < rating!.round() ? Icons.star : Icons.star_border,
-                            size: 14,
-                            color: AppColors.star,
-                          ),
-                        )
-                      else
-                        const Icon(Icons.star_rounded, size: 14, color: AppColors.star),
-                      const SizedBox(width: 6),
-                      Text(
-                        reviewsCount != null
-                            ? '${rating!.toStringAsFixed(1)} ($reviewsCount reviews)'
-                            : rating!.toStringAsFixed(1),
-                        style: AppText.caption,
+@override
+Widget build(BuildContext context) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: AppDecor.outlinedCard(),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Name + rating inline ──
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: name, style: AppText.cardTitle),
+                    if (rating != null) ...[
+                      const TextSpan(text: '  '),
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: _ratingView(),
                       ),
                     ],
-                  ),
-                ],
-                if (_hasAddress) ...[
-                  const SizedBox(height: 4),
-                  Text(address!, style: AppText.faintCaption),
-                ],
+                  ],
+                ),
+              ),
+              if (badge != null) ...[
+                const SizedBox(height: 3),
+                Text(badge!,
+                    style: const TextStyle(
+                        color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w500)),
               ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            children: [
-              if (_hasPhone && onCall != null) _actionButton(icon: Icons.phone, onTap: onCall!),
-              if (_hasPhone && onCall != null && _hasAddress && onDirections != null)
-                const SizedBox(height: 8),
-              if (_hasAddress && onDirections != null)
-                _actionButton(icon: Icons.directions, onTap: onDirections!),
+              if (_hasAddress) ...[
+                const SizedBox(height: 4),
+                Text(address!, style: AppText.faintCaption),
+              ],
             ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          children: [
+            if (_hasPhone && onCall != null) _actionButton(icon: Icons.phone, onTap: onCall!),
+            if (_hasPhone && onCall != null && _hasAddress && onDirections != null)
+              const SizedBox(height: 8),
+            if (_hasAddress && onDirections != null)
+              _actionButton(icon: Icons.directions, onTap: onDirections!),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+  /// Rating shown next to the name (compact: ⭐ 4.5 or ⭐ 4.5 (12)).
+  Widget _ratingView() {
+    final text = reviewsCount != null
+        ? '${rating!.toStringAsFixed(1)} ($reviewsCount)'
+        : rating!.toStringAsFixed(1);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showStarRow)
+          ...List.generate(
+            5,
+            (i) => Icon(
+              i < rating!.round() ? Icons.star : Icons.star_border,
+              size: 12,
+              color: AppColors.star,
+            ),
+          )
+        else
+          const Icon(Icons.star_rounded, size: 14, color: AppColors.star),
+        const SizedBox(width: 3),
+        Text(text, style: AppText.caption),
+      ],
     );
   }
 

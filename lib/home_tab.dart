@@ -1,29 +1,28 @@
 // lib/home_tab.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'constants/app_strings.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:http/http.dart' as http;
 import 'address_screen.dart';
 import 'constants/api_config.dart';
 import 'models/home_model.dart';
 import 'room_detail_screen.dart';
-import 'service_category_sheet.dart';
 import 'services/api_client.dart';
 import 'services/device_id_service.dart';
 import 'services/entity_update_service.dart';
+import 'services/home_services.dart';
 import 'services/session_manager.dart';
 import 'theme/app_theme.dart';
+import 'utils/devices_filter_bus.dart';
 import 'utils/warranty_utils.dart';
 import 'widgets/app_dialog_field.dart';
+import 'widgets/device_details_sheet.dart';
 import 'widgets/light_card.dart';
 import 'widgets/section_header.dart';
-import 'dart:async';
-import 'utils/devices_filter_bus.dart';
-import 'widgets/warranty_badge.dart';
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
@@ -110,21 +109,11 @@ class HomeTabState extends State<HomeTab> {
     'water purifier': Icons.water_drop_rounded,
   };
 
-  // Services near you — backed by scrapeHomeServices(serviceType, pincode).
-    static const List<Map<String, dynamic>> _serviceCategories = [
-    {'label': AppStrings.electrician, 'type': 'electrician', 'icon': Icons.bolt_rounded, 'color': Color(0xFFFF9800)},
-    {'label': AppStrings.plumber, 'type': 'plumber', 'icon': Icons.build_rounded, 'color': Color(0xFF1E6BFF)},
-    {'label': AppStrings.acService, 'type': 'AC service', 'icon': Icons.ac_unit_rounded, 'color': Color(0xFF2196F3)},
-    {'label': AppStrings.carpenter, 'type': 'carpenter', 'icon': Icons.hardware_rounded, 'color': Color(0xFF7C4DFF)},
-    {'label': AppStrings.painter, 'type': 'painter', 'icon': Icons.format_paint_rounded, 'color': Color(0xFFE91E63)},
-    {'label': AppStrings.pestControl, 'type': 'pest control', 'icon': Icons.pest_control_rounded, 'color': Color(0xFF00A86B)},
-  ];
-
   // serviceType -> provider count, shown as "X nearby".
+  // Categories / fetch / sheet all live in HomeServices (shared with Service tab).
   final Map<String, int> _serviceCounts = {};
-  Future<String?>? _gpsQueryCache;
 
-    // ── Banner carousel ──
+  // ── Banner carousel ──
   final PageController _bannerController = PageController(viewportFraction: 0.92);
   int _bannerIndex = 0;
   Timer? _bannerTimer;
@@ -155,7 +144,7 @@ class HomeTabState extends State<HomeTab> {
     super.dispose();
   }
 
-    @override
+  @override
   void initState() {
     super.initState();
     _fetchAppliances();
@@ -170,7 +159,6 @@ class HomeTabState extends State<HomeTab> {
     }
     await _fetchAppliances();
     if (!mounted) return;
-    _gpsQueryCache = null;
     setState(() => _serviceCounts.clear());
     _prefetchServiceCounts();
   }
@@ -181,111 +169,12 @@ class HomeTabState extends State<HomeTab> {
   }
 
   // ---------------------------------------------------------------------
-  // SERVICES NEAR YOU — data
+  // SERVICES NEAR YOU — data (shared HomeServices, pincode only)
   // ---------------------------------------------------------------------
-  void _prefetchServiceCounts() async {
-    final futures = _serviceCategories.map((cat) async {
-      final type = cat['type'] as String;
-      final list = await _fetchHomeServicesFor(type);
-      if (mounted) setState(() => _serviceCounts[type] = list.length);
+  void _prefetchServiceCounts() {
+    HomeServices.prefetchCounts(_currentPincode, (type, count) {
+      if (mounted) setState(() => _serviceCounts[type] = count);
     });
-    await Future.wait(futures);
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchHomeServicesFor(
-    String serviceType, {
-    String? pincodeOverride,
-    bool forceGps = false,
-  }) async {
-    try {
-      String? locationQuery;
-      if (!forceGps) {
-        final pincode = pincodeOverride ?? _currentPincode;
-        if (pincode.isNotEmpty) {
-          locationQuery = '&pincode=${Uri.encodeQueryComponent(pincode)}';
-        }
-      }
-      locationQuery ??= await _buildGpsLocationQuery();
-      if (locationQuery == null) return [];
-
-      final response = await ApiClient.post(
-        '${ApiConfig.homeServicesUrl}'
-        '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
-        '$locationQuery',
-      );
-
-      debugPrint('🔧 Home services ($serviceType) status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          final rawData = data['data'];
-          final List<dynamic> rawList = rawData is List ? rawData : [rawData];
-          return rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ Home services fetch error ($serviceType): $e');
-    }
-    return [];
-  }
-
-  Future<String?> _buildGpsLocationQuery() {
-    final future = _gpsQueryCache ??= _resolveGpsLocationQuery();
-    // Don't cache a failure, so the next call can retry.
-    future.then((v) {
-      if (v == null) _gpsQueryCache = null;
-    });
-    return future;
-  }
-
-  Future<String?> _resolveGpsLocationQuery() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return null;
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return null;
-      }
-
-      Position? position;
-      try {
-        position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.medium,
-            timeLimit: Duration(seconds: 10),
-          ),
-        );
-      } catch (_) {
-        position = await Geolocator.getLastKnownPosition();
-      }
-      if (position == null) return null;
-      return '&latitude=${position.latitude}&longitude=${position.longitude}';
-    } catch (e) {
-      debugPrint('❌ Location fetch error (home services): $e');
-      return null;
-    }
-  }
-
-  void _openServiceCategorySheet(Map<String, dynamic> category) {
-    final type = category['type'] as String;
-    final label = category['label'] as String;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.cardBg,
-      isScrollControlled: true,
-      shape: AppDecor.sheetShape,
-      builder: (_) => ServiceCategorySheet(
-        label: label,
-        fetchServices: () => _fetchHomeServicesFor(type),
-      ),
-    );
   }
 
   // ---------------------------------------------------------------------
@@ -356,33 +245,33 @@ class HomeTabState extends State<HomeTab> {
             final Map<String, String> roomIds = {}; // roomKey -> backend room _id
 
             if (roomsRaw is List) {
-  for (final roomObj in roomsRaw) {
-    if (roomObj is! Map) continue;
-    final roomName = roomObj['roomName']?.toString();
-    final devicesRaw = roomObj['devices'];
-    if (roomName == null || devicesRaw is! List) continue;
-    if (roomName.toLowerCase() == _hiddenSetupRoomKey) continue;
+              for (final roomObj in roomsRaw) {
+                if (roomObj is! Map) continue;
+                final roomName = roomObj['roomName']?.toString();
+                final devicesRaw = roomObj['devices'];
+                if (roomName == null || devicesRaw is! List) continue;
+                if (roomName.toLowerCase() == _hiddenSetupRoomKey) continue;
 
-    final key = roomName.toLowerCase();
+                final key = roomName.toLowerCase();
 
-    // overwrite pannama, append pannunga
-    rooms.putIfAbsent(key, () => []).addAll(
-      devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)),
-    );
+                // append, don't overwrite
+                rooms.putIfAbsent(key, () => []).addAll(
+                      devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)),
+                    );
 
-    final rid = (roomObj['_id'] ?? roomObj['roomId'])?.toString();
-    if (rid != null && rid.isNotEmpty) roomIds[key] = rid;
-  }
-} else if (roomsRaw is Map) {
-  roomsRaw.forEach((key, value) {
-    if (value is List) {
-      if (key.toString().toLowerCase() == _hiddenSetupRoomKey) return;
-      rooms.putIfAbsent(key.toString().toLowerCase(), () => []).addAll(
-        value.map((e) => Map<String, dynamic>.from(e as Map)),
-      );
-    }
-  });
-}
+                final rid = (roomObj['_id'] ?? roomObj['roomId'])?.toString();
+                if (rid != null && rid.isNotEmpty) roomIds[key] = rid;
+              }
+            } else if (roomsRaw is Map) {
+              roomsRaw.forEach((key, value) {
+                if (value is List) {
+                  if (key.toString().toLowerCase() == _hiddenSetupRoomKey) return;
+                  rooms.putIfAbsent(key.toString().toLowerCase(), () => []).addAll(
+                        value.map((e) => Map<String, dynamic>.from(e as Map)),
+                      );
+                }
+              });
+            }
 
             final membersRaw = h['members'];
             final List<Map<String, dynamic>> members = membersRaw is List
@@ -570,9 +459,34 @@ class HomeTabState extends State<HomeTab> {
   List<Map<String, dynamic>> get _allDevices =>
       _currentRooms.values.expand((items) => items).toList();
 
+  // Same devices wrapped as DeviceEntry (needed by the common details sheet).
+  List<DeviceEntry> get _allDeviceEntries {
+    final out = <DeviceEntry>[];
+    _currentRooms.forEach((roomKey, items) {
+      for (final item in items) {
+        out.add(DeviceEntry(
+          homeId: _currentHomeId,
+          homeAddress: _currentAddress,
+          pincode: _currentPincode,
+          roomKey: roomKey,
+          roomName: roomKey.isNotEmpty
+              ? '${roomKey[0].toUpperCase()}${roomKey.substring(1)}'
+              : roomKey,
+          raw: item,
+        ));
+      }
+    });
+    return out;
+  }
+
   String? get _currentHomeId => _currentHome?['id']?.toString();
   String get _currentAddress => _currentHome?['address']?.toString() ?? widget.address;
-  String get _currentPincode => _currentHome?['pincode']?.toString() ?? widget.pincode;
+
+  // Empty-string pincode on the home falls back to the widget pincode.
+  String get _currentPincode {
+    final p = _currentHome?['pincode']?.toString().trim() ?? '';
+    return p.isNotEmpty ? p : widget.pincode;
+  }
 
   void _notifySelectedHome() {
     widget.onSelectedHomeChanged?.call(_currentHomeId, _currentAddress, _currentPincode);
@@ -605,10 +519,28 @@ class HomeTabState extends State<HomeTab> {
       pincode: _currentPincode,
     );
   }
+
   void _openDevicesTabWith(String filter) {
-  devicesFilterRequest.value = filter;
-  widget.onOpenDevices?.call(filter);
-}
+    devicesFilterRequest.value = filter;
+    widget.onOpenDevices?.call(filter);
+  }
+
+  // Card tap -> common details sheet (same as Devices tab).
+  void _openDeviceDetails(DeviceEntry e) {
+    showDeviceDetailsSheet(
+      context,
+      e,
+      mobileNumber: widget.mobileNumber,
+      name: _displayName,
+      onChanged: () {
+        if (_currentHomeId != null) {
+          _fetchAppliances(homeId: _currentHomeId);
+        } else {
+          _fetchAppliances();
+        }
+      },
+    );
+  }
 
   // ---------------------------------------------------------------------
   // WARRANTY HELPERS
@@ -623,25 +555,25 @@ class HomeTabState extends State<HomeTab> {
   // ---------------------------------------------------------------------
   // STATS
   // ---------------------------------------------------------------------
-Map<String, int> _computeStats() {
-  int active = 0;
-  int attention = 0;
-  final now = DateTime.now();
-  final devices = _allDevices;
+  Map<String, int> _computeStats() {
+    int active = 0;
+    int attention = 0;
+    final now = DateTime.now();
+    final devices = _allDevices;
 
-  for (final item in devices) {
-    final expiry = _expiryOf(item);
-    if (expiry == null) continue;
-    if (expiry.isAfter(now)) {
-      active++;
-      if (expiry.difference(now).inDays <= 30) attention++; // expiring soon
-    } else {
-      attention++; // expired
+    for (final item in devices) {
+      final expiry = _expiryOf(item);
+      if (expiry == null) continue;
+      if (expiry.isAfter(now)) {
+        active++;
+        if (expiry.difference(now).inDays <= 30) attention++; // expiring soon
+      } else {
+        attention++; // expired
+      }
     }
-  }
 
-  return {'devices': devices.length, 'active': active, 'attention': attention};
-}
+    return {'devices': devices.length, 'active': active, 'attention': attention};
+  }
 
   // ---------------------------------------------------------------------
   // DEVICES SCREEN (re-uses the old room detail screen, shows ALL devices)
@@ -1076,15 +1008,18 @@ Map<String, int> _computeStats() {
                             const SizedBox(height: 28),
                             _buildServicesNearYou(),
                           ] else ...[
-                                                        _buildBuildingsHeader(),
+                            _buildBuildingsHeader(),
                             const SizedBox(height: 16),
                             _buildStatsRow(stats!),
                             const SizedBox(height: 24),
                             SectionHeader(
-  AppStrings.devicesCount(stats['devices']!),
-  actionLabel: stats['devices']! > _maxDevicesOnHome ? AppStrings.viewAll : null,
-  onManage: stats['devices']! > _maxDevicesOnHome ? _openDevicesScreen : null,
-),
+                              AppStrings.devicesCount(stats['devices']!),
+                              actionLabel:
+                                  stats['devices']! > _maxDevicesOnHome ? AppStrings.viewAll : null,
+                              onManage: stats['devices']! > _maxDevicesOnHome
+                                  ? () => _openDevicesTabWith('All')
+                                  : null,
+                            ),
                             const SizedBox(height: 12),
                             _buildDevicesList(),
                             const SizedBox(height: 28),
@@ -1100,7 +1035,7 @@ Map<String, int> _computeStats() {
     );
   }
 
-   Widget _buildHeader() {
+  Widget _buildHeader() {
     final hasName = _displayName.isNotEmpty && _displayName.toLowerCase() != 'guest';
 
     return Container(
@@ -1178,9 +1113,9 @@ Map<String, int> _computeStats() {
               controller: _bannerController,
               itemCount: _bannerImages.length,
               onPageChanged: (i) {
-  setState(() => _bannerIndex = i);
-  _startBannerTimer(); // swipe pannina 4 sec count restart
-},
+                setState(() => _bannerIndex = i);
+                _startBannerTimer(); // restart the 4 sec count after a swipe
+              },
               itemBuilder: (context, i) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 5),
@@ -1223,7 +1158,7 @@ Map<String, int> _computeStats() {
     );
   }
 
-    // ── Buildings title + dropdown to choose the building ──
+  // ── Buildings title + dropdown to choose the building ──
   Widget _buildBuildingsHeader() {
     final current = _currentHome;
     final label = current == null ? AppStrings.select : _homeLabel(current, _selectedHomeIndex);
@@ -1245,7 +1180,10 @@ Map<String, int> _computeStats() {
                   return;
                 }
                 if (value == _selectedHomeIndex) return;
-                setState(() => _selectedHomeIndex = value);
+                setState(() {
+                  _selectedHomeIndex = value;
+                  _serviceCounts.clear();
+                });
                 _notifySelectedHome();
                 _prefetchServiceCounts();
               },
@@ -1342,107 +1280,109 @@ Map<String, int> _computeStats() {
   }
 
   // ── Stats ──
-Widget _buildStatsRow(Map<String, int> stats) {
-  return Row(
-    children: [
-      _statCard(Icons.devices_other_rounded, AppColors.lightPrimary, '${stats['devices']}', AppStrings.statAppliances,
-          onTap: () => _openDevicesTabWith('All')),
-      const SizedBox(width: 10),
-      _statCard(Icons.verified_user_outlined, AppColors.lightSuccess, '${stats['active']}',
-          AppStrings.statActiveWarranties,
-          onTap: () => _openDevicesTabWith('Warranty')),
-      const SizedBox(width: 10),
-      _statCard(Icons.warning_amber_rounded, AppColors.lightWarning, '${stats['attention']}', AppStrings.statAttention,
-          highlight: (stats['attention'] ?? 0) > 0,
-          onTap: () => _openDevicesTabWith('Attention')),
-    ],
-  );
-}
+  Widget _buildStatsRow(Map<String, int> stats) {
+    return Row(
+      children: [
+        _statCard(Icons.devices_other_rounded, AppColors.lightPrimary, '${stats['devices']}',
+            AppStrings.statAppliances,
+            onTap: () => _openDevicesTabWith('All')),
+        const SizedBox(width: 10),
+        _statCard(Icons.verified_user_outlined, AppColors.lightSuccess, '${stats['active']}',
+            AppStrings.statActiveWarranties,
+            onTap: () => _openDevicesTabWith('Warranty')),
+        const SizedBox(width: 10),
+        _statCard(Icons.warning_amber_rounded, AppColors.lightWarning, '${stats['attention']}',
+            AppStrings.statAttention,
+            highlight: (stats['attention'] ?? 0) > 0,
+            onTap: () => _openDevicesTabWith('Attention')),
+      ],
+    );
+  }
 
-Widget _statCard(IconData icon, Color color, String value, String label,
-    {bool highlight = false, VoidCallback? onTap}) {
-  return Expanded(
-    child: LightCard(
-      onTap: onTap,
-      radius: 14,
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-      borderColor: highlight ? color.withValues(alpha: 0.4) : AppColors.lightBorder,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              color: AppColors.lightTextDark,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
+  Widget _statCard(IconData icon, Color color, String value, String label,
+      {bool highlight = false, VoidCallback? onTap}) {
+    return Expanded(
+      child: LightCard(
+        onTap: onTap,
+        radius: 14,
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        borderColor: highlight ? color.withValues(alpha: 0.4) : AppColors.lightBorder,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              style: TextStyle(
+                color: AppColors.lightTextDark,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppColors.lightTextMuted,
-              fontSize: 10.5,
-              fontWeight: FontWeight.w500,
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColors.lightTextMuted,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   // ── Devices list (flat, first few) ──
-Widget _buildDevicesList() {
-  final devices = _allDevices;
+  Widget _buildDevicesList() {
+    final devices = _allDeviceEntries;
 
-  if (devices.isEmpty) {
+    if (devices.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: AppDecor.lightCard(),
+        child: Column(
+          children: [
+            Icon(Icons.devices_other_rounded, color: AppColors.lightChevron, size: 32),
+            const SizedBox(height: 8),
+            const Text(AppStrings.noAppliancesYet, style: AppText.lightCardTitle),
+            const SizedBox(height: 4),
+            const Text(AppStrings.tapAddDeviceBelow, style: AppText.lightCaption),
+          ],
+        ),
+      );
+    }
+
+    final shown = devices.take(_maxDevicesOnHome).toList();
+
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: AppDecor.lightCard(), 
+      decoration: AppDecor.lightCard(),
       child: Column(
         children: [
-          Icon(Icons.devices_other_rounded, color: AppColors.lightChevron, size: 32),
-          const SizedBox(height: 8),
-          const Text(AppStrings.noAppliancesYet, style: AppText.lightCardTitle),
-          const SizedBox(height: 4),
-          const Text(AppStrings.tapAddDeviceBelow, style: AppText.lightCaption),
+          for (int i = 0; i < shown.length; i++) ...[
+            _deviceRow(shown[i]),
+            if (i != shown.length - 1)
+              Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.lightBorder),
+          ],
         ],
       ),
     );
   }
 
-    final shown = devices.take(_maxDevicesOnHome).toList();
-
-  return Container(
-    decoration: AppDecor.lightCard(),
-    child: Column(
-      children: [
-        for (int i = 0; i < shown.length; i++) ...[
-          _deviceRow(shown[i]),
-          if (i != shown.length - 1)
-            Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.lightBorder),
-        ],
-      ],
-    ),
-  );   
-}
-  
-
-  Widget _deviceRow(Map<String, dynamic> item) {
-    final product = item['product']?.toString() ?? AppStrings.appliance;
-    final brand = item['brand']?.toString() ?? '';
-    final hasBrand = brand.isNotEmpty && brand.toLowerCase() != 'unknown' && brand.toUpperCase() != 'N/A';
-    final imageUrl = item['imageUrl']?.toString();
+  Widget _deviceRow(DeviceEntry e) {
+    final product = e.raw['product']?.toString() ?? AppStrings.appliance;
+    final brand = e.brand;
+    final hasBrand =
+        brand.isNotEmpty && brand.toLowerCase() != 'unknown' && brand.toUpperCase() != 'N/A';
+    final imageUrl = e.imageUrl;
     final fallback = Icon(_iconForAppliance(product), size: 22, color: AppColors.lightPrimary);
 
     return InkWell(
-      onTap: _openDevicesScreen,
+      onTap: () => _openDeviceDetails(e),
       borderRadius: BorderRadius.circular(16),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1462,7 +1402,8 @@ Widget _buildDevicesList() {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(product, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCardTitle),
+                  Text(product,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCardTitle),
                   const SizedBox(height: 2),
                   Text(hasBrand ? brand : AppStrings.brandNotAdded,
                       maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCaption),
@@ -1470,7 +1411,7 @@ Widget _buildDevicesList() {
               ),
             ),
             const SizedBox(width: 8),
-            WarrantyBadge(expiry: _expiryOf(item)),
+            DeviceWarrantyIndicator(e),
           ],
         ),
       ),
@@ -1495,30 +1436,32 @@ Widget _buildDevicesList() {
 
   // ── Services near you ──
   Widget _buildServicesNearYou() {
+    final categories = HomeServices.categories;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SectionHeader(AppStrings.servicesNearYou),
         const SizedBox(height: 12),
-                LayoutBuilder(
+        LayoutBuilder(
           builder: (context, constraints) {
             const gap = 10.0;
-            const visible = 3; // screen la ethana card theriyanum
+            const visible = 3; // how many cards visible on screen
             final cardWidth = (constraints.maxWidth - gap * (visible - 1)) / visible;
 
             return SizedBox(
               height: 118,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: _serviceCategories.length,
+                itemCount: categories.length,
                 separatorBuilder: (_, __) => const SizedBox(width: gap),
                 itemBuilder: (context, i) {
-                  final cat = _serviceCategories[i];
+                  final cat = categories[i];
                   final color = cat['color'] as Color;
                   final count = _serviceCounts[cat['type'] as String];
                   return LightCard(
                     width: cardWidth,
-                    onTap: () => _openServiceCategorySheet(cat),
+                    onTap: () => HomeServices.openSheet(context, cat, _currentPincode),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1532,7 +1475,7 @@ Widget _buildDevicesList() {
                           child: Icon(cat['icon'] as IconData, color: color, size: 22),
                         ),
                         const Spacer(),
-                                                FittedBox(
+                        FittedBox(
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
                           child: Text(

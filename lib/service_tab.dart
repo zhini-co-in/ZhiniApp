@@ -4,17 +4,16 @@
 // design as MyTicketsScreen) + a "quick book" grid for common service
 // categories. Also lets the customer cancel a still-open ticket with a
 // reason (bottom sheet, quick-reason chips + custom text).
+//
+// Quick book uses the shared HomeServices (same as Home tab) — pincode only.
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'constants/app_strings.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
-import 'package:geolocator/geolocator.dart';
 import 'constants/api_config.dart';
 import 'theme/app_theme.dart';
-import 'widgets/service_provider_card.dart';
 import 'services/api_client.dart';
+import 'services/home_services.dart';
 // ---------------------------------------------------------------------
 // ADD THIS to lib/constants/api_config.dart (if not already present):
 //
@@ -41,15 +40,6 @@ class ServiceTab extends StatefulWidget {
 }
 
 class _ServiceTabState extends State<ServiceTab> {
-      static const List<Map<String, dynamic>> _quickBookCategories = [
-    {'label': AppStrings.electrician, 'type': 'electrician', 'icon': Icons.bolt_rounded, 'color': Color(0xFFFF9800)},
-    {'label': AppStrings.plumber, 'type': 'plumber', 'icon': Icons.build_rounded, 'color': Color(0xFF1E6BFF)},
-    {'label': AppStrings.acService, 'type': 'AC service', 'icon': Icons.ac_unit_rounded, 'color': Color(0xFF2196F3)},
-    {'label': AppStrings.carpenter, 'type': 'carpenter', 'icon': Icons.hardware_rounded, 'color': Color(0xFF7C4DFF)},
-    {'label': AppStrings.painter, 'type': 'painter', 'icon': Icons.format_paint_rounded, 'color': Color(0xFFE91E63)},
-    {'label': AppStrings.pestControl, 'type': 'pest control', 'icon': Icons.pest_control_rounded, 'color': Color(0xFF00A86B)},
-  ];
-
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _tickets = [];
@@ -72,6 +62,7 @@ class _ServiceTabState extends State<ServiceTab> {
     _fetchTickets();
     _prefetchQuickBookCounts();
   }
+
   @override
   void didUpdateWidget(covariant ServiceTab oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -82,38 +73,12 @@ class _ServiceTabState extends State<ServiceTab> {
   }
 
   // ---------------------------------------------------------------------
-  // LOCATION HELPER
+  // QUICK BOOK COUNTS (shared HomeServices, pincode only)
   // ---------------------------------------------------------------------
-  Future<String> _buildGpsLocationQuery() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return '';
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return '';
-      }
-
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-      );
-      return '&latitude=${position.latitude}&longitude=${position.longitude}';
-    } catch (e) {
-      debugPrint('❌ Location fetch error (service tab): $e');
-      return '';
-    }
-  }
-    // Saved pincode irundha adhu; illana (Default home) live GPS.
-  Future<String> _locationQuery() async {
-    final pincode = widget.pincode.trim();
-    if (pincode.isNotEmpty) {
-      return '&pincode=${Uri.encodeQueryComponent(pincode)}';
-    }
-    return _buildGpsLocationQuery();
+  void _prefetchQuickBookCounts() {
+    HomeServices.prefetchCounts(widget.pincode, (type, count) {
+      if (mounted) setState(() => _quickBookCounts[type] = count);
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -177,10 +142,10 @@ class _ServiceTabState extends State<ServiceTab> {
   Future<void> _cancelTicket(String ticketId, String reason) async {
     try {
       final response = await ApiClient.put(ApiConfig.cancelTicketUrl(), body: {
-  'ticketId': ticketId,
-  'customerMobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-  'reason': reason,
-});
+        'ticketId': ticketId,
+        'customerMobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+        'reason': reason,
+      });
 
       debugPrint('🚫 Cancel ticket status: ${response.statusCode}');
       debugPrint('🚫 Cancel ticket body: ${response.body}');
@@ -210,45 +175,6 @@ class _ServiceTabState extends State<ServiceTab> {
         ),
       );
     }
-  }
-
-   void _prefetchQuickBookCounts() async {
-    final locationQuery = await _locationQuery();
-
-    if (locationQuery.isEmpty) {
-      if (mounted) {
-        setState(() {
-          for (final cat in _quickBookCategories) {
-            _quickBookCounts[cat['type'] as String] = 0;
-          }
-        });
-      }
-      return;
-    }
-
-    final futures = _quickBookCategories.map((cat) async {
-      final type = cat['type'] as String;
-      try {
-        final response = await ApiClient.post(
-          '${ApiConfig.homeServicesUrl}'
-          '?serviceType=${Uri.encodeQueryComponent(type)}'
-          '$locationQuery',
-        );
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          if (data['success'] == true && data['data'] != null) {
-            final raw = data['data'];
-            final list = raw is List ? raw : [raw];
-            if (mounted) setState(() => _quickBookCounts[type] = list.length);
-            return;
-          }
-        }
-        if (mounted) setState(() => _quickBookCounts[type] = 0);
-      } catch (_) {
-        if (mounted) setState(() => _quickBookCounts[type] = 0);
-      }
-    });
-    await Future.wait(futures);
   }
 
   // -----------------------------------------------------------------------
@@ -805,130 +731,6 @@ class _ServiceTabState extends State<ServiceTab> {
     );
   }
 
-  // -----------------------------------------------------------------------
-  // Quick Book helpers (unchanged from before)
-  // -----------------------------------------------------------------------
-  Future<void> _callNumber(String? phone) async {
-    if (phone == null || phone.isEmpty) return;
-    try {
-      await launchUrl(Uri(scheme: 'tel', path: phone));
-    } catch (_) {}
-  }
-
-  Future<void> _openMapDirections(String? address) async {
-    if (address == null || address.isEmpty) return;
-    final query = Uri.encodeComponent(address);
-    try {
-      await launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=$query'), mode: LaunchMode.externalApplication);
-    } catch (_) {}
-  }
-
-  void _openQuickBookSheet(Map<String, dynamic> category) {
-    final type = category['type'] as String;
-    final label = category['label'] as String;
-    final providersFuture = _fetchProvidersFor(type);
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.cardBg,
-      isScrollControlled: true,
-      shape: AppDecor.sheetShape,
-      builder: (sheetContext) {
-        return FutureBuilder<List<Map<String, dynamic>>>(
-          future: providersFuture,
-          builder: (context, snapshot) {
-            final loading = snapshot.connectionState == ConnectionState.waiting;
-            final providers = snapshot.data ?? [];
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: AppText.dialogTitle),
-                  const SizedBox(height: 4),
-                  Text(
-  widget.pincode.trim().isNotEmpty
-      ? AppStrings.nearPincode(widget.pincode)
-      : AppStrings.nearYourLocation,
-  style: AppText.caption,
-),
-                  const SizedBox(height: 16),
-                  if (loading)
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 30),
-                      child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-                    )
-                  else if (providers.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Text(AppStrings.noProvidersFound, style: AppText.faintCaption),
-                    )
-                  else
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.55),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: providers.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) {
-                          final s = providers[i];
-                          final phone = s['phone']?.toString();
-                          final address = s['address']?.toString();
-                          final ratingRaw = s['rating'];
-                          final rating = ratingRaw != null && ratingRaw.toString() != 'N/A'
-                              ? double.tryParse(ratingRaw.toString())
-                              : null;
-                          return ServiceProviderCard(
-                            name: s['name']?.toString() ?? AppStrings.notAvailable,
-                            address: address,
-                            phone: phone,
-                            rating: rating,
-                            onCall: (phone != null && phone.isNotEmpty && phone != 'N/A') ? () => _callNumber(phone) : null,
-                            onDirections: (address != null && address.isNotEmpty && address != 'Address not available')
-                                ? () => _openMapDirections(address)
-                                : null,
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchProvidersFor(String serviceType) async {
-    try {
-            final locationQuery = await _locationQuery();
-      if (locationQuery.isEmpty) return [];
-
-      final response = await ApiClient.post(
-        '${ApiConfig.homeServicesUrl}'
-        '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
-        '$locationQuery',
-      );
-
-debugPrint('🔧 Quick book sheet ($serviceType) status: ${response.statusCode}');
-debugPrint('🔧 Quick book sheet ($serviceType) body: ${response.body}');
-
-if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          final raw = data['data'];
-          final list = raw is List ? raw : [raw];
-          return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ Quick book fetch error: $e');
-    }
-    return [];
-  }
-
   // -----------------------------------------------------------------
   // BUILD
   // -----------------------------------------------------------------
@@ -1021,11 +823,11 @@ if (response.statusCode == 200) {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: _filterOptions.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final option = _filterOptions[index];
           final isSelected = _selectedFilter == option['key'];
-                              return InkWell(
+          return InkWell(
             onTap: () => setState(() => _selectedFilter = option['key']!),
             borderRadius: BorderRadius.circular(8),
             child: Container(
@@ -1192,7 +994,12 @@ if (response.statusCode == 200) {
     );
   }
 
+  // ---------------------------------------------------------------------
+  // QUICK BOOK GRID — same categories + same sheet as Home tab.
+  // ---------------------------------------------------------------------
   Widget _buildQuickBookGrid() {
+    final categories = HomeServices.categories;
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -1202,14 +1009,14 @@ if (response.statusCode == 200) {
         crossAxisSpacing: 10,
         childAspectRatio: 2.2,
       ),
-      itemCount: _quickBookCategories.length,
-            itemBuilder: (context, i) {
-        final cat = _quickBookCategories[i];
+      itemCount: categories.length,
+      itemBuilder: (context, i) {
+        final cat = categories[i];
         final type = cat['type'] as String;
         final count = _quickBookCounts[type];
         final color = cat['color'] as Color;
         return InkWell(
-          onTap: () => _openQuickBookSheet(cat),
+          onTap: () => HomeServices.openSheet(context, cat, widget.pincode),
           borderRadius: BorderRadius.circular(14),
           child: Container(
             padding: const EdgeInsets.all(12),

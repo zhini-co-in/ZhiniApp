@@ -4,24 +4,18 @@
 // Reuses the same Hive box ('homes') that HomeTab populates, so no extra
 // network fetch is needed here; this screen is purely a different view
 // over the same data HomeTab already keeps in sync.
+//
+// Details sheet / edit / service / booking / remove all live in
+// widgets/device_details_sheet.dart (shared with HomeTab).
 
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'constants/app_strings.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
-import 'constants/api_config.dart';
+import 'constants/app_strings.dart';
+import 'home_tab.dart' show ScanRequest;
 import 'models/home_model.dart';
 import 'theme/app_theme.dart';
-import 'utils/warranty_utils.dart';
-import 'services/entity_update_service.dart';
-import 'widgets/app_dialog_field.dart';
-import 'widgets/confirm_action_dialog.dart';
-import 'widgets/service_provider_card.dart';
-import 'home_tab.dart' show ScanRequest;
-import 'package:url_launcher/url_launcher.dart';
-import 'services/api_client.dart';
 import 'utils/devices_filter_bus.dart';
-import 'widgets/warranty_badge.dart';
+import 'widgets/device_details_sheet.dart';
 
 class DevicesTab extends StatefulWidget {
   final String mobileNumber;
@@ -43,71 +37,7 @@ class DevicesTab extends StatefulWidget {
   State<DevicesTab> createState() => _DevicesTabState();
 }
 
-// Flattened view of one appliance + which home/room it lives in.
-class _DeviceEntry {
-  final String? homeId;
-  final String homeAddress;
-  final String pincode;
-  final String roomKey;
-  final String roomName;
-  final Map<String, dynamic> raw;
-
-  _DeviceEntry({
-    required this.homeId,
-    required this.homeAddress,
-    required this.pincode,
-    required this.roomKey,
-    required this.roomName,
-    required this.raw,
-  });
-
-  String get product => raw['product']?.toString().trim().isNotEmpty == true
-      ? raw['product'].toString()
-      : 'Appliance';
-  String get brand => raw['brand']?.toString() ?? '';
-  String? get imageUrl => raw['imageUrl']?.toString();
-  String? get deviceId => (raw['deviceId'] ?? raw['_id'])?.toString();
-
-  DateTime? get _createdAt => DateTime.tryParse(raw['createdAt']?.toString() ?? '');
-
-  DateTime? get expiry =>
-      WarrantyUtils.parseExpiry(raw['warranty']?.toString(), referenceDate: _createdAt);
-
-  bool get isUnderWarranty => expiry != null && expiry!.isAfter(DateTime.now());
-  bool get isExpired => expiry != null && !expiry!.isAfter(DateTime.now());
-  bool get warrantyUnknown => expiry == null;
-
-  // Expired OR expiring within 30 days
-  bool get isAttention => expiry != null && expiry!.difference(DateTime.now()).inDays <= 30;
-
-  // Backend may optionally send `lastServiceDate` / `nextServiceDue` /
-  // `serviceDue`. If none of those are present we simply don't flag the
-  // device as service-due instead of guessing.
-  bool get isServiceDue {
-    if (raw['serviceDue'] == true) return true;
-    final nextDue = DateTime.tryParse(raw['nextServiceDue']?.toString() ?? '');
-    if (nextDue != null) return !nextDue.isAfter(DateTime.now());
-    return false;
-  }
-
-  int get ageYears {
-    final created = _createdAt;
-    if (created == null) return 0;
-    return (DateTime.now().difference(created).inDays / 365).floor();
-  }
-
-  String get ageLabel {
-    final created = _createdAt;
-    if (created == null) return '';
-    final days = DateTime.now().difference(created).inDays;
-    if (days < 30) return '$days d';
-    final years = days / 365;
-    if (years < 1) return '${(days / 30).round()} mo';
-    return '${years.toStringAsFixed(years >= 10 ? 0 : 1)} yrs';
-  }
-
-  String get purchasedYear => _createdAt != null ? _createdAt!.year.toString() : 'Unknown';
-}
+typedef _DeviceEntry = DeviceEntry;
 
 class _DevicesTabState extends State<DevicesTab> {
   final _homeBox = Hive.box<HomeModel>('homes');
@@ -295,268 +225,29 @@ class _DevicesTabState extends State<DevicesTab> {
     _searchFocus.unfocus();
     setState(() {});
   }
+  String _brandLabel(_DeviceEntry e) {
+    final b = e.brand.trim();
+    final valid = b.isNotEmpty && b.toLowerCase() != 'unknown' && b.toUpperCase() != 'N/A';
+    return valid ? b : AppStrings.brandNotAdded;
+  }
+
+  void _refreshView() {
+    if (mounted) setState(() {});
+  }
+
+  void _openDetailsSheet(_DeviceEntry e) => showDeviceDetailsSheet(
+        context,
+        e,
+        mobileNumber: widget.mobileNumber,
+        name: widget.name,
+        onChanged: _refreshView,
+      );
 
   void _requestScan() {
     widget.onScanTap?.call(
       homeId: _currentHomeIdCache,
       address: widget.address,
       pincode: widget.pincode,
-    );
-  }
-
-  Future<void> _callNumber(String phone) async {
-    final uri = Uri(scheme: 'tel', path: phone);
-    try {
-      await launchUrl(uri);
-    } catch (_) {}
-  }
-
-  Future<void> _openMapDirections(String address) async {
-    final query = Uri.encodeComponent(address);
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {}
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchNearbyProviders(_DeviceEntry e) async {
-    try {
-      final response = await ApiClient.post(ApiConfig.nearbyServiceUrl, body: {
-        'brand': e.brand,
-        'product': e.product,
-        'pincode': e.pincode,
-        'isUnderWarranty': e.isUnderWarranty,
-      });
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          final rawData = data['data'];
-          final List<dynamic> rawList = rawData is List ? rawData : [rawData];
-          return rawList.map((x) => Map<String, dynamic>.from(x as Map)).toList();
-        }
-      }
-    } catch (err) {
-      debugPrint('❌ Nearby service fetch error: $err');
-    }
-    return [];
-  }
-
-  // ---------------------------------------------------------------------
-  // SERVICE SHEET — authorized (under warranty) / local (out of warranty)
-  // Book button shows ONLY for local providers.
-  // ---------------------------------------------------------------------
-  void _openServiceSheet(_DeviceEntry e) {
-    final providersFuture = _fetchNearbyProviders(e)
-        .timeout(const Duration(seconds: 30), onTimeout: () => <Map<String, dynamic>>[]);
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.cardBg,
-      isScrollControlled: true,
-      shape: AppDecor.sheetShape,
-      builder: (sheetContext) {
-        return FutureBuilder<List<Map<String, dynamic>>>(
-          future: providersFuture,
-          builder: (context, snapshot) {
-            final loading = snapshot.connectionState != ConnectionState.done;
-            final providers = snapshot.data ?? [];
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                      e.isUnderWarranty
-                          ? AppStrings.authorizedServiceCenters
-                          : AppStrings.localRepairProviders,
-                      style: AppText.dialogTitle),
-                  const SizedBox(height: 2),
-                  Text(AppStrings.productPincode(e.product, e.pincode), style: AppText.caption),
-                  const SizedBox(height: 16),
-                  if (loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 30),
-                      child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-                    )
-                  else if (providers.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Text(AppStrings.noProvidersFound, style: AppText.faintCaption),
-                    )
-                  else
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.55),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: providers.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) {
-                          final p = providers[i];
-                          final phone = (p['mobile'] ?? p['phone'])?.toString();
-                          final address = p['address']?.toString();
-                          final ratingRaw = p['rating'];
-                          final rating = ratingRaw != null && ratingRaw.toString() != 'N/A'
-                              ? double.tryParse(ratingRaw.toString())
-                              : null;
-                          final hasPhone = phone != null && phone.isNotEmpty && phone != 'N/A';
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              ServiceProviderCard(
-                                name: p['name']?.toString() ?? AppStrings.notAvailable,
-                                address: address,
-                                phone: phone,
-                                rating: rating,
-                                onCall: (phone != null && phone.isNotEmpty && phone != 'N/A')
-                                    ? () => _callNumber(phone)
-                                    : null,
-                                onDirections: (address != null &&
-                                        address.isNotEmpty &&
-                                        address != 'Address not available')
-                                    ? () => _openMapDirections(address)
-                                    : null,
-                              ),
-                              // Book button -> LOCAL (out of warranty) mattum
-                              if (!e.isUnderWarranty) ...[
-                                const SizedBox(height: 6),
-                                ElevatedButton.icon(
-                                  onPressed: hasPhone ? () => _openBookingDialog(sheetContext, p, e) : null,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.danger,
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                  ),
-                                  icon: const Icon(Icons.calendar_month_rounded,
-                                      size: 15, color: AppColors.textPrimary),
-                                  label: const Text('Book this provider',
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.textPrimary)),
-                                ),
-                              ],
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // POST /createServiceTicket
-  Future<bool> _submitServiceTicket({
-    required Map<String, dynamic> provider,
-    required _DeviceEntry device,
-    String? availableTime,
-  }) async {
-    final providerMobile = (provider['mobile'] ?? provider['phone'])?.toString();
-    if (providerMobile == null || providerMobile.isEmpty || providerMobile == 'N/A') {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('This provider has no contact number on file.')));
-      return false;
-    }
-
-    final label = device.brand.isNotEmpty && device.brand.toUpperCase() != 'N/A'
-        ? '${device.brand} ${device.product}'
-        : device.product;
-
-    try {
-      final response = await ApiClient.post(ApiConfig.createServiceTicketUrl, body: {
-        'customerName': widget.name.isNotEmpty ? widget.name : 'Customer',
-        'cust_number': ApiConfig.stripCountryCode(widget.mobileNumber),
-        'address': device.homeAddress,
-        'description': '$label — Out of warranty. Room: ${device.roomName}.',
-        'providerMobile': providerMobile,
-        if (availableTime != null && availableTime.trim().isNotEmpty)
-          'availableTime': availableTime.trim(),
-      });
-      if (!mounted) return false;
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Service booked ✅ — the provider will reach out shortly.')));
-        return true;
-      }
-      final data = jsonDecode(response.body);
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message']?.toString() ?? 'Could not book this provider.')));
-      return false;
-    } catch (err) {
-      debugPrint('❌ Create ticket error: $err');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(AppStrings.networkError)));
-      }
-      return false;
-    }
-  }
-
-  void _openBookingDialog(BuildContext sheetContext, Map<String, dynamic> provider, _DeviceEntry device) {
-    final timeController = TextEditingController();
-    bool isSubmitting = false;
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.cardBg,
-          shape: AppDecor.dialogShape,
-          title: const Text('Confirm booking', style: AppText.dialogTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('${provider['name'] ?? 'Provider'} will be notified about your ${device.product}.',
-                  style: AppText.faintCaption),
-              const SizedBox(height: 14),
-              AppDialogField(
-                controller: timeController,
-                hint: 'Preferred time (optional, e.g. Tomorrow 10 AM)',
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext),
-              child: const Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-              onPressed: isSubmitting
-                  ? null
-                  : () async {
-                      setDialogState(() => isSubmitting = true);
-                      final ok = await _submitServiceTicket(
-                        provider: provider,
-                        device: device,
-                        availableTime: timeController.text,
-                      );
-                      if (dialogContext.mounted) Navigator.pop(dialogContext);
-                      if (ok && sheetContext.mounted) Navigator.pop(sheetContext); // provider sheet um close
-                    },
-              child: isSubmitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
-                  : const Text('Book', style: TextStyle(color: AppColors.textPrimary)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _bookAllForResults(List<_DeviceEntry> results) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(AppStrings.requestingService(results.length))),
     );
   }
 
@@ -581,9 +272,12 @@ class _DevicesTabState extends State<DevicesTab> {
         icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMuted, size: 18),
         color: AppColors.cardBg,
         onSelected: (value) {
-          if (value == 'edit') _openEditDialog(e);
-          if (value == 'service') _openServiceSheet(e);
-          if (value == 'delete') _confirmRemove(e);
+          if (value == 'edit') showDeviceEditDialog(context, e, onChanged: _refreshView);
+          if (value == 'service') {
+            showDeviceServiceSheet(context, e,
+                mobileNumber: widget.mobileNumber, name: widget.name);
+          }
+          if (value == 'delete') confirmRemoveDevice(context, e, onChanged: _refreshView);
         },
         itemBuilder: (context) => [
           entry('edit', Icons.edit_outlined, AppColors.primary, AppStrings.edit, AppColors.textPrimary),
@@ -593,105 +287,6 @@ class _DevicesTabState extends State<DevicesTab> {
         ],
       ),
     );
-  }
-
-  void _openEditDialog(_DeviceEntry e) {
-    if (e.deviceId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(AppStrings.noDeviceIdCannotEdit)),
-      );
-      return;
-    }
-    final productController = TextEditingController(text: e.product);
-    final brandController = TextEditingController(text: e.brand);
-    bool isSaving = false;
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.cardBg,
-          shape: AppDecor.dialogShape,
-          title: const Text(AppStrings.editAppliance, style: AppText.dialogTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppDialogField(controller: productController, hint: AppStrings.productNameHint),
-              const SizedBox(height: 10),
-              AppDialogField(controller: brandController, hint: AppStrings.brandHint),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
-              child: const Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-              onPressed: isSaving
-                  ? null
-                  : () async {
-                      setDialogState(() => isSaving = true);
-                      final result = await EntityUpdateService.update(
-                        homeId: e.homeId,
-                        deviceId: e.deviceId,
-                        product: productController.text.trim().isNotEmpty ? productController.text.trim() : null,
-                        brand: brandController.text.trim().isNotEmpty ? brandController.text.trim() : null,
-                      );
-                      if (dialogContext.mounted) Navigator.pop(dialogContext);
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(result['success'] == true
-                                ? AppStrings.applianceUpdated
-                                : (result['message']?.toString() ?? AppStrings.updateFailed))),
-                      );
-                      if (result['success'] == true) {
-                        setState(() {
-                          e.raw['product'] = productController.text.trim();
-                          e.raw['brand'] = brandController.text.trim();
-                        });
-                      }
-                    },
-              child: isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
-                  : const Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _confirmRemove(_DeviceEntry e) async {
-    final ok = await showConfirmActionDialog(
-      context,
-      title: AppStrings.removeApplianceQ,
-      content: AppStrings.removeApplianceContent(e.product, e.roomName),
-    );
-    if (ok != true || e.homeId == null) return;
-    try {
-      final response = await ApiClient.delete(
-        ApiConfig.productDeleteUrl(e.homeId!),
-        body: {'roomName': e.roomKey, 'product': e.product},
-      );
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        setState(() {}); // Hive box listener will refresh once HomeTab re-fetches.
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppStrings.applianceRemoved(e.product))));
-      } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text(AppStrings.couldNotRemoveAppliance)));
-      }
-    } catch (err) {
-      debugPrint('❌ Delete device error: $err');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(AppStrings.networkError)));
-      }
-    }
   }
 
   // -----------------------------------------------------------------
@@ -1264,7 +859,7 @@ class _DevicesTabState extends State<DevicesTab> {
   }
 
   Widget _buildTabsRow() {
-        const tabs = ['All', 'Warranty', 'Attention', 'No warranty',];
+    const tabs = ['All', 'Warranty', 'Attention', 'No warranty'];
     return SizedBox(
       height: 34,
       child: ListView.separated(
@@ -1274,7 +869,7 @@ class _DevicesTabState extends State<DevicesTab> {
         itemBuilder: (context, i) {
           final t = tabs[i];
           final selected = _activeTab == t;
-                                        return _dashPill(t, selected, () => setState(() => _activeTab = t));
+          return _dashPill(t, selected, () => setState(() => _activeTab = t));
         },
       ),
     );
@@ -1418,77 +1013,70 @@ class _DevicesTabState extends State<DevicesTab> {
     return [
       if (showHeader) ...[
         Text(AppStrings.resultsFor(results.length, _query.trim()),
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+            style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8)),
         const SizedBox(height: 12),
       ],
       ...results.map((e) => Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: _buildResultCard(e),
           )),
-      if (results.length > 1) ...[
-        const SizedBox(height: 6),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: () => _bookAllForResults(results),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: AppColors.primary),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            icon: const Icon(Icons.build_rounded, size: 15, color: AppColors.primary),
-            label: Text(AppStrings.bookServiceForAll(results.length),
-                style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
-          ),
-        ),
-      ],
     ];
   }
 
-  // Search-result card: plain border, three-dot menu only.
+  // Search-result card: tap -> details sheet, three-dot menu for quick actions.
   Widget _buildResultCard(_DeviceEntry e) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderSubtle),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(color: AppColors.borderSubtle, borderRadius: BorderRadius.circular(10)),
-            clipBehavior: Clip.antiAlias,
-            child: e.imageUrl != null && e.imageUrl!.isNotEmpty
-                ? Image.network(e.imageUrl!, fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const Icon(Icons.devices_other_rounded, color: AppColors.textFaint))
-                : const Icon(Icons.devices_other_rounded, color: AppColors.textFaint),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openDetailsSheet(e),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderSubtle),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(color: AppColors.borderSubtle, borderRadius: BorderRadius.circular(10)),
+              clipBehavior: Clip.antiAlias,
+              child: e.imageUrl != null && e.imageUrl!.isNotEmpty
+                  ? Image.network(e.imageUrl!, fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const Icon(Icons.devices_other_rounded, color: AppColors.textFaint))
+                  : const Icon(Icons.devices_other_rounded, color: AppColors.textFaint),
+            ),
+            const SizedBox(width: 12),
+                        Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(e.product,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(_brandLabel(e),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
+                  const SizedBox(height: 6),
+                                    _warrantyIndicator(e),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text('${e.brand.isNotEmpty ? '${e.brand} ' : ''}${e.product}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text('${e.roomName} · ${e.purchasedYear}', style: AppText.caption),
-                const SizedBox(height: 6),
-                WarrantyBadge(expiry: e.expiry),
+                _buildItemMenu(e),
               ],
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _buildItemMenu(e),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1496,69 +1084,21 @@ class _DevicesTabState extends State<DevicesTab> {
   Widget _buildNoResults() {
     final q = _query.trim();
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 30),
-      child: Column(
-        children: [
-          const Icon(Icons.search_off_rounded, size: 40, color: AppColors.textFaint),
-          const SizedBox(height: 14),
-          const Text(AppStrings.noApplianceFound,
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Text(
-            q.isNotEmpty ? AppStrings.notRegisteredYet(q) : AppStrings.tryDifferentSearch,
-            textAlign: TextAlign.center,
-            style: AppText.faintCaption,
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _requestScan,
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppColors.primary),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              icon: const Icon(Icons.qr_code_scanner_rounded, size: 16, color: AppColors.primary),
-              label: Text(q.isNotEmpty ? AppStrings.scanAndAdd(q) : AppStrings.scanAndAddAppliance,
-                  style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(AppStrings.orTrySearchingFor, style: AppText.faintCaption),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              _suggestionChip(AppStrings.filterByRoom, Icons.door_front_door_outlined, () {}),
-              _suggestionChip(AppStrings.byBrand, Icons.sell_outlined, () {}),
-              _suggestionChip(AppStrings.allDevices, Icons.devices_other_rounded, _exitSearch),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _suggestionChip(String label, IconData icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.cardBgAlt,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.borderSubtle),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Center(
+        child: Column(
           children: [
-            Icon(icon, size: 13, color: AppColors.textSecondary),
-            const SizedBox(width: 6),
-            Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5)),
+            const Icon(Icons.search_off_rounded, size: 40, color: AppColors.textFaint),
+            const SizedBox(height: 14),
+            const Text(AppStrings.noApplianceFound,
+                style: TextStyle(
+                    color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(
+              q.isNotEmpty ? AppStrings.notRegisteredYet(q) : AppStrings.tryDifferentSearch,
+              textAlign: TextAlign.center,
+              style: AppText.faintCaption,
+            ),
           ],
         ),
       ),
@@ -1569,7 +1109,7 @@ class _DevicesTabState extends State<DevicesTab> {
   Widget _buildDashboard(List<_DeviceEntry> all) {
     final warrantyOk = all.where((e) => e.isUnderWarranty).length;
     final attentionCount = all.where((e) => e.isAttention).length;
-        final noWarrantyCount = all.where((e) => e.warrantyUnknown).length;
+    final noWarrantyCount = all.where((e) => e.warrantyUnknown).length;
 
     // List follows the active pill
     final visible = all.where(_matchesTab).toList();
@@ -1592,7 +1132,7 @@ class _DevicesTabState extends State<DevicesTab> {
               const SizedBox(width: 8),
               _dashPill(AppStrings.pillWarranty(warrantyOk), _activeTab == 'Warranty',
                   () => setState(() => _activeTab = 'Warranty')),
-                                const SizedBox(width: 8),
+              const SizedBox(width: 8),
               _dashPill('No warranty $noWarrantyCount', _activeTab == 'No warranty',
                   () => setState(() => _activeTab = 'No warranty')),
             ],
@@ -1614,9 +1154,7 @@ class _DevicesTabState extends State<DevicesTab> {
         ],
         if (healthy.isNotEmpty) ...[
           const SizedBox(height: 22),
-                    _sectionHeader(_activeTab == 'No warranty'
-              ? 'NO WARRANTY DEVICES'
-              : AppStrings.healthyDevices),
+          _sectionHeader(_activeTab == 'No warranty' ? 'NO WARRANTY DEVICES' : AppStrings.healthyDevices),
           const SizedBox(height: 10),
           ...healthy.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'healthy'))),
@@ -1670,58 +1208,67 @@ class _DevicesTabState extends State<DevicesTab> {
             color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8));
   }
 
-  // Dashboard card: plain border, three-dot menu only.
+  // Dashboard card: tap -> details sheet, three-dot menu for quick actions.
   Widget _buildDashCard(_DeviceEntry e, String variant) {
     final List<Widget> badges = variant == 'service'
-        ? [_pill(AppStrings.filterServiceDue, AppColors.warning), WarrantyBadge(expiry: e.expiry)]
-        : [WarrantyBadge(expiry: e.expiry)];
+        ? [_pill(AppStrings.filterServiceDue, AppColors.warning), _warrantyIndicator(e)]
+        : [_warrantyIndicator(e)];
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderSubtle),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(color: AppColors.borderSubtle, borderRadius: BorderRadius.circular(10)),
-            clipBehavior: Clip.antiAlias,
-            child: e.imageUrl != null && e.imageUrl!.isNotEmpty
-                ? Image.network(e.imageUrl!, fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const Icon(Icons.devices_other_rounded, color: AppColors.textFaint))
-                : const Icon(Icons.devices_other_rounded, color: AppColors.textFaint),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openDetailsSheet(e),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderSubtle),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(color: AppColors.borderSubtle, borderRadius: BorderRadius.circular(10)),
+              clipBehavior: Clip.antiAlias,
+              child: e.imageUrl != null && e.imageUrl!.isNotEmpty
+                  ? Image.network(e.imageUrl!, fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const Icon(Icons.devices_other_rounded, color: AppColors.textFaint))
+                  : const Icon(Icons.devices_other_rounded, color: AppColors.textFaint),
+            ),
+            const SizedBox(width: 12),
+                        Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(e.product,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(_brandLabel(e),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
+                  const SizedBox(height: 6),
+                                    Wrap(spacing: 6, runSpacing: 6, children: badges),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(e.product,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(AppStrings.roomPurchased(e.roomName, e.purchasedYear), style: AppText.caption),
-                const SizedBox(height: 6),
-                Wrap(spacing: 6, runSpacing: 6, children: badges),
+                _buildItemMenu(e),
               ],
             ),
-          ),
-          const SizedBox(width: 6),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _buildItemMenu(e),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+
+  // Shared indicator (No warranty -> red, active -> green, expired -> badge).
+  Widget _warrantyIndicator(_DeviceEntry e) => DeviceWarrantyIndicator(e);
 
   Widget _pill(String text, Color color, {bool plain = false}) {
     if (text.isEmpty) return const SizedBox.shrink();
