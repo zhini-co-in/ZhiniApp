@@ -65,7 +65,7 @@ class _ServiceProviderOnboardingScreenState
       'Refrigerator', 'Washing Machine', 'Television', 'Microwave Oven',
       'Water Purifier (RO)', 'Geyser / Water Heater', 'Mixer / Grinder',
       'Ceiling / Table Fan', 'Air Cooler', 'Induction / Gas Stove', 'Chimney',
-      'Dishwasher', 'Inverter / UPS', 'Vacuum Cleaner', 'Iron Box', 'Wi-Fi Router',
+      'Dishwasher', 'Inverter / UPS', 'Vacuum Cleaner', 'Iron Box', 'Wi-Fi Router', 'Water Dispenser'
     ],
   };
 
@@ -260,33 +260,49 @@ class _ServiceProviderOnboardingScreenState
         _createdHomeId = homeId; // NEW
       }
 
-      // Step B: service provider create.
-      final finalExpertise =
-          _selectedAppliances.where((e) => e != 'Others').toList();
-      if (_selectedAppliances.contains('Others')) {
-        final customServices = _othersController.text
-            .split(',')
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty);
-        finalExpertise.addAll(customServices);
-      }
+// Step B: service provider create.
+// Skills + sub-services ellame oru comma-separated list ah
+final finalExpertise = <String>{}; // Set -> duplicate varaadhu
 
-      final subMap = {
-        for (final e in _selectedSubs.entries)
-          if (_selectedAppliances.contains(e.key) && e.value.isNotEmpty)
-            e.key: e.value.toList(),
-      };
+// 1) Selected skills (Others thavira)
+finalExpertise.addAll(
+  _selectedAppliances.where((e) => e != 'Others'),
+);
+
+// 2) Selected sub-services (skill select panna mattum)
+for (final entry in _selectedSubs.entries) {
+  if (_selectedAppliances.contains(entry.key)) {
+    finalExpertise.addAll(entry.value);
+  }
+}
+
+// 3) Others la type pannadhu
+if (_selectedAppliances.contains('Others')) {
+  finalExpertise.addAll(
+    _othersController.text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty),
+  );
+}
+
+final subMap = {
+  for (final e in _selectedSubs.entries)
+    if (_selectedAppliances.contains(e.key) && e.value.isNotEmpty)
+      e.key: e.value.toList(),
+};
 
       final uri = Uri.parse(ApiConfig.createServiceProviderUrl);
-      final request = http.MultipartRequest('POST', uri)
-        ..headers.addAll(await ApiClient.authHeaders())
-        ..fields['name'] = _nameController.text.trim()
-        ..fields['mobile'] = _plainMobile
-        ..fields['address'] = _addressController.text.trim()
-        ..fields['pincode'] = _pincodeController.text.trim()
-        ..fields['range'] = _workingRangeKm.round().toString()
-        ..fields['expertise'] = finalExpertise.join(',')
-        ..fields['subServices'] = jsonEncode(subMap);
+final request = http.MultipartRequest('POST', uri)
+  ..headers.addAll(await ApiClient.authHeaders())
+  ..fields['name'] = _nameController.text.trim()
+  ..fields['mobile'] = _plainMobile
+  ..fields['address'] = _addressController.text.trim()
+  ..fields['pincode'] = _pincodeController.text.trim()
+  ..fields['range'] = _workingRangeKm.round().toString()
+  // skills + sub-services + others ellame comma separated
+  ..fields['expertise'] = finalExpertise.join(',')
+  ..fields['subServices'] = jsonEncode(subMap);
 
       if (_gstinController.text.trim().isNotEmpty) {
         request.fields['gstNumber'] = _gstinController.text.trim();
