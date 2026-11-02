@@ -18,6 +18,7 @@ import 'package:geolocator/geolocator.dart';
 import 'widgets/scan_shutter_button.dart';
 import 'widgets/zhini_thinking_view.dart';
 import 'widgets/warranty_badge.dart';
+import 'package:flutter/services.dart';
 
 class ScanTab extends StatefulWidget {
   final String mobileNumber;
@@ -131,6 +132,7 @@ class _ScanTabState extends State<ScanTab> {
         enableAudio: false,
       );
       await _cameraController!.initialize();
+      await _cameraController!.lockCaptureOrientation(DeviceOrientation.portraitUp);
       if (!mounted) return;
       setState(() => _isCameraReady = true);
 
@@ -725,7 +727,18 @@ void _startLiveCountdown() {
   Widget _buildCameraView() {
     return Stack(
       children: [
-        Positioned.fill(child: CameraPreview(_cameraController!)),
+                Positioned.fill(
+          child: ClipRect(
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: _cameraController!.value.previewSize!.height,
+                height: _cameraController!.value.previewSize!.width,
+                child: CameraPreview(_cameraController!),
+              ),
+            ),
+          ),
+        ),
 
         // Top bar
         Positioned(

@@ -20,8 +20,12 @@ class ThemeModeToggle extends StatelessWidget {
               Icon(isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
                   color: AppColors.primary, size: 22),
               const SizedBox(width: 12),
-              const Expanded(
-                child: Text('Appearance', style: AppText.cardTitle),
+                            const Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text('Appearance', style: AppText.cardTitle, maxLines: 1),
+                ),
               ),
               _chip('Light', Icons.light_mode_rounded, !isDark, () => ThemeController.setDark(false)),
               const SizedBox(width: 8),

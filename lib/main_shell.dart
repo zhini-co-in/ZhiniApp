@@ -226,22 +226,29 @@ Widget _buildBottomNavBar() {
         ),
       ],
     ),
-    child: SafeArea(
+        child: SafeArea(
       top: false,
-      child: SizedBox(
-        height: 68,
-        child: Row(
-  mainAxisAlignment: MainAxisAlignment.spaceAround,
-  children: [
-    _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
-    if (_hasHome)
-      _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
-    _addDeviceButton(),
-    if (_hasHome)
-      _navItem(icon: Icons.build_rounded, label: 'Services', slot: _Slot.service),
-    _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),
-  ],
-),
+      child: MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(
+            MediaQuery.of(context).textScaler.scale(1.0).clamp(1.0, 1.16),
+          ),
+        ),
+        child: SizedBox(
+          height: 68,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
+              if (_hasHome)
+                _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
+              _addDeviceButton(),
+              if (_hasHome)
+                _navItem(icon: Icons.build_rounded, label: 'Services', slot: _Slot.service),
+              _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),
+            ],
+          ),
+        ),
       ),
     ),
   );

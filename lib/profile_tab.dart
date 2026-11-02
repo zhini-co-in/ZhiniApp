@@ -36,6 +36,7 @@ import 'services/device_id_service.dart';
 import 'dart:io';
 import 'widgets/theme_mode_toggle.dart';
 import 'utils/warranty_utils.dart';
+import 'theme/text_scale_controller.dart';
 
 // Optional, backend-fed extras. Leave null/default until you have a real
 // source for them — the UI degrades gracefully either way.
@@ -660,7 +661,6 @@ class _ProfileTabState extends State<ProfileTab> {
       builder: (context, box, _) {
         final allHomes = box.values.map((h) => h.toMap()).toList();
         final homes = _registeredHomes(allHomes); // Default home excluded from display
-        final totalDevices = _totalDevices(box.values.toList());
         // Skip-flow users have no registered home yet — trimmed view.
         final hasHome = homes.isNotEmpty;
 
@@ -699,10 +699,14 @@ class _ProfileTabState extends State<ProfileTab> {
                                   color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
                         ),
                       ),
-                      const SizedBox(height: 24),
+                                            const SizedBox(height: 24),
                       _sectionHeader(AppStrings.appearance),
                       const SizedBox(height: 10),
                       const ThemeModeToggle(),
+                      const SizedBox(height: 16),
+                      _sectionHeader('FONT SIZE'),
+                      const SizedBox(height: 10),
+                      _buildFontSizeSelector(),
                       const SizedBox(height: 22),
                       _sectionHeader(AppStrings.accountActions, color: AppColors.danger),
                       const SizedBox(height: 10),
@@ -717,14 +721,8 @@ class _ProfileTabState extends State<ProfileTab> {
                       ]),
                     ] else ...[
                       // ============= FULL PROFILE — real home exists =============
-                      const SizedBox(height: 22),
-                      _buildStatsRow(totalDevices),
-                      const SizedBox(height: 24),
+                                                                  const SizedBox(height: 22),
                       _buildHouseholdSection(homes),
-                      const SizedBox(height: 24),
-                      _sectionHeader(AppStrings.myProtectionPlan),
-                      const SizedBox(height: 10),
-                      _buildProtectionPlan(),
                       const SizedBox(height: 24),
                       _sectionHeader(AppStrings.myHomes),
                       const SizedBox(height: 10),
@@ -747,9 +745,18 @@ class _ProfileTabState extends State<ProfileTab> {
                       ),
                       const SizedBox(height: 24),
 
-                      _sectionHeader(AppStrings.appearance),
+                                            _sectionHeader(AppStrings.appearance),
                       const SizedBox(height: 10),
                       const ThemeModeToggle(),
+                      const SizedBox(height: 16),
+                      _sectionHeader('FONT SIZE'),
+                      const SizedBox(height: 10),
+                                            _buildFontSizeSelector(),
+                      const SizedBox(height: 24),
+
+                      _sectionHeader(AppStrings.myProtectionPlan),
+                      const SizedBox(height: 10),
+                      _buildProtectionPlan(),
                       const SizedBox(height: 24),
 
                       _sectionHeader(AppStrings.myStuff),
@@ -1628,6 +1635,54 @@ class _ProfileTabState extends State<ProfileTab> {
         Text(title,
             style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1)),
       ],
+    );
+  }
+    Widget _buildFontSizeSelector() {
+    return ValueListenableBuilder<FontSizeOption>(
+      valueListenable: TextScaleController.notifier,
+      builder: (context, selected, _) {
+        Widget chip(String label, FontSizeOption option) {
+          final isSel = selected == option;
+          return Expanded(
+            child: GestureDetector(
+              onTap: isSel ? null : () => TextScaleController.set(option),
+              child: Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: isSel ? AppColors.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSel ? AppColors.primary : AppColors.borderMuted,
+                  ),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: isSel ? AppColors.onPrimary : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: AppDecor.flatCard(radius: 14),
+          child: Row(
+            children: [
+              chip('Small', FontSizeOption.small),
+              const SizedBox(width: 8),
+              chip('Default', FontSizeOption.normal),
+              const SizedBox(width: 8),
+              chip('Large', FontSizeOption.large),
+            ],
+          ),
+        );
+      },
     );
   }
 

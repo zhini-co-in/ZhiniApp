@@ -12,9 +12,14 @@ import 'theme/theme_controller.dart';
 import 'update_service.dart';
 import 'theme/app_theme.dart';
 import 'package:flutter/rendering.dart';
+import 'theme/text_scale_controller.dart';
+import 'package:flutter/services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+    await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -56,8 +61,6 @@ void main() async {
       WidgetsBinding.instance.reassembleApplication();
     });
   });
-
-  runApp(const MyApp());
 
   runApp(const MyApp());
   UpdateService.checkForUpdate();
@@ -108,6 +111,19 @@ class MyApp extends StatelessWidget {
             brightness: isDark ? Brightness.dark : Brightness.light,
             scaffoldBackgroundColor: AppColors.scaffoldBg,
           ),
+                    builder: (context, child) {
+            return ValueListenableBuilder<FontSizeOption>(
+              valueListenable: TextScaleController.notifier,
+              builder: (context, option, _) {
+                return MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    textScaler: TextScaler.linear(TextScaleController.scaleOf(option)),
+                  ),
+                  child: child!,
+                );
+              },
+            );
+          },
           home: SplashScreen(),
         );
       },
