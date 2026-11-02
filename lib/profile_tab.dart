@@ -8,11 +8,9 @@
 // hero card, an "Add home" button, and Account Actions (Sign out).
 // Once a real home exists, the full profile renders.
 //
-// NOTE ON DATA SOURCES:
-//  - Device count / homes list come straight from the same Hive box
-//    ('homes') that HomeTab already keeps in sync — no extra network call.
-//  - "Service requests", "Saved via warranty" and the AMC/protection-plan
-//    block are optional constructor inputs with a graceful fallback state.
+// SELECTED HOME: MainShell passes `selectedHomeId` (the home currently
+// selected in HomeTab). Pull-to-refresh only re-fetches THAT home, and the
+// Hive box order is never shuffled, so the selection stays stable.
 
 import 'package:flutter/material.dart';
 import 'constants/app_strings.dart';
@@ -76,6 +74,7 @@ class ProfileTab extends StatefulWidget {
   final AmcPlan? amcPlan;
   final ScanRequest? onScanTap;
   final ValueChanged<String>? onNameChanged;
+  final String? selectedHomeId; // home currently selected in HomeTab
 
   const ProfileTab({
     super.key,
@@ -89,6 +88,7 @@ class ProfileTab extends StatefulWidget {
     this.amcPlan,
     this.onScanTap,
     this.onNameChanged,
+    this.selectedHomeId,
   });
 
   @override
@@ -97,6 +97,9 @@ class ProfileTab extends StatefulWidget {
 
 class _ProfileTabState extends State<ProfileTab> {
   final _homeBox = Hive.box<HomeModel>('homes');
+
+  // Hidden placeholder room created at signup — never shown.
+  static const String _hiddenSetupRoomKey = '__setup__';
 
   late String _displayName = widget.name;
 
@@ -144,6 +147,22 @@ class _ProfileTabState extends State<ProfileTab> {
     return null;
   }
 
+  // The home selected in HomeTab. Falls back to the first registered home
+  // if the id is unknown / not yet synced.
+  Map<String, dynamic>? _selectedHome(List<Map<String, dynamic>> homes) {
+    if (homes.isEmpty) return null;
+    final id = widget.selectedHomeId;
+    if (id != null) {
+      for (final h in homes) {
+        if (h['id']?.toString() == id) return h;
+      }
+    }
+    return homes.first;
+  }
+
+  bool _isSelected(Map<String, dynamic> home, List<Map<String, dynamic>> homes) =>
+      home['id']?.toString() == _selectedHome(homes)?['id']?.toString();
+
   // ---------------------------------------------------------------------
   // EDIT NAME
   // ---------------------------------------------------------------------
@@ -188,10 +207,10 @@ class _ProfileTabState extends State<ProfileTab> {
                       setDialogState(() => isSaving = true);
 
                       // updateEntity (backend) requires homeId as the root
-                      // anchor — pick the first available home (registered
-                      // or still "Default") to anchor the name update to.
+                      // anchor — use the selected home (or first available).
                       final allHomes = _homeBox.values.map((h) => h.toMap()).toList();
-                      final homeId = allHomes.isNotEmpty ? allHomes.first['id']?.toString() : null;
+                      final anchor = _selectedHome(allHomes);
+                      final homeId = anchor?['id']?.toString();
 
                       if (homeId == null) {
                         setState(() => _displayName = value);
@@ -406,7 +425,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       if (dialogContext.mounted) Navigator.pop(dialogContext);
                       if (!mounted) return;
                       if (result['success'] == true) {
-                        await _refreshHomes();
+                        await _refreshHomes(homeId: homeId); // only this home
                       }
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -521,62 +540,105 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   // ---------------------------------------------------------------------
-  // PULL TO REFRESH — re-fetches home/appliance data from backend and
-  // updates the shared Hive box, mirroring HomeTab's fetch logic.
+  // REFRESH
+  //  - homeId != null : re-fetch ONLY that home and replace it in place
+  //                     (Hive key kept, so order never changes).
+  //  - homeId == null : full refresh, but the previous order is preserved.
   // ---------------------------------------------------------------------
-  Future<void> _refreshHomes() async {
+  Map<String, dynamic> _parseHome(dynamic h) {
+    final roomsRaw = h['rooms'];
+    final Map<String, List<Map<String, dynamic>>> rooms = {};
+    final Map<String, String> roomIds = {};
+
+    if (roomsRaw is List) {
+      for (final roomObj in roomsRaw) {
+        if (roomObj is! Map) continue;
+        final roomName = roomObj['roomName']?.toString();
+        final devicesRaw = roomObj['devices'];
+        if (roomName == null || devicesRaw is! List) continue;
+        if (roomName.toLowerCase() == _hiddenSetupRoomKey) continue;
+
+        final key = roomName.toLowerCase();
+        rooms.putIfAbsent(key, () => []).addAll(
+              devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)),
+            );
+
+        final rid = (roomObj['_id'] ?? roomObj['roomId'])?.toString();
+        if (rid != null && rid.isNotEmpty) roomIds[key] = rid;
+      }
+    } else if (roomsRaw is Map) {
+      roomsRaw.forEach((key, value) {
+        if (value is List && key.toString().toLowerCase() != _hiddenSetupRoomKey) {
+          rooms.putIfAbsent(key.toString().toLowerCase(), () => []).addAll(
+                value.map((e) => Map<String, dynamic>.from(e as Map)),
+              );
+        }
+      });
+    }
+
+    final membersRaw = h['members'];
+    final List<Map<String, dynamic>> members = membersRaw is List
+        ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+        : <Map<String, dynamic>>[];
+
+    return {
+      'id': (h['_id'] ?? h['id'])?.toString(),
+      'address': h['address']?.toString() ?? widget.address,
+      'pincode': h['pincode']?.toString() ?? widget.pincode,
+      'rooms': rooms,
+      'roomIds': roomIds,
+      'members': members,
+    };
+  }
+
+  Future<void> _refreshHomes({String? homeId}) async {
     try {
       final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
-      final response = await ApiClient.get(
-        '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile',
-      );
+      var url = '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile';
+      if (homeId != null) url += '&homeId=$homeId';
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          final rawData = data['data'];
-          final List rawHomes = rawData is List ? rawData : [rawData];
+      final response = await ApiClient.get(url);
+      if (response.statusCode != 200) return;
 
-          final parsedHomes = rawHomes.map<Map<String, dynamic>>((h) {
-            final roomsRaw = h['rooms'];
-            final Map<String, List<Map<String, dynamic>>> rooms = {};
-            if (roomsRaw is List) {
-              for (final roomObj in roomsRaw) {
-                if (roomObj is! Map) continue;
-                final roomName = roomObj['roomName']?.toString();
-                final devicesRaw = roomObj['devices'];
-                if (roomName == null || devicesRaw is! List) continue;
-                rooms[roomName.toLowerCase()] =
-                    devicesRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-              }
-            } else if (roomsRaw is Map) {
-              roomsRaw.forEach((key, value) {
-                if (value is List) {
-                  rooms[key.toString().toLowerCase()] =
-                      value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-                }
-              });
-            }
+      final data = jsonDecode(response.body);
+      if (data['success'] != true || data['data'] == null) return;
 
-            final membersRaw = h['members'];
-            final List<Map<String, dynamic>> members = membersRaw is List
-                ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
-                : <Map<String, dynamic>>[];
+      final rawData = data['data'];
+      final List rawHomes = rawData is List ? rawData : [rawData];
+      final parsedHomes = rawHomes.map<Map<String, dynamic>>(_parseHome).toList();
 
-            return {
-              'id': (h['_id'] ?? h['id'])?.toString(),
-              'address': h['address']?.toString() ?? widget.address,
-              'pincode': h['pincode']?.toString() ?? widget.pincode,
-              'rooms': rooms,
-              'members': members,
-            };
-          }).toList();
+      // ---------- SINGLE HOME: replace only that one, in place ----------
+      if (homeId != null) {
+        final match = parsedHomes.where((h) => h['id']?.toString() == homeId).toList();
+        if (match.isEmpty) return;
+        final updated = HomeModel.fromMap(match.first);
 
-          await _homeBox.clear();
-          for (final h in parsedHomes) {
-            await _homeBox.add(HomeModel.fromMap(h));
+        dynamic existingKey;
+        for (final k in _homeBox.keys) {
+          final m = _homeBox.get(k)?.toMap();
+          if (m?['id']?.toString() == homeId) {
+            existingKey = k;
+            break;
           }
         }
+        if (existingKey != null) {
+          await _homeBox.put(existingKey, updated); // order unchanged
+        } else {
+          await _homeBox.add(updated);
+        }
+        return;
+      }
+
+      // ---------- FULL refresh: keep the previous order ----------
+      final oldOrder = _homeBox.values.map((h) => h.toMap()['id']?.toString()).toList();
+      parsedHomes.sort((a, b) {
+        final ia = oldOrder.indexOf(a['id']?.toString());
+        final ib = oldOrder.indexOf(b['id']?.toString());
+        return (ia == -1 ? 1 << 20 : ia).compareTo(ib == -1 ? 1 << 20 : ib);
+      });
+      await _homeBox.clear();
+      for (final h in parsedHomes) {
+        await _homeBox.add(HomeModel.fromMap(h));
       }
     } catch (e) {
       debugPrint('❌ Profile refresh error: $e');
@@ -602,13 +664,15 @@ class _ProfileTabState extends State<ProfileTab> {
         // Skip-flow users have no registered home yet — trimmed view.
         final hasHome = homes.isNotEmpty;
 
+        final selectedId = _selectedHome(homes)?['id']?.toString();
+
         return Scaffold(
           backgroundColor: AppColors.scaffoldBg,
           body: SafeArea(
             child: RefreshIndicator(
               color: AppColors.primary,
               backgroundColor: AppColors.cardBg,
-              onRefresh: _refreshHomes,
+              onRefresh: () => _refreshHomes(homeId: selectedId),
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
@@ -696,8 +760,8 @@ class _ProfileTabState extends State<ProfileTab> {
                           iconColor: AppColors.success,
                           title: AppStrings.warrantyVault,
                           subtitle: _warrantyVaultSubtitle(homes),
-                          onTap: () => _openComingSoon(AppStrings.warrantyVault,
-                              AppStrings.warrantyVaultDesc),
+                          onTap: () => _openComingSoon(
+                              AppStrings.warrantyVault, AppStrings.warrantyVaultDesc),
                         ),
                         _accountRow(
                           icon: Icons.description_outlined,
@@ -705,16 +769,16 @@ class _ProfileTabState extends State<ProfileTab> {
                           title: AppStrings.documentLocker,
                           subtitle: AppStrings.documentLockerSub,
                           trailing: _chipLabel(AppStrings.documentLockerChip),
-                          onTap: () => _openComingSoon(AppStrings.documentLocker,
-                              AppStrings.documentLockerDesc),
+                          onTap: () => _openComingSoon(
+                              AppStrings.documentLocker, AppStrings.documentLockerDesc),
                         ),
                         _accountRow(
                           icon: Icons.notifications_outlined,
                           iconColor: AppColors.warning,
                           title: AppStrings.reminders,
                           subtitle: AppStrings.remindersSub,
-                          onTap: () => _openComingSoon(AppStrings.reminders,
-                              AppStrings.remindersDesc),
+                          onTap: () =>
+                              _openComingSoon(AppStrings.reminders, AppStrings.remindersDesc),
                         ),
                       ]),
                       const SizedBox(height: 24),
@@ -735,8 +799,8 @@ class _ProfileTabState extends State<ProfileTab> {
                           iconColor: AppColors.success,
                           title: AppStrings.paymentsBilling,
                           subtitle: AppStrings.paymentsBillingSub,
-                          onTap: () => _openComingSoon(AppStrings.paymentsBilling,
-                              AppStrings.paymentsBillingDesc),
+                          onTap: () => _openComingSoon(
+                              AppStrings.paymentsBilling, AppStrings.paymentsBillingDesc),
                         ),
                       ]),
                       const SizedBox(height: 24),
@@ -757,16 +821,16 @@ class _ProfileTabState extends State<ProfileTab> {
                           iconColor: AppColors.primary,
                           title: AppStrings.helpSupport,
                           subtitle: AppStrings.helpSupportSub,
-                          onTap: () => _openComingSoon(AppStrings.helpSupport,
-                              AppStrings.helpSupportDesc),
+                          onTap: () => _openComingSoon(
+                              AppStrings.helpSupport, AppStrings.helpSupportDesc),
                         ),
                         _accountRow(
                           icon: Icons.info_outline_rounded,
                           iconColor: AppColors.textMuted,
                           title: AppStrings.aboutZhini,
                           subtitle: AppStrings.aboutZhiniSub,
-                          onTap: () => _openComingSoon(AppStrings.aboutZhini,
-                              AppStrings.aboutZhiniDesc),
+                          onTap: () => _openComingSoon(
+                              AppStrings.aboutZhini, AppStrings.aboutZhiniDesc),
                         ),
                       ]),
                       const SizedBox(height: 24),
@@ -809,7 +873,7 @@ class _ProfileTabState extends State<ProfileTab> {
                         },
                         borderRadius: BorderRadius.circular(8),
                         child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 4, horizontal: 10),
+                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
                           child: Text(
                             AppStrings.poweredBy,
                             style: TextStyle(
@@ -832,7 +896,7 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   // ---------------------------------------------------------------------
-  // HERO CARD (replaces old header + avatar card)
+  // HERO CARD
   // ---------------------------------------------------------------------
   Widget _buildHeroCard() {
     final name = _displayName.trim();
@@ -947,7 +1011,8 @@ class _ProfileTabState extends State<ProfileTab> {
               children: [
                 if (widget.verified) _heroChip(Icons.verified_rounded, AppStrings.verified),
                 if (widget.memberSince != null)
-                  _heroChip(Icons.calendar_month_rounded, AppStrings.sinceDate(_monthYear(widget.memberSince!))),
+                  _heroChip(Icons.calendar_month_rounded,
+                      AppStrings.sinceDate(_monthYear(widget.memberSince!))),
               ],
             ),
           ],
@@ -976,10 +1041,10 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   // ---------------------------------------------------------------------
-  // HOUSEHOLD
+  // HOUSEHOLD  (members of the SELECTED home)
   // ---------------------------------------------------------------------
   Widget _buildHouseholdSection(List<Map<String, dynamic>> homes) {
-    final currentHome = homes.isNotEmpty ? homes.first : null;
+    final currentHome = _selectedHome(homes);
     final members = (currentHome?['members'] as List?)
             ?.map((e) => Map<String, dynamic>.from(e as Map))
             .toList() ??
@@ -1028,7 +1093,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       onTap: () => _confirmDeleteMember(currentHome, name, mobile),
                       borderRadius: BorderRadius.circular(8),
                       child: Padding(
-                        padding: EdgeInsets.all(4),
+                        padding: const EdgeInsets.all(4),
                         child: Icon(Icons.delete_outline, color: AppColors.danger, size: 18),
                       ),
                     ),
@@ -1243,7 +1308,9 @@ class _ProfileTabState extends State<ProfileTab> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content: Text(result['success'] == true ? AppStrings.memberRemoved(name) : (result['message']?.toString() ?? ''))),
+          content: Text(result['success'] == true
+              ? AppStrings.memberRemoved(name)
+              : (result['message']?.toString() ?? ''))),
     );
 
     if (result['success'] == true) {
@@ -1262,9 +1329,9 @@ class _ProfileTabState extends State<ProfileTab> {
         for (final raw in items) {
           final item = Map<String, dynamic>.from(raw as Map);
           final expiry = WarrantyUtils.parseExpiry(
-  item['warranty']?.toString(),
-  referenceDate: DateTime.tryParse(item['createdAt']?.toString() ?? ''),
-);
+            item['warranty']?.toString(),
+            referenceDate: DateTime.tryParse(item['createdAt']?.toString() ?? ''),
+          );
           if (expiry != null && expiry.isAfter(DateTime.now())) {
             active++;
           } else if (expiry != null) {
@@ -1367,8 +1434,8 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
             TextButton(
-              onPressed: () => _openComingSoon(AppStrings.protectionPlans,
-                  AppStrings.protectionPlansDesc),
+              onPressed: () =>
+                  _openComingSoon(AppStrings.protectionPlans, AppStrings.protectionPlansDesc),
               child: Text(AppStrings.explore, style: AppText.linkAction),
             ),
           ],
@@ -1443,7 +1510,7 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   // ---------------------------------------------------------------------
-  // HOMES LIST
+  // HOMES LIST  (PRIMARY badge = the home selected in HomeTab)
   // ---------------------------------------------------------------------
   List<Widget> _buildHomesList(List<Map<String, dynamic>> homes) {
     if (homes.isEmpty) {
@@ -1460,7 +1527,7 @@ class _ProfileTabState extends State<ProfileTab> {
       final title = address.isNotEmpty ? address.split(',').first.trim() : AppStrings.homeN(entry.key + 1);
       final locality = address.contains(',') ? address.split(',').skip(1).join(',').trim() : '';
       final deviceCount = _deviceCountForHome(home);
-      final isSelected = entry.key == 0;
+      final isSelected = _isSelected(home, homes);
 
       return Container(
         margin: const EdgeInsets.only(bottom: 10),
@@ -1524,8 +1591,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     Text(locality, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
                   ],
                   const SizedBox(height: 4),
-                  Text(AppStrings.devicesAmc(deviceCount, isSelected),
-                      style: AppText.caption),
+                  Text(AppStrings.devicesAmc(deviceCount, isSelected), style: AppText.caption),
                 ],
               ),
             ),

@@ -174,6 +174,7 @@ final serviceTab = ServiceTab(
       address: widget.address,
       pincode: widget.pincode,
       name: _name,
+      selectedHomeId: _selectedHomeId,
       onScanTap: _goToScan,
       onNameChanged: (newName) => setState(() => _name = newName),
     );

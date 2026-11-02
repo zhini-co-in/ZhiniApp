@@ -71,12 +71,22 @@ class HomeTabState extends State<HomeTab> {
 
   bool _fetchInFlight = false;
 
+  // True while a pull-to-refresh is running in the background. Only used to
+  // show a thin progress bar at the top — the pull indicator closes at once.
+  bool _refreshing = false;
+
   // Each entry: { id, address, pincode, members, rooms: {roomKey: [items]}, roomIds }
-  // NOTE: the backend still groups devices by room. The app no longer shows
-  // rooms: every device goes into the "Default" room and the UI flattens all
-  // rooms into one device list.
   List<Map<String, dynamic>> _homes = [];
   int _selectedHomeIndex = 0;
+
+  // Source of truth for the selected home. Index can shift when the list is
+  // re-ordered, so after every refresh we re-find the home by this id.
+  String? _selectedHomeId;
+
+  // Last values sent to MainShell (avoid redundant notifications).
+  String? _lastNotifiedId;
+  String? _lastNotifiedAddress;
+  String? _lastNotifiedPincode;
 
   // Name entered while registering (replaces "Guest" until app restarts).
   String? _nameOverride;
@@ -110,7 +120,6 @@ class HomeTabState extends State<HomeTab> {
   };
 
   // serviceType -> provider count, shown as "X nearby".
-  // Categories / fetch / sheet all live in HomeServices (shared with Service tab).
   final Map<String, int> _serviceCounts = {};
 
   // ── Banner carousel ──
@@ -153,14 +162,31 @@ class HomeTabState extends State<HomeTab> {
   }
 
   // Called by MainShell when the Home tab is tapped.
+  // Service counts are NOT cleared here (avoids "..." flicker) — the old
+  // numbers stay visible and get replaced when the new ones arrive.
   Future<void> refresh() async {
     while (_fetchInFlight) {
       await Future.delayed(const Duration(milliseconds: 100));
     }
     await _fetchAppliances();
     if (!mounted) return;
-    setState(() => _serviceCounts.clear());
     _prefetchServiceCounts();
+  }
+
+  // Pull-to-refresh handler. Runs the fetch in the background so the pull
+  // indicator can close immediately and the screen stays where it is.
+  Future<void> _silentRefresh() async {
+    if (_refreshing) return;
+    if (mounted) setState(() => _refreshing = true);
+    try {
+      if (_currentHomeId != null) {
+        await _fetchAppliances(homeId: _currentHomeId);
+      } else {
+        await _fetchAppliances();
+      }
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
   }
 
   void _snack(String message) {
@@ -194,11 +220,6 @@ class HomeTabState extends State<HomeTab> {
   Future<void> _fetchAppliances({String? homeId}) async {
     final isSingleHomeRefresh = homeId != null;
 
-    // Remember the selected home BEFORE the cache replaces _homes.
-    final selectedIdBefore = _currentHomeId;
-    final selectedAddressBefore = _currentHome?['address']?.toString().trim().toLowerCase();
-    final selectedPincodeBefore = _currentHome?['pincode']?.toString().trim();
-
     // Skip if a full refresh is already running.
     if (!isSingleHomeRefresh) {
       if (_fetchInFlight) return;
@@ -210,14 +231,10 @@ class HomeTabState extends State<HomeTab> {
       if (_homeBox.isNotEmpty && mounted) {
         setState(() {
           _homes = _homeBox.values.map((h) => h.toMap()).toList();
-          if (selectedIdBefore != null) {
-            final i = _homes.indexWhere((h) => h['id']?.toString() == selectedIdBefore);
-            if (i != -1) _selectedHomeIndex = i;
-          }
-          if (_selectedHomeIndex >= _homes.length) _selectedHomeIndex = 0;
+          _restoreSelection();
           _loading = false;
         });
-      } else {
+      } else if (mounted) {
         setState(() {
           _loading = true;
           _error = null;
@@ -290,59 +307,41 @@ class HomeTabState extends State<HomeTab> {
 
           final dedupedHomes = _dedupeHomes(parsedHomes);
 
+          // ---------- Single home refresh: ONLY that home is touched ----------
           if (isSingleHomeRefresh) {
-            if (dedupedHomes.isNotEmpty && mounted) {
-              final updated = dedupedHomes.firstWhere(
-                (h) => h['id']?.toString() == homeId,
-                orElse: () => dedupedHomes.first,
-              );
-              final idx = _homes.indexWhere((h) => h['id']?.toString() == homeId);
-              setState(() {
-                if (idx != -1) {
-                  _homes[idx] = updated;
-                } else {
-                  _homes.add(updated);
-                }
-              });
-              await _homeBox.clear();
-              for (final h in _homes) {
-                await _homeBox.add(HomeModel.fromMap(h));
+            final matches = dedupedHomes.where((h) => h['id']?.toString() == homeId).toList();
+            if (matches.isEmpty || !mounted) return;
+
+            final updated = matches.first;
+            final idx = _homes.indexWhere((h) => h['id']?.toString() == homeId);
+            setState(() {
+              if (idx != -1) {
+                _homes[idx] = updated;
+              } else {
+                _homes.add(updated);
               }
+              _restoreSelection();
+            });
+            await _homeBox.clear();
+            for (final h in _homes) {
+              await _homeBox.add(HomeModel.fromMap(h));
             }
             return;
           }
 
-          // Full refresh path.
+          // ---------- Full refresh ----------
+          // Order once, then use the SAME order for Hive and for the UI so
+          // ProfileTab and HomeTab always agree.
+          final ordered = _stableOrderHomes(_homes, dedupedHomes);
           await _homeBox.clear();
-          for (final h in dedupedHomes) {
+          for (final h in ordered) {
             await _homeBox.add(HomeModel.fromMap(h));
           }
 
-          final previousSelectedId = selectedIdBefore;
-          final previousAddress = selectedAddressBefore;
-          final previousPincode = selectedPincodeBefore;
-          final previousHomesSnapshot = List<Map<String, dynamic>>.from(_homes);
-
           if (mounted) {
             setState(() {
-              _homes = _stableOrderHomes(previousHomesSnapshot, dedupedHomes);
-
-              int idx = -1;
-              if (previousSelectedId != null) {
-                idx = _homes.indexWhere((h) => h['id']?.toString() == previousSelectedId);
-              }
-              if (idx == -1 && previousAddress != null && previousAddress.isNotEmpty) {
-                idx = _homes.indexWhere((h) =>
-                    h['address']?.toString().trim().toLowerCase() == previousAddress &&
-                    h['pincode']?.toString().trim() == previousPincode);
-              }
-
-              if (idx != -1) {
-                _selectedHomeIndex = idx;
-              } else if (_selectedHomeIndex >= _homes.length) {
-                _selectedHomeIndex = 0;
-              }
-
+              _homes = ordered;
+              _restoreSelection();
               _loading = false;
             });
           }
@@ -450,7 +449,26 @@ class HomeTabState extends State<HomeTab> {
   // ---------------------------------------------------------------------
   // CURRENT HOME HELPERS
   // ---------------------------------------------------------------------
-  Map<String, dynamic>? get _currentHome => _homes.isEmpty ? null : _homes[_selectedHomeIndex];
+  Map<String, dynamic>? get _currentHome =>
+      (_homes.isEmpty || _selectedHomeIndex >= _homes.length) ? null : _homes[_selectedHomeIndex];
+
+  // After any list change, point the index back at the SAME home (by id).
+  void _restoreSelection() {
+    if (_homes.isEmpty) {
+      _selectedHomeIndex = 0;
+      return;
+    }
+    if (_selectedHomeId != null) {
+      final i = _homes.indexWhere((h) => h['id']?.toString() == _selectedHomeId);
+      if (i != -1) {
+        _selectedHomeIndex = i;
+        return;
+      }
+    }
+    // Selected home no longer exists (or first load) -> fall back to index 0.
+    if (_selectedHomeIndex >= _homes.length) _selectedHomeIndex = 0;
+    _selectedHomeId = _homes[_selectedHomeIndex]['id']?.toString();
+  }
 
   Map<String, List<Map<String, dynamic>>> get _currentRooms =>
       (_currentHome?['rooms'] as Map<String, List<Map<String, dynamic>>>?) ?? {};
@@ -489,7 +507,16 @@ class HomeTabState extends State<HomeTab> {
   }
 
   void _notifySelectedHome() {
-    widget.onSelectedHomeChanged?.call(_currentHomeId, _currentAddress, _currentPincode);
+    final id = _currentHomeId;
+    final addr = _currentAddress;
+    final pin = _currentPincode;
+    if (id == _lastNotifiedId && addr == _lastNotifiedAddress && pin == _lastNotifiedPincode) {
+      return;
+    }
+    _lastNotifiedId = id;
+    _lastNotifiedAddress = addr;
+    _lastNotifiedPincode = pin;
+    widget.onSelectedHomeChanged?.call(id, addr, pin);
   }
 
   String _homeLabel(Map<String, dynamic> home, int index) {
@@ -680,7 +707,10 @@ class HomeTabState extends State<HomeTab> {
         if (!mounted) return;
         setState(() {
           final idx = _homes.indexWhere((h) => h['id']?.toString() == existingDefaultId);
-          if (idx != -1) _selectedHomeIndex = idx;
+          if (idx != -1) {
+            _selectedHomeIndex = idx;
+            _selectedHomeId = existingDefaultId;
+          }
           _serviceCounts.clear();
         });
         await SessionManager.updateHomeId(existingDefaultId);
@@ -712,7 +742,8 @@ class HomeTabState extends State<HomeTab> {
     if (!mounted) return;
     setState(() {
       final idx = _homes.indexWhere((h) => h['id']?.toString() == newHomeId);
-      _selectedHomeIndex = idx != -1 ? idx : _homes.length - 1;
+      _selectedHomeIndex = idx != -1 ? idx : (_homes.isEmpty ? 0 : _homes.length - 1);
+      _selectedHomeId = _homes.isNotEmpty ? _homes[_selectedHomeIndex]['id']?.toString() : null;
       _serviceCounts.clear();
     });
     await SessionManager.updateHomeId(newHomeId);
@@ -984,52 +1015,61 @@ class HomeTabState extends State<HomeTab> {
       body: SafeArea(
         child: _loading
             ? Center(child: CircularProgressIndicator(color: AppColors.lightPrimary))
-            : RefreshIndicator(
-                color: AppColors.lightPrimary,
-                onRefresh: () => _currentHomeId != null
-                    ? _fetchAppliances(homeId: _currentHomeId)
-                    : _fetchAppliances(),
-                child: CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverToBoxAdapter(child: _buildHeader()),
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                      sliver: SliverList(
-                        delegate: SliverChildListDelegate([
-                          if (_error != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
-                              child: Text(_error!, style: TextStyle(color: AppColors.danger)),
-                            )
-                          else if (!hasHome) ...[
-                            _buildRegisterHomeCard(),
-                            _buildDefaultHomePreview(),
-                            const SizedBox(height: 28),
-                            _buildServicesNearYou(),
-                          ] else ...[
-                            _buildBuildingsHeader(),
-                            const SizedBox(height: 16),
-                            _buildStatsRow(stats!),
-                            const SizedBox(height: 24),
-                            SectionHeader(
-                              AppStrings.devicesCount(stats['devices']!),
-                              actionLabel:
-                                  stats['devices']! > _maxDevicesOnHome ? AppStrings.viewAll : null,
-                              onManage: stats['devices']! > _maxDevicesOnHome
-                                  ? () => _openDevicesTabWith('All')
-                                  : null,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildDevicesList(),
-                            const SizedBox(height: 28),
-                            _buildServicesNearYou(),
-                          ],
-                        ]),
-                      ),
+            : Stack(
+                children: [
+                  // No stretch / bounce: content never moves while pulling.
+                  // The spinner just floats on top of the screen.
+                  ScrollConfiguration(
+                    behavior: const _NoStretchScrollBehavior(),
+                    child: RefreshIndicator(
+                    color: AppColors.lightPrimary,
+                    onRefresh: _silentRefresh,
+                    child: CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                          parent: ClampingScrollPhysics()),
+                      slivers: [
+                        SliverToBoxAdapter(child: _buildHeader()),
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                          sliver: SliverList(
+                            delegate: SliverChildListDelegate([
+                              if (_error != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  child: Text(_error!, style: TextStyle(color: AppColors.danger)),
+                                )
+                              else if (!hasHome) ...[
+                                _buildRegisterHomeCard(),
+                                _buildDefaultHomePreview(),
+                                const SizedBox(height: 28),
+                                _buildServicesNearYou(),
+                              ] else ...[
+                                _buildBuildingsHeader(),
+                                const SizedBox(height: 16),
+                                _buildStatsRow(stats!),
+                                const SizedBox(height: 24),
+                                SectionHeader(
+                                  AppStrings.devicesCount(stats['devices']!),
+                                  actionLabel: stats['devices']! > _maxDevicesOnHome
+                                      ? AppStrings.viewAll
+                                      : null,
+                                  onManage: stats['devices']! > _maxDevicesOnHome
+                                      ? () => _openDevicesTabWith('All')
+                                      : null,
+                                ),
+                                const SizedBox(height: 12),
+                                _buildDevicesList(),
+                                const SizedBox(height: 28),
+                                _buildServicesNearYou(),
+                              ],
+                            ]),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  ),
+                ],
               ),
       ),
     );
@@ -1182,6 +1222,7 @@ class HomeTabState extends State<HomeTab> {
                 if (value == _selectedHomeIndex) return;
                 setState(() {
                   _selectedHomeIndex = value;
+                  _selectedHomeId = _homes[value]['id']?.toString();
                   _serviceCounts.clear();
                 });
                 _notifySelectedHome();
@@ -1663,4 +1704,19 @@ class HomeTabState extends State<HomeTab> {
       ),
     );
   }
+}
+
+// Removes the stretch/glow overscroll effect so the page never visually
+// moves when the user pulls down. Pull-to-refresh spinner still works.
+class _NoStretchScrollBehavior extends MaterialScrollBehavior {
+  const _NoStretchScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+      BuildContext context, Widget child, ScrollableDetails details) {
+    return child;
+  }
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) => const ClampingScrollPhysics();
 }

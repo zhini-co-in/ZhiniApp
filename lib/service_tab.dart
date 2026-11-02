@@ -14,6 +14,7 @@ import 'constants/api_config.dart';
 import 'theme/app_theme.dart';
 import 'services/api_client.dart';
 import 'services/home_services.dart';
+import 'package:url_launcher/url_launcher.dart';
 // ---------------------------------------------------------------------
 // ADD THIS to lib/constants/api_config.dart (if not already present):
 //
@@ -102,6 +103,11 @@ class _ServiceTabState extends State<ServiceTab> {
           final rawData = data['data'];
           final List rawList = rawData is List ? rawData : (rawData == null ? [] : [rawData]);
           final tickets = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          if (tickets.isNotEmpty) {
+  debugPrint('🔑 Ticket keys: ${tickets.first.keys.toList()}');
+  debugPrint('🔑 assignedTo: ${tickets.first['assignedTo']}');
+  debugPrint('🔑 serviceDetails: ${tickets.first['serviceDetails']}');
+}
           if (mounted) {
             setState(() {
               _tickets = tickets;
@@ -271,31 +277,68 @@ class _ServiceTabState extends State<ServiceTab> {
         .join(' ');
   }
 
-  String? _assignedName(Map<String, dynamic> t) {
-    final assigned = t['assignedTo'];
-    if (assigned == null) return null;
-    if (assigned is Map) return assigned['name']?.toString();
-    final s = assigned.toString().trim();
-    return s.isEmpty ? null : s;
+String? _assignedPhone(Map<String, dynamic> t) {
+  final own = ApiConfig.stripCountryCode(widget.mobileNumber);
+  final v = t['assignedTo'];
+
+  String? raw;
+  if (v is Map) {
+    raw = (v['phone'] ?? v['mobile'] ?? v['contactNumber'])?.toString();
+  } else {
+    raw = v?.toString();
   }
 
-  String _serviceLabel(Map<String, dynamic> t) {
-    final sd = t['serviceDetails'];
-    if (sd is Map) {
-      final product = sd['product']?.toString();
-      final brand = sd['brand']?.toString();
-      if (product != null && product.isNotEmpty) {
-        return (brand != null && brand.isNotEmpty && brand.toUpperCase() != 'N/A')
-            ? '$brand $product'
-            : product;
-      }
-      final desc = sd['description']?.toString();
-      if (desc != null && desc.isNotEmpty) return desc;
+  final s = raw?.trim();
+  if (s == null || s.isEmpty || s == 'null') return null;
+  if (ApiConfig.stripCountryCode(s) == own) return null;
+  return s;
+}
+
+Future<void> _callNumber(String number) async {
+  final cleaned = number.replaceAll(RegExp(r'[^0-9+]'), '');
+  final uri = Uri(scheme: 'tel', path: cleaned);
+  try {
+    final ok = await launchUrl(uri);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not open dialer'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
     }
-    final billingProduct = t['billing'] is Map ? t['billing']['productName']?.toString() : null;
-    if (billingProduct != null && billingProduct.isNotEmpty) return billingProduct;
-    return AppStrings.serviceRequest;
+  } catch (e) {
+    debugPrint('❌ Call launch error: $e');
   }
+}
+
+bool _isJunk(String? s) {
+  if (s == null) return true;
+  final v = s.trim().toLowerCase();
+  const junk = {'', 'n/a', 'na', 'null', 'none', '-', 'default', 'room', 'room default'};
+  return junk.contains(v);
+}
+
+String _serviceLabel(Map<String, dynamic> t) {
+  final sd = t['serviceDetails'];
+  if (sd is Map) {
+    final product = sd['product']?.toString();
+    final brand = sd['brand']?.toString();
+    if (!_isJunk(product)) {
+      return !_isJunk(brand) ? '$brand $product' : product!;
+    }
+    final desc = sd['description']?.toString();
+    if (!_isJunk(desc)) {
+      // "Voltas Water Dispenser — Out of warranty. Room: Default."
+      // -> "Voltas Water Dispenser"
+      final name = desc!.split('—').first.split(' - ').first.trim();
+      if (!_isJunk(name)) return name;
+    }
+  }
+  final billingProduct = t['billing'] is Map ? t['billing']['productName']?.toString() : null;
+  if (!_isJunk(billingProduct)) return billingProduct!;
+  return AppStrings.serviceRequest;
+}
 
   String? _formattedDate(Map<String, dynamic> t) {
     final raw = t['updatedAt']?.toString();
@@ -861,7 +904,7 @@ class _ServiceTabState extends State<ServiceTab> {
     final status = _statusOf(t);
     final color = _statusColor(status);
     final ticketId = t['ticketId']?.toString();
-    final assigned = _assignedName(t);
+    final phone = _assignedPhone(t);
     final serviceLabel = _serviceLabel(t);
     final date = _formattedDate(t);
     final bill = _billFor(t);
@@ -913,24 +956,43 @@ class _ServiceTabState extends State<ServiceTab> {
               ),
             ],
           ),
-          if (assigned != null || date != null) ...[
-            const SizedBox(height: 10),
-            Row(
+          if (phone != null || date != null) ...[
+  const SizedBox(height: 10),
+  Row(
+    children: [
+      if (phone != null)
+        InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => _callNumber(phone),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                if (assigned != null) ...[
-                  Icon(Icons.person_outline_rounded, size: 14, color: AppColors.textMuted),
-                  const SizedBox(width: 5),
-                  Flexible(child: Text(assigned, style: AppText.caption, overflow: TextOverflow.ellipsis)),
-                ],
-                if (assigned != null && date != null) const SizedBox(width: 14),
-                if (date != null) ...[
-                  Icon(Icons.event_rounded, size: 14, color: AppColors.textMuted),
-                  const SizedBox(width: 5),
-                  Text(date, style: AppText.caption),
-                ],
+                Icon(Icons.call_rounded, size: 14, color: AppColors.primary),
+                const SizedBox(width: 5),
+                Text(
+                  phone,
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
               ],
             ),
-          ],
+          ),
+        ),
+      if (phone != null && date != null) const SizedBox(width: 14),
+      if (date != null) ...[
+        Icon(Icons.event_rounded, size: 14, color: AppColors.textMuted),
+        const SizedBox(width: 5),
+        Text(date, style: AppText.caption),
+      ],
+    ],
+  ),
+],
 
           // ---- Bottom action row: bill total (left) + cancel pill (right) ----
           if (hasBill || isCancellable) ...[
