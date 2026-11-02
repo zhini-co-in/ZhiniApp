@@ -62,6 +62,9 @@ class _LoginScreenState extends State<LoginScreen> {
       // Clear any stale error as soon as the user edits the number.
       if (_errorText != null) _errorText = null;
     });
+    if (_selectedDialCode == '+91' && _isPhoneValid) {
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
   }
 
   String get _digits => _phoneController.text.replaceAll(RegExp(r'\D'), '');
@@ -170,12 +173,15 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: AppColors.scaffoldBg,
       resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: LayoutBuilder(
+      body: GestureDetector(
+  behavior: HitTestBehavior.opaque,
+  onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+  child: SafeArea(
+    child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
-              // Always scrollable so small phones never overflow.
-              physics: const ClampingScrollPhysics(),
+  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+  physics: const ClampingScrollPhysics(),
               padding: const EdgeInsets.symmetric(horizontal: 24.0),
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
@@ -313,8 +319,10 @@ dialogBackgroundColor: AppColors.cardBg,
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextField(
-                                controller: _phoneController,
-                                keyboardType: TextInputType.number,
+  controller: _phoneController,
+  keyboardType: TextInputType.number,
+  textInputAction: TextInputAction.done,
+  onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
                                   LengthLimitingTextInputFormatter(_maxDigits),
@@ -559,6 +567,7 @@ dialogBackgroundColor: AppColors.cardBg,
             );
           },
         ),
+      ),
       ),
     );
   }

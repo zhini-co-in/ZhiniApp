@@ -23,6 +23,9 @@ import 'widgets/app_dialog_field.dart';
 import 'widgets/device_details_sheet.dart';
 import 'widgets/light_card.dart';
 import 'widgets/section_header.dart';
+import 'package:geolocator/geolocator.dart';
+import 'theme/theme_controller.dart';
+import 'dart:math' as math;
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
@@ -121,6 +124,33 @@ class HomeTabState extends State<HomeTab> {
 
   // serviceType -> provider count, shown as "X nearby".
   final Map<String, int> _serviceCounts = {};
+    // Register aagaadha user-ku current location use pannum
+  double? _lat;
+  double? _lng;
+
+  bool get _useGps => !_hasRegisteredHome && _lat != null && _lng != null;
+
+  Future<void> _loadGps() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      );
+      _lat = pos.latitude;
+      _lng = pos.longitude;
+      if (mounted) _prefetchServiceCounts();
+    } catch (e) {
+      debugPrint('❌ Home GPS error: $e');
+    }
+  }
 
   // ── Banner carousel ──
   final PageController _bannerController = PageController(viewportFraction: 0.92);
@@ -158,6 +188,7 @@ class HomeTabState extends State<HomeTab> {
     super.initState();
     _fetchAppliances();
     _prefetchServiceCounts();
+    _loadGps();
     _startBannerTimer();
   }
 
@@ -179,6 +210,7 @@ class HomeTabState extends State<HomeTab> {
     if (_refreshing) return;
     if (mounted) setState(() => _refreshing = true);
     try {
+      
       if (_currentHomeId != null) {
         await _fetchAppliances(homeId: _currentHomeId);
       } else {
@@ -197,10 +229,15 @@ class HomeTabState extends State<HomeTab> {
   // ---------------------------------------------------------------------
   // SERVICES NEAR YOU — data (shared HomeServices, pincode only)
   // ---------------------------------------------------------------------
-  void _prefetchServiceCounts() {
-    HomeServices.prefetchCounts(_currentPincode, (type, count) {
-      if (mounted) setState(() => _serviceCounts[type] = count);
-    });
+    void _prefetchServiceCounts() {
+    HomeServices.prefetchCounts(
+      _currentPincode,
+      (type, count) {
+        if (mounted) setState(() => _serviceCounts[type] = count);
+      },
+      latitude: _useGps ? _lat : null,
+      longitude: _useGps ? _lng : null,
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -1010,9 +1047,12 @@ class HomeTabState extends State<HomeTab> {
       });
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.lightBg,
-      body: SafeArea(
+        return ValueListenableBuilder<bool>(
+      valueListenable: ThemeController.notifier,
+      builder: (context, _, __) {
+        return Scaffold(
+          backgroundColor: AppColors.lightBg,
+          body: SafeArea(
         child: _loading
             ? Center(child: CircularProgressIndicator(color: AppColors.lightPrimary))
             : Stack(
@@ -1067,12 +1107,14 @@ class HomeTabState extends State<HomeTab> {
                         ),
                       ],
                     ),
-                  ),
+                                 ),
                   ),
                 ],
               ),
-      ),
-    );
+        ),            // SafeArea mudiyuthu
+        );            // Scaffold mudiyuthu
+      },              // builder mudiyuthu
+    );                // ValueListenableBuilder mudiyuthu
   }
 
   Widget _buildHeader() {
@@ -1502,7 +1544,13 @@ class HomeTabState extends State<HomeTab> {
                   final count = _serviceCounts[cat['type'] as String];
                   return LightCard(
                     width: cardWidth,
-                    onTap: () => HomeServices.openSheet(context, cat, _currentPincode),
+                   onTap: () => HomeServices.openSheet(
+  context,
+  cat,
+  _currentPincode,
+  latitude: _useGps ? _lat : null,
+  longitude: _useGps ? _lng : null,
+),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1569,49 +1617,165 @@ class HomeTabState extends State<HomeTab> {
       ),
     );
   }
+  // ── "Set Up Your Home" pill button (follows app theme) ──
+  // ── "Set Up Your Home" pill button (follows app theme) ──
+Widget _buildSetUpHomeButton() {
+  final isDark = ThemeController.isDark;
+  final Color fill = isDark ? const Color(0xFF0F2038) : Colors.white;
+  final Color fg = isDark ? Colors.white : const Color(0xFF0F1C3F);
 
-  // ── Shown instead of devices/stats when user has no registered home (skip-flow) ──
-  Widget _buildRegisterHomeCard() {
-    return Container(
+  // Border + icon box ku ore colour
+  final Color accent = AppColors.primary;
+  final Color onAccent = AppColors.onPrimary;
+
+  return GestureDetector(
+    onTap: _openAddHomeDialog,
+    child: Container(
+      height: 60,
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: AppDecor.flatCard(borderColor: AppColors.primaryBorder.withValues(alpha: 0.5)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(40),
+        border: Border.all(color: accent, width: 1.8),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
-              color: AppColors.primarySoft,
+              color: accent,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 22),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            AppStrings.setUpYourHome,
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            AppStrings.setUpYourHomeDesc,
-            style: TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _openAddHomeDialog,
-              style: AppDecor.primaryButton,
-              icon: Icon(Icons.home_rounded, size: 18, color: AppColors.onPrimary),
-              label: Text(
-                AppStrings.register,
-                style: TextStyle(color: AppColors.onPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+            child: Center(
+              child: HouseGearIcon(
+                color: onAccent,
+                bg: accent, // gear gap = box colour
+                size: 28,
               ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Text(
+            'Set Up Your Home',
+            style: TextStyle(
+              color: fg,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
             ),
           ),
         ],
       ),
+    ),
+  );
+}
+  // ── Shown when user has no registered home (new user / skip-flow) ──
+  Widget _buildRegisterHomeCard() {
+    return Column(
+      children: [
+        // ── Add Your Devices card ──
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: AppColors.primary, width: 1.2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Icon box (device + plus badge)
+              SizedBox(
+                width: 62,
+                height: 62,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Center(
+  child: DevicesIcon(
+    color: AppColors.onPrimary,
+    bg: AppColors.primary,
+    size: 34,
+  ),
+),
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.cardBg, width: 2),
+                        ),
+                        child: Icon(Icons.add,
+                            color: AppColors.onPrimary, size: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Add Your Devices',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Register your appliances to manage device details, track warranty information, and request services easily.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 15,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: _requestScan, // 👉 Scan tab
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  icon: Icon(Icons.add_rounded,
+                      color: AppColors.onPrimary, size: 26),
+                  label: Text(
+                    'Add Devices',
+                    style: TextStyle(
+                      color: AppColors.onPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildSetUpHomeButton(),
+      ],
     );
   }
 
@@ -1719,4 +1883,127 @@ class _NoStretchScrollBehavior extends MaterialScrollBehavior {
 
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) => const ClampingScrollPhysics();
+}
+// ── House + gear icon (Set Up Your Home) ──
+class HouseGearIcon extends StatelessWidget {
+  final Color color;
+  final Color bg; // gear kitta irukkura gap ku button background color
+  final double size;
+  const HouseGearIcon({super.key, required this.color, required this.bg, this.size = 32});
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size(size, size), painter: _HouseGearPainter(color, bg));
+}
+
+class _HouseGearPainter extends CustomPainter {
+  final Color color;
+  final Color bg;
+  _HouseGearPainter(this.color, this.bg);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.scale(size.width / 100, size.height / 100);
+
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    // roof (wide, slightly overhanging)
+    final roof = Path()
+      ..moveTo(4, 50)
+      ..lineTo(42, 12)
+      ..lineTo(80, 50);
+    canvas.drawPath(roof, stroke);
+
+    // chimney
+    canvas.drawLine(const Offset(64, 24), const Offset(64, 36), stroke);
+
+    // walls: left wall + floor (stops before gear), right wall top part
+    final walls = Path()
+      ..moveTo(16, 42)
+      ..lineTo(16, 88)
+      ..lineTo(44, 88)
+      ..moveTo(68, 42)
+      ..lineTo(68, 50);
+    canvas.drawPath(walls, stroke);
+
+    // small inner "F" / window mark
+    canvas.drawLine(const Offset(36, 72), const Offset(36, 56), stroke);
+    canvas.drawLine(const Offset(36, 56), const Offset(46, 56), stroke);
+    canvas.drawLine(const Offset(36, 64), const Offset(44, 64), stroke);
+
+    // gear (bottom-right, overlapping house corner)
+    const c = Offset(74, 76);
+    canvas.drawCircle(c, 21, Paint()..color = bg); // clear area behind gear
+
+    final gear = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6
+      ..strokeCap = StrokeCap.butt;
+    canvas.drawCircle(c, 10, gear);
+    for (int i = 0; i < 8; i++) {
+      final a = i * math.pi / 4;
+      final d = Offset(math.cos(a), math.sin(a));
+      canvas.drawLine(c + d * 13, c + d * 19, gear);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HouseGearPainter old) =>
+      old.color != color || old.bg != bg;
+}
+
+// ── Monitor + phone icon (Add Your Devices) ──
+class DevicesIcon extends StatelessWidget {
+  final Color color;
+  final Color bg; // icon box background color
+  final double size;
+  const DevicesIcon({super.key, required this.color, required this.bg, this.size = 32});
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size(size, size), painter: _DevicesPainter(color, bg));
+}
+
+class _DevicesPainter extends CustomPainter {
+  final Color color;
+  final Color bg;
+  _DevicesPainter(this.color, this.bg);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.scale(size.width / 100, size.height / 100);
+
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    // monitor
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(const Rect.fromLTWH(6, 12, 68, 46), const Radius.circular(6)),
+      stroke,
+    );
+    // stand
+    canvas.drawLine(const Offset(40, 58), const Offset(40, 74), stroke);
+    canvas.drawLine(const Offset(24, 78), const Offset(56, 78), stroke);
+
+    // phone (fill first so monitor line is hidden behind it)
+    final phone = RRect.fromRectAndRadius(
+        const Rect.fromLTWH(60, 38, 30, 50), const Radius.circular(6));
+    canvas.drawRRect(phone, Paint()..color = bg);
+    canvas.drawRRect(phone, stroke);
+    canvas.drawLine(const Offset(70, 79), const Offset(80, 79), stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DevicesPainter old) =>
+      old.color != color || old.bg != bg;
 }

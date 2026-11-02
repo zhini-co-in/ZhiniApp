@@ -1,8 +1,8 @@
 // lib/services/home_services.dart
 //
 // Single shared place for "Services near you" (Home tab) and "Quick book"
-// (Service tab): categories, pincode-based fetch, counts and the bottom sheet.
-// No GPS — only the saved pincode is used.
+// (Service tab): categories, fetch, counts and the bottom sheet.
+// Registered users -> pincode. Unregistered users -> current GPS lat/long.
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -25,16 +25,27 @@ class HomeServices {
     {'label': AppStrings.pestControl, 'type': 'pest control', 'icon': Icons.pest_control_rounded, 'color': Color(0xFF00A86B)},
   ];
 
-  /// Providers for [serviceType] near [pincode]. Empty pincode -> empty list.
-  static Future<List<Map<String, dynamic>>> fetch(String serviceType, String pincode) async {
+  /// Providers for [serviceType]. If [latitude]/[longitude] are given they are
+  /// sent (register aagaadha user); otherwise the pincode is used.
+  static Future<List<Map<String, dynamic>>> fetch(
+    String serviceType,
+    String pincode, {
+    double? latitude,
+    double? longitude,
+  }) async {
     final pin = pincode.trim();
-    if (pin.isEmpty) return [];
+    final hasGps = latitude != null && longitude != null;
+
+    // Neither GPS nor pincode -> nothing to search with.
+    if (!hasGps && pin.isEmpty) return [];
+
     try {
-      final response = await ApiClient.post(
-        '${ApiConfig.homeServicesUrl}'
-        '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
-        '&pincode=${Uri.encodeQueryComponent(pin)}',
-      );
+      var url = '${ApiConfig.homeServicesUrl}'
+          '?serviceType=${Uri.encodeQueryComponent(serviceType)}';
+      if (pin.isNotEmpty) url += '&pincode=${Uri.encodeQueryComponent(pin)}';
+      if (hasGps) url += '&latitude=$latitude&longitude=$longitude';
+
+      final response = await ApiClient.post(url);
       debugPrint('🔧 Home services ($serviceType) status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
@@ -56,11 +67,14 @@ class HomeServices {
   /// Fetches the count for every category; [onCount] is called as each finishes.
   static Future<void> prefetchCounts(
     String pincode,
-    void Function(String type, int count) onCount,
-  ) async {
+    void Function(String type, int count) onCount, {
+    double? latitude,
+    double? longitude,
+  }) async {
     await Future.wait(categories.map((cat) async {
       final type = cat['type'] as String;
-      final list = await fetch(type, pincode);
+      final list = await fetch(type, pincode,
+          latitude: latitude, longitude: longitude);
       onCount(type, list.length);
     }));
   }
@@ -69,8 +83,10 @@ class HomeServices {
   static void openSheet(
     BuildContext context,
     Map<String, dynamic> category,
-    String pincode,
-  ) {
+    String pincode, {
+    double? latitude,
+    double? longitude,
+  }) {
     final type = category['type'] as String;
     final label = category['label'] as String;
 
@@ -81,7 +97,8 @@ class HomeServices {
       shape: AppDecor.sheetShape,
       builder: (_) => ServiceCategorySheet(
         label: label,
-        fetchServices: () => fetch(type, pincode),
+        fetchServices: () => fetch(type, pincode,
+            latitude: latitude, longitude: longitude),
       ),
     );
   }

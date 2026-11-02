@@ -19,6 +19,7 @@ import 'widgets/scan_shutter_button.dart';
 import 'widgets/zhini_thinking_view.dart';
 import 'widgets/warranty_badge.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 class ScanTab extends StatefulWidget {
   final String mobileNumber;
@@ -86,16 +87,15 @@ class _ScanTabState extends State<ScanTab> {
   String? _detectedWarranty;
   String? _manualWarranty;
   String? _warrantyCardUrl;
+  File? _warrantyCardFile;
 
   bool get _isUnderWarrantyNow =>
       WarrantyUtils.isActive(_detectedWarranty ?? _manualWarranty);
-
 
   List<Map<String, dynamic>> _nearbyServices = [];
   static const int _servicePageSize = 5;
   int _servicePage = 0;
 
-  bool _uploadingWarrantyCard = false;
   bool _isSubmitting = false;
   bool _showDetectedCard = false;
 
@@ -104,7 +104,7 @@ class _ScanTabState extends State<ScanTab> {
   File? _lastCapturedImage;
   String? _currentHomeId;
 
-  // ---- Capture flow: 3s countdown -> photo review (OK / Cancel, 6s) -> AI ----
+  // ---- Capture flow: photo review (OK / Cancel, 6s) -> AI ----
   static const int _reviewSecs = 6;
   Timer? _liveTimer;
   Timer? _reviewTimer;
@@ -132,7 +132,8 @@ class _ScanTabState extends State<ScanTab> {
         enableAudio: false,
       );
       await _cameraController!.initialize();
-      await _cameraController!.lockCaptureOrientation(DeviceOrientation.portraitUp);
+      await _cameraController!
+          .lockCaptureOrientation(DeviceOrientation.portraitUp);
       if (!mounted) return;
       setState(() => _isCameraReady = true);
 
@@ -146,17 +147,16 @@ class _ScanTabState extends State<ScanTab> {
   // ---------------------------------------------------------------------
   // SCAN — take a photo and send it straight to the backend AI endpoint.
   // ---------------------------------------------------------------------
-  // Live camera: count 3..2..1, then take a photo and show it for review.
-void _startLiveCountdown() {
-  _liveTimer?.cancel();
-  _reviewTimer?.cancel();
-  if (!mounted) return;
-  setState(() {
-    _reviewing = false;
-    _capturing = false;
-  });
-  // No auto-capture. User taps the shutter button when ready.
-}
+  void _startLiveCountdown() {
+    _liveTimer?.cancel();
+    _reviewTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _reviewing = false;
+      _capturing = false;
+    });
+    // No auto-capture. User taps the shutter button when ready.
+  }
 
   Future<void> _captureForReview() async {
     final c = _cameraController;
@@ -209,34 +209,34 @@ void _startLiveCountdown() {
   }
 
   // User pressed OK — only now is the photo sent to the backend AI.
- Future<void> _confirmReview() async {
-  if (_aiThinking) return;
-  _reviewTimer?.cancel();
-  setState(() {
-    _reviewing = false;
-    _aiThinking = true;
-  });
-  await _cameraController?.pausePreview(); // camera background la run aagaadhu
-  try {
-    final ok = await _identifyWithAi();
-    if (!mounted) return;
-    if (!ok) {
-      setState(() => _aiThinking = false);
-      await _cameraController?.resumePreview(); // illana freeze aagum
-      _startLiveCountdown();
-      return;
-    }
-    final services = await _fetchNearbyServices();
-    if (!mounted) return;
+  Future<void> _confirmReview() async {
+    if (_aiThinking) return;
+    _reviewTimer?.cancel();
     setState(() {
-      _nearbyServices = services;
-      _servicePage = 0;
-      _showDetectedCard = true;
+      _reviewing = false;
+      _aiThinking = true;
     });
-  } finally {
-    if (mounted) setState(() => _aiThinking = false);
+    await _cameraController?.pausePreview(); // camera background la run aagaadhu
+    try {
+      final ok = await _identifyWithAi();
+      if (!mounted) return;
+      if (!ok) {
+        setState(() => _aiThinking = false);
+        await _cameraController?.resumePreview(); // illana freeze aagum
+        _startLiveCountdown();
+        return;
+      }
+      final services = await _fetchNearbyServices();
+      if (!mounted) return;
+      setState(() {
+        _nearbyServices = services;
+        _servicePage = 0;
+        _showDetectedCard = true;
+      });
+    } finally {
+      if (mounted) setState(() => _aiThinking = false);
+    }
   }
-}
 
   // Sends _lastCapturedImage to the AI endpoint and fills product/brand.
   // Returns true only if a valid product was identified.
@@ -314,7 +314,8 @@ void _startLiveCountdown() {
             _nearbyServices = services;
             _servicePage = 0;
           });
-          _showSnack(AppStrings.updatedBrandProduct(_effectiveBrand ?? AppStrings.unbranded, _resultLabel ?? '—'));
+          _showSnack(AppStrings.updatedBrandProduct(
+              _effectiveBrand ?? AppStrings.unbranded, _resultLabel ?? '—'));
         }
       }
     } finally {
@@ -374,8 +375,10 @@ void _startLiveCountdown() {
               rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
           services.sort((a, b) {
-            final ratingA = double.tryParse(a['rating']?.toString() ?? '') ?? -1;
-            final ratingB = double.tryParse(b['rating']?.toString() ?? '') ?? -1;
+            final ratingA =
+                double.tryParse(a['rating']?.toString() ?? '') ?? -1;
+            final ratingB =
+                double.tryParse(b['rating']?.toString() ?? '') ?? -1;
             return ratingB.compareTo(ratingA);
           });
 
@@ -394,125 +397,200 @@ void _startLiveCountdown() {
   }
 
   // ---------------------------------------------------------------------
-  // WARRANTY CARD UPLOAD
+  // WARRANTY CARD OCR — reads the card image and finds the warranty period
   // ---------------------------------------------------------------------
-  Future<void> _pickAndUploadWarrantyCard() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-    if (picked == null) return;
-
-    setState(() => _uploadingWarrantyCard = true);
+  Future<String?> _extractWarrantyFromCard(File file) async {
+    final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
     try {
-      final uri = Uri.parse(ApiConfig.mediaUploadUrl);
-      final request = http.MultipartRequest('POST', uri);
-      request.headers.addAll(await ApiClient.authHeaders());
-      request.files.add(await http.MultipartFile.fromPath('file', picked.path));
-
-      final streamed = await request.send();
-      final response = await http.Response.fromStream(streamed);
-
-      debugPrint('🧾 Warranty card upload status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['url'] != null) {
-          setState(() => _warrantyCardUrl = data['url'].toString());
-          _showSnack(AppStrings.warrantyCardUploaded);
-        } else {
-          _showSnack(AppStrings.couldNotUploadWarrantyCard);
-        }
-      } else if (response.statusCode == 401) {
-        _showSnack(AppStrings.sessionExpired);
-      } else {
-        _showSnack(AppStrings.uploadFailed);
-      }
+      final result = await recognizer.processImage(InputImage.fromFile(file));
+      debugPrint('🧾 OCR text: ${result.text}');
+      return _parseWarrantyPeriod(result.text);
     } catch (e) {
-      debugPrint('❌ Warranty card upload error: $e');
-      _showSnack(AppStrings.networkErrorWhileUploading);
+      debugPrint('❌ OCR error: $e');
+      return null;
     } finally {
-      if (mounted) setState(() => _uploadingWarrantyCard = false);
+      recognizer.close();
     }
   }
 
-  void _openWarrantyDialog() {
-    final controller = TextEditingController(
-      text: _detectedWarranty ?? _manualWarranty ?? '',
-    );
+  // Finds things like "2 years warranty", "warranty: 24 months", "1 yr guarantee".
+  // Returns a normalized string like "2 years" / "24 months", or null.
+  String? _parseWarrantyPeriod(String raw) {
+    final text = raw.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    const unit = r'(years?|yrs?|months?|mths?|days?)';
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.cardBg,
-        shape: AppDecor.dialogShape,
-        title: const Text(AppStrings.warranty, style: AppText.dialogTitle),
-        content: AppDialogField(controller: controller, hint: AppStrings.warrantyDialogHint),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () async {
-              final value = controller.text.trim();
-              setState(() {
-                _manualWarranty = value.isNotEmpty ? value : null;
-                _detectedWarranty = null; // manual entry overrides auto value
-              });
-              Navigator.pop(dialogContext);
+    final patterns = <RegExp>[
+      // "warranty ... 2 years"
+      RegExp(r'(?:warranty|guarantee)[^0-9]{0,40}(\d{1,3})\s*-?\s*' + unit),
+      // "2 years ... warranty"
+      RegExp(r'(\d{1,3})\s*-?\s*' +
+          unit +
+          r'(?:\s+[a-z]+){0,3}\s+(?:warranty|guarantee)'),
+    ];
 
-              if (_showDetectedCard) {
-                final services = await _fetchNearbyServices();
-                if (mounted) {
-                  setState(() {
-                    _nearbyServices = services;
-                    _servicePage = 0;
-                  });
-                }
-              }
-            },
-            child: Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
-          ),
-        ],
-      ),
-    );
+    for (final p in patterns) {
+      final m = p.firstMatch(text);
+      if (m == null) continue;
+      final n = int.tryParse(m.group(1)!);
+      if (n == null || n <= 0) continue;
+      final u = m.group(2)!;
+      final word = u.startsWith('y')
+          ? 'year'
+          : u.startsWith('m')
+              ? 'month'
+              : 'day';
+      return '$n $word${n > 1 ? 's' : ''}';
+    }
+    return null;
   }
 
-  void _openBrandDialog() {
-    final controller = TextEditingController(text: _effectiveBrand ?? '');
+  // ---------------------------------------------------------------------
+  // COMMON EDIT DIALOG — brand + product + warranty + warranty card
+  // ---------------------------------------------------------------------
+  void _openEditDialog() {
+    final brandCtrl = TextEditingController(text: _effectiveBrand ?? '');
+    final productCtrl = TextEditingController(text: _resultLabel ?? '');
+    final warrantyCtrl = TextEditingController(
+      text: _detectedWarranty ?? _manualWarranty ?? '',
+    );
+    File? pendingCard = _warrantyCardFile;
+    bool scanningCard = false;
+    String? cardMsg;
+    bool cardMsgOk = false;
 
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.cardBg,
-        shape: AppDecor.dialogShape,
-        title: const Text(AppStrings.brandHint, style: AppText.dialogTitle),
-        content: AppDialogField(controller: controller, hint: AppStrings.brandDialogHint),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () async {
-              final value = controller.text.trim();
-              setState(() => _manualBrand = value.isNotEmpty ? value : null);
-              Navigator.pop(dialogContext);
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.cardBg,
+          shape: AppDecor.dialogShape,
+          title: const Text('Edit details', style: AppText.dialogTitle),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppDialogField(
+                    controller: brandCtrl, hint: AppStrings.brandDialogHint),
+                const SizedBox(height: 12),
+                AppDialogField(controller: productCtrl, hint: 'Product name'),
+                const SizedBox(height: 12),
+                AppDialogField(
+                    controller: warrantyCtrl,
+                    hint: AppStrings.warrantyDialogHint),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: scanningCard
+                      ? null
+                      : () async {
+                          final picked = await ImagePicker().pickImage(
+                              source: ImageSource.gallery, imageQuality: 80);
+                          if (picked == null) return;
 
-              if (_showDetectedCard) {
-                final services = await _fetchNearbyServices();
-                if (mounted) {
-                  setState(() {
-                    _nearbyServices = services;
-                    _servicePage = 0;
-                  });
-                }
-              }
-            },
-            child: Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
+                          final file = File(picked.path);
+                          setDialogState(() {
+                            pendingCard = file;
+                            scanningCard = true;
+                            cardMsg = null;
+                          });
+
+                          // OCR -> auto-fill warranty period
+                          final period = await _extractWarrantyFromCard(file);
+                          setDialogState(() {
+                            scanningCard = false;
+                            if (period != null) {
+                              warrantyCtrl.text = period;
+                              cardMsg = 'Warranty detected: $period';
+                              cardMsgOk = true;
+                            } else {
+                              cardMsg =
+                                  'Could not read warranty period. Please enter it manually.';
+                              cardMsgOk = false;
+                            }
+                          });
+                        },
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: AppColors.primaryBorder),
+                  ),
+                  icon: scanningCard
+                      ? SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppColors.primary),
+                        )
+                      : Icon(
+                          pendingCard != null
+                              ? Icons.check_circle
+                              : Icons.add_a_photo_outlined,
+                          size: 16,
+                          color: pendingCard != null
+                              ? AppColors.success
+                              : AppColors.primary,
+                        ),
+                  label: Text(
+                    scanningCard
+                        ? 'Reading warranty card...'
+                        : pendingCard != null
+                            ? AppStrings.warrantyCardAdded
+                            : AppStrings.uploadWarrantyCard,
+                    style: AppText.linkAction,
+                  ),
+                ),
+                if (cardMsg != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    cardMsg!,
+                    style: TextStyle(
+                      color: cardMsgOk ? AppColors.success : AppColors.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(AppStrings.cancel,
+                  style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              onPressed: scanningCard
+                  ? null
+                  : () async {
+                final brand = brandCtrl.text.trim();
+                final product = productCtrl.text.trim();
+                final warranty = warrantyCtrl.text.trim();
+
+                setState(() {
+                  _manualBrand = brand.isNotEmpty ? brand : null;
+                  if (product.isNotEmpty) _resultLabel = product;
+                  _manualWarranty = warranty.isNotEmpty ? warranty : null;
+                  _detectedWarranty = null; // manual entry overrides AI value
+                  _warrantyCardFile = pendingCard;
+                  _warrantyCardUrl = pendingCard?.path;
+                });
+                Navigator.pop(dialogContext);
+
+                if (_showDetectedCard) {
+                  final services = await _fetchNearbyServices();
+                  if (mounted) {
+                    setState(() {
+                      _nearbyServices = services;
+                      _servicePage = 0;
+                    });
+                  }
+                }
+              },
+              child: Text(AppStrings.save,
+                  style: TextStyle(color: AppColors.textPrimary)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -545,15 +623,24 @@ void _startLiveCountdown() {
       request.fields['address'] = widget.address;
       request.fields['product'] = _resultLabel!;
       request.fields['brand'] = _effectiveBrand ?? 'Unknown';
-      request.fields['mobile'] = ApiConfig.stripCountryCode(widget.mobileNumber);
+      request.fields['mobile'] =
+          ApiConfig.stripCountryCode(widget.mobileNumber);
       request.fields['pincode'] = widget.pincode;
-      request.fields['warranty'] = _detectedWarranty ?? _manualWarranty ?? 'N/A';
+      request.fields['warranty'] =
+          _detectedWarranty ?? _manualWarranty ?? 'N/A';
       request.fields['roomName'] = 'Default';
       request.fields['name'] = widget.name;
 
       if (_lastCapturedImage != null) {
         request.files.add(
           await http.MultipartFile.fromPath('file', _lastCapturedImage!.path),
+        );
+      }
+
+      if (_warrantyCardFile != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+              'warrantyFile', _warrantyCardFile!.path),
         );
       }
 
@@ -565,7 +652,8 @@ void _startLiveCountdown() {
 
       if (!mounted) return;
       if (response.statusCode == 200 || response.statusCode == 201) {
-        _showSnack(AppStrings.applianceSaved(_resultLabel ?? '', _effectiveBrand ?? AppStrings.unbranded));
+        _showSnack(AppStrings.applianceSaved(
+            _resultLabel ?? '', _effectiveBrand ?? AppStrings.unbranded));
         _resetForNextScan();
       } else if (response.statusCode == 401) {
         _showSnack(AppStrings.sessionExpired);
@@ -610,7 +698,8 @@ void _startLiveCountdown() {
   Future<void> _openDirections(String? address) async {
     if (address == null || address.isEmpty) return;
     final query = Uri.encodeComponent(address);
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+    final uri =
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
@@ -647,46 +736,53 @@ void _startLiveCountdown() {
       _detectedWarranty = null;
       _manualWarranty = null;
       _warrantyCardUrl = null;
-      _uploadingWarrantyCard = false;
+      _warrantyCardFile = null;
     });
 
-    // Back to the live camera — the 3s countdown starts again.
+    // Back to the live camera.
     _cameraController?.resumePreview();
     _startLiveCountdown();
   }
-  Widget _warrantyIndicator() {
-  final expiry = WarrantyUtils.parseExpiry(
-    _detectedWarranty ?? _manualWarranty,
-    referenceDate: DateTime.now(),
-  );
 
-  // No warranty -> red
-  if (expiry == null) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.gpp_bad_outlined, size: 16, color: AppColors.danger),
-        const SizedBox(width: 4),
-        Text('No warranty',
-            style: TextStyle(color: AppColors.danger, fontSize: 11.5, fontWeight: FontWeight.w600)),
-      ],
+  Widget _warrantyIndicator() {
+    final expiry = WarrantyUtils.parseExpiry(
+      _detectedWarranty ?? _manualWarranty,
+      referenceDate: DateTime.now(),
     );
+
+    // No warranty -> red
+    if (expiry == null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.gpp_bad_outlined, size: 16, color: AppColors.danger),
+          const SizedBox(width: 4),
+          Text('No warranty',
+              style: TextStyle(
+                  color: AppColors.danger,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600)),
+        ],
+      );
+    }
+    // Active -> green icon + "Warranty active"
+    if (expiry.isAfter(DateTime.now())) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.verified_user_rounded, size: 16, color: AppColors.success),
+          const SizedBox(width: 4),
+          Text('Warranty active',
+              style: TextStyle(
+                  color: AppColors.success,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600)),
+        ],
+      );
+    }
+    // Expired -> old badge
+    return WarrantyBadge(expiry: expiry);
   }
-  // Active -> green icon + "Warranty active" (no valid till)
-  if (expiry.isAfter(DateTime.now())) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.verified_user_rounded, size: 16, color: AppColors.success),
-        const SizedBox(width: 4),
-        Text('Warranty active',
-            style: TextStyle(color: AppColors.success, fontSize: 11.5, fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-  // Expired -> old badge
-  return WarrantyBadge(expiry: expiry);
-}
 
   @override
   void dispose() {
@@ -727,7 +823,7 @@ void _startLiveCountdown() {
   Widget _buildCameraView() {
     return Stack(
       children: [
-                Positioned.fill(
+        Positioned.fill(
           child: ClipRect(
             child: FittedBox(
               fit: BoxFit.cover,
@@ -759,43 +855,44 @@ void _startLiveCountdown() {
               children: [
                 GestureDetector(
                   onTap: () => widget.onBack?.call(),
-                  child: Icon(Icons.arrow_back, color: AppColors.textSecondary),
+                  child:
+                      Icon(Icons.arrow_back, color: AppColors.textSecondary),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-  child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(AppStrings.scanAppliance,
-          style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600)),
-      SizedBox(height: 2),
-      Text(AppStrings.scanHint,
-          style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-    ],
-  ),
-),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(AppStrings.scanAppliance,
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(AppStrings.scanHint,
+                          style: TextStyle(
+                              color: AppColors.textMuted, fontSize: 12)),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ),
 
-        // Live countdown chip
         // Shutter button
-if (!_reviewing && !_aiThinking)
-  Positioned(
-    left: 0,
-    right: 0,
-    bottom: 36,
-    child: Center(
-      child: ScanShutterButton(
-        busy: _capturing,
-        onTap: _capturing ? null : _captureForReview,
-      ),
-    ),
-  ),
+        if (!_reviewing && !_aiThinking)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 36,
+            child: Center(
+              child: ScanShutterButton(
+                busy: _capturing,
+                onTap: _capturing ? null : _captureForReview,
+              ),
+            ),
+          ),
 
         // Photo review: OK / Cancel with 6..0 countdown
         if (_reviewing && _lastCapturedImage != null)
@@ -814,7 +911,9 @@ if (!_reviewing && !_aiThinking)
                     child: Center(
                       child: Text(AppStrings.capturedProduct,
                           style: TextStyle(
-                              color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
+                              color: AppColors.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600)),
                     ),
                   ),
                   Positioned(
@@ -829,10 +928,14 @@ if (!_reviewing && !_aiThinking)
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 15),
                               side: BorderSide(color: AppColors.textSecondary),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
                             ),
-                            child: Text(AppStrings.cancelWithCount(_reviewCountdown),
-                                style: TextStyle(color: AppColors.textPrimary, fontSize: 15)),
+                            child: Text(
+                                AppStrings.cancelWithCount(_reviewCountdown),
+                                style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 15)),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -842,10 +945,13 @@ if (!_reviewing && !_aiThinking)
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               padding: const EdgeInsets.symmetric(vertical: 15),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
                             ),
                             child: Text(AppStrings.proceed,
-                                style: TextStyle(color: AppColors.textPrimary, fontSize: 15)),
+                                style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 15)),
                           ),
                         ),
                       ],
@@ -856,8 +962,7 @@ if (!_reviewing && !_aiThinking)
             ),
           ),
 
-        // Identifying overlay
-                // ZHINI thinking screen
+        // ZHINI thinking screen
         if (_aiThinking) const Positioned.fill(child: ZhiniThinkingView()),
       ],
     );
@@ -882,20 +987,25 @@ if (!_reviewing && !_aiThinking)
                     children: [
                       GestureDetector(
                         onTap: () => widget.onBack?.call(),
-                        child: Icon(Icons.arrow_back, color: AppColors.textPrimary, size: 22),
+                        child: Icon(Icons.arrow_back,
+                            color: AppColors.textPrimary, size: 22),
                       ),
                       const SizedBox(width: 12),
                       Text(AppStrings.productDetected,
                           style: TextStyle(
-                              color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                              color: AppColors.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                   OutlinedButton.icon(
                     onPressed: _aiThinking ? null : _recheckWithAi,
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: AppColors.primaryBorder),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                     ),
                     icon: _aiThinking
                         ? SizedBox(
@@ -906,7 +1016,8 @@ if (!_reviewing && !_aiThinking)
                               strokeWidth: 2,
                             ),
                           )
-                        : Icon(Icons.refresh_rounded, size: 14, color: AppColors.primary),
+                        : Icon(Icons.refresh_rounded,
+                            size: 14, color: AppColors.primary),
                     label: Text(
                       _aiThinking ? AppStrings.checking : AppStrings.askZhini,
                       style: AppText.linkAction,
@@ -935,29 +1046,32 @@ if (!_reviewing && !_aiThinking)
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Brand + the ONE common Edit button
                         Row(
                           children: [
                             Expanded(
                               child: Text(
                                 _effectiveBrand ?? AppStrings.unbranded,
                                 style: TextStyle(
-                                  color: _effectiveBrand != null ? AppColors.textPrimary : AppColors.textFaint,
+                                  color: _effectiveBrand != null
+                                      ? AppColors.textPrimary
+                                      : AppColors.textFaint,
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
-                            TextButton(
-                              onPressed: _openBrandDialog,
+                            TextButton.icon(
+                              onPressed: _openEditDialog,
                               style: TextButton.styleFrom(
                                 padding: EdgeInsets.zero,
                                 minimumSize: const Size(0, 0),
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
-                              child: Text(
-                                _effectiveBrand != null ? AppStrings.edit : AppStrings.add,
-                                style: AppText.linkAction,
-                              ),
+                              icon: Icon(Icons.edit_outlined,
+                                  size: 14, color: AppColors.primary),
+                              label: const Text(AppStrings.edit,
+                                  style: AppText.linkAction),
                             ),
                           ],
                         ),
@@ -969,67 +1083,22 @@ if (!_reviewing && !_aiThinking)
                 ],
               ),
 
+              // Warranty status only (editing happens in the common dialog)
               const SizedBox(height: 14),
               Align(
-  alignment: Alignment.centerLeft,
-  child: _warrantyIndicator(),
-),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const SizedBox(width: 24),
-                  if ((_detectedWarranty ?? _manualWarranty) != null) ...[
-                    TextButton(
-                      onPressed: _openWarrantyDialog,
-                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                      child: const Text(AppStrings.edit, style: AppText.linkAction),
-                    ),
-                  ] else ...[
-                    TextButton.icon(
-                      onPressed: _openWarrantyDialog,
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(0, 0),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: Icon(Icons.edit_outlined, size: 14, color: AppColors.primary),
-                      label: const Text(AppStrings.addManual, style: AppText.linkAction),
-                    ),
-                    const SizedBox(width: 16),
-                    TextButton.icon(
-                      onPressed: _uploadingWarrantyCard ? null : _pickAndUploadWarrantyCard,
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(0, 0),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: _uploadingWarrantyCard
-                          ? SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                            )
-                          : Icon(Icons.add_a_photo_outlined, size: 14, color: AppColors.primary),
-                      label: const Text(AppStrings.uploadWarrantyCard, style: AppText.linkAction),
-                    ),
-                  ],
-                ],
+                alignment: Alignment.centerLeft,
+                child: _warrantyIndicator(),
               ),
               if (_warrantyCardUrl != null) ...[
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    const SizedBox(width: 24),
-                    Icon(Icons.check_circle, size: 14, color: AppColors.success),
+                    Icon(Icons.check_circle,
+                        size: 14, color: AppColors.success),
                     const SizedBox(width: 6),
                     Text(AppStrings.warrantyCardAdded,
-                        style: TextStyle(color: AppColors.success, fontSize: 12)),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: _uploadingWarrantyCard ? null : _pickAndUploadWarrantyCard,
-                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                      child: const Text(AppStrings.change, style: AppText.linkAction),
-                    ),
+                        style: TextStyle(
+                            color: AppColors.success, fontSize: 12)),
                   ],
                 ),
               ],
@@ -1057,12 +1126,19 @@ if (!_reviewing && !_aiThinking)
                       name: s['name']?.toString() ?? AppStrings.notAvailable,
                       address: s['address']?.toString(),
                       phone: s['phone']?.toString(),
-                      rating: ratingRaw != null ? double.tryParse(ratingRaw.toString()) : null,
-                      reviewsCount: reviewsRaw != null ? int.tryParse(reviewsRaw.toString()) : null,
-                      badge: neighborProof is Map ? neighborProof['badge']?.toString() : null,
+                      rating: ratingRaw != null
+                          ? double.tryParse(ratingRaw.toString())
+                          : null,
+                      reviewsCount: reviewsRaw != null
+                          ? int.tryParse(reviewsRaw.toString())
+                          : null,
+                      badge: neighborProof is Map
+                          ? neighborProof['badge']?.toString()
+                          : null,
                       showStarRow: true,
                       onCall: () => _callService(s['phone']?.toString()),
-                      onDirections: () => _openDirections(s['address']?.toString()),
+                      onDirections: () =>
+                          _openDirections(s['address']?.toString()),
                     );
                   },
                 ),
@@ -1072,11 +1148,16 @@ if (!_reviewing && !_aiThinking)
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       TextButton.icon(
-                        onPressed: _servicePage > 0 ? () => setState(() => _servicePage--) : null,
+                        onPressed: _servicePage > 0
+                            ? () => setState(() => _servicePage--)
+                            : null,
                         icon: const Icon(Icons.chevron_left_rounded, size: 18),
                         label: const Text(AppStrings.previous),
                       ),
-                      Text(AppStrings.pageOf(_servicePage + 1, _serviceTotalPages), style: AppText.caption),
+                      Text(
+                          AppStrings.pageOf(
+                              _servicePage + 1, _serviceTotalPages),
+                          style: AppText.caption),
                       TextButton.icon(
                         onPressed: _servicePage < _serviceTotalPages - 1
                             ? () => setState(() => _servicePage++)
@@ -1113,13 +1194,15 @@ if (!_reviewing && !_aiThinking)
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                   child: _isSubmitting
                       ? SizedBox(
                           height: 20,
                           width: 20,
-                          child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                              color: AppColors.textPrimary, strokeWidth: 2),
                         )
                       : const Text(AppStrings.ok, style: AppText.button),
                 ),
@@ -1132,10 +1215,12 @@ if (!_reviewing && !_aiThinking)
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     side: BorderSide(color: AppColors.primaryBorder),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                   child: Text(AppStrings.scanAnotherAppliance,
-                      style: TextStyle(color: AppColors.primary, fontSize: 16)),
+                      style:
+                          TextStyle(color: AppColors.primary, fontSize: 16)),
                 ),
               ),
             ],

@@ -5,13 +5,16 @@
 // showDeviceDetailsSheet(...) so the behaviour is identical everywhere.
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/api_config.dart';
 import '../constants/app_strings.dart';
 import '../services/api_client.dart';
 import '../services/entity_update_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/warranty_ocr.dart';
 import '../utils/warranty_utils.dart';
 import 'app_dialog_field.dart';
 import 'confirm_action_dialog.dart';
@@ -44,6 +47,24 @@ class DeviceEntry {
   String get brand => raw['brand']?.toString() ?? '';
   String? get imageUrl => raw['imageUrl']?.toString();
   String? get deviceId => (raw['deviceId'] ?? raw['_id'])?.toString();
+
+  // Warranty card image URL. The backend key name is not known for sure, so
+  // a few likely names are checked. Change/trim this list to match your API.
+  String? get warrantyCardUrl {
+    const keys = [
+      'warrantyCardUrl',
+      'warrantyFileUrl',
+      'warrantyFile',
+      'warrantyCard',
+      'warrantyImageUrl',
+      'warrantyUrl',
+    ];
+    for (final k in keys) {
+      final v = raw[k]?.toString().trim();
+      if (v != null && v.isNotEmpty && v.toUpperCase() != 'N/A') return v;
+    }
+    return null;
+  }
 
   DateTime? get createdAt => DateTime.tryParse(raw['createdAt']?.toString() ?? '');
 
@@ -118,6 +139,79 @@ class DeviceWarrantyIndicator extends StatelessWidget {
   }
 }
 
+// ---------------------------------------------------------------------
+// WARRANTY CARD — full screen viewer (pinch to zoom)
+// ---------------------------------------------------------------------
+void showWarrantyCardViewer(BuildContext context,
+    {String? url, File? file, String title = 'Warranty card'}) {
+  if (url == null && file == null) return;
+
+  showDialog(
+    context: context,
+    builder: (dialogContext) => Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: EdgeInsets.zero,
+      shape: const RoundedRectangleBorder(),
+      child: SizedBox.expand(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                minScale: 1,
+                maxScale: 5,
+                child: Center(
+                  child: file != null
+                      ? Image.file(file, fit: BoxFit.contain)
+                      : Image.network(
+                          url!,
+                          fit: BoxFit.contain,
+                          loadingBuilder: (_, child, progress) => progress == null
+                              ? child
+                              : const Center(
+                                  child: CircularProgressIndicator(color: AppColors.primary)),
+                          errorBuilder: (_, _, _) => const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text('Could not load the warranty card',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white70)),
+                          ),
+                        ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 // =====================================================================
 // PUBLIC ENTRY POINTS
 // =====================================================================
@@ -162,6 +256,7 @@ void showDeviceDetailsSheet(
   final now = DateTime.now();
   final expiry = e.expiry;
   final created = e.createdAt;
+  final cardUrl = e.warrantyCardUrl;
   final hasBrand =
       e.brand.isNotEmpty && e.brand.toLowerCase() != 'unknown' && e.brand.toUpperCase() != 'N/A';
   final rawWarranty = e.raw['warranty']?.toString().trim() ?? '';
@@ -242,22 +337,30 @@ void showDeviceDetailsSheet(
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: AppColors.cardBg,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: accent.withValues(alpha: 0.5), width: 1.5),
+                      GestureDetector(
+                        onTap: (e.imageUrl != null && e.imageUrl!.isNotEmpty)
+                            ? () => showWarrantyCardViewer(context,
+                                url: e.imageUrl, title: e.product)
+                            : null,
+                        child: Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: AppColors.cardBg,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: accent.withValues(alpha: 0.5), width: 1.5),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: e.imageUrl != null && e.imageUrl!.isNotEmpty
+                              ? Image.network(e.imageUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const Icon(
+                                      Icons.devices_other_rounded,
+                                      size: 28,
+                                      color: AppColors.textFaint))
+                              : const Icon(Icons.devices_other_rounded,
+                                  size: 28, color: AppColors.textFaint),
                         ),
-                        clipBehavior: Clip.antiAlias,
-                        child: e.imageUrl != null && e.imageUrl!.isNotEmpty
-                            ? Image.network(e.imageUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => const Icon(Icons.devices_other_rounded,
-                                    size: 28, color: AppColors.textFaint))
-                            : const Icon(Icons.devices_other_rounded,
-                                size: 28, color: AppColors.textFaint),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -392,6 +495,59 @@ void showDeviceDetailsSheet(
               ],
             ),
 
+            // ---------- WARRANTY CARD (only if one was uploaded) ----------
+            if (cardUrl != null) ...[
+              const SizedBox(height: 10),
+              InkWell(
+                onTap: () => showWarrantyCardViewer(context, url: cardUrl),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBgAlt,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.borderSubtle),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: AppColors.borderSubtle,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Image.network(
+                          cardUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const Icon(Icons.receipt_long_rounded,
+                              size: 24, color: AppColors.textFaint),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Warranty card', style: AppText.caption),
+                            SizedBox(height: 2),
+                            Text('Tap to view',
+                                style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.open_in_full_rounded, size: 18, color: AppColors.primary),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
             // ---------- LOCATION ----------
             const SizedBox(height: 10),
             Container(
@@ -488,96 +644,214 @@ void showDeviceDetailsSheet(
 }
 
 // =====================================================================
-// EDIT
+// EDIT — product, brand, warranty + warranty card (view / change / OCR)
 // =====================================================================
 void showDeviceEditDialog(BuildContext context, DeviceEntry e, {VoidCallback? onChanged}) {
-if (e.deviceId == null) {
-  ScaffoldMessenger.of(context)
-      .showSnackBar(const SnackBar(content: Text(AppStrings.couldNotRemoveAppliance)));
-  return;
-}
+  if (e.deviceId == null) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text(AppStrings.couldNotRemoveAppliance)));
+    return;
+  }
 
   final oldWarranty = e.raw['warranty']?.toString().trim() ?? '';
   final hadWarranty = oldWarranty.isNotEmpty && oldWarranty.toUpperCase() != 'N/A';
+  final existingCardUrl = e.warrantyCardUrl;
 
   final productController = TextEditingController(text: e.product);
   final brandController = TextEditingController(text: e.brand);
   final warrantyController = TextEditingController(text: hadWarranty ? oldWarranty : '');
   bool isSaving = false;
 
+  // warranty card state (only a NEW pick is uploaded)
+  File? pendingCard;
+  bool scanningCard = false;
+  String? cardMsg;
+  bool cardMsgOk = false;
+
   showDialog(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
-      builder: (dialogContext, setDialogState) => AlertDialog(
-        backgroundColor: AppColors.cardBg,
-        shape: AppDecor.dialogShape,
-        title: const Text(AppStrings.editAppliance, style: AppText.dialogTitle),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppDialogField(controller: productController, hint: AppStrings.productNameHint),
-              const SizedBox(height: 10),
-              AppDialogField(controller: brandController, hint: AppStrings.brandHint),
-              const SizedBox(height: 10),
-              AppDialogField(
-                  controller: warrantyController, hint: AppStrings.warrantyOptionalHint),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
-            child: const Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: isSaving
-                ? null
-                : () async {
-                    setDialogState(() => isSaving = true);
+      builder: (dialogContext, setDialogState) {
+        final hasCard = pendingCard != null || existingCardUrl != null;
 
-                    // empty -> 'N/A' (same as manual add)
-                    final newWarranty =
-                        warrantyController.text.trim().isEmpty ? 'N/A' : warrantyController.text.trim();
-                    final oldNormalized = oldWarranty.isEmpty ? 'N/A' : oldWarranty;
-                    final warrantyChanged = newWarranty != oldNormalized;
+        return AlertDialog(
+          backgroundColor: AppColors.cardBg,
+          shape: AppDecor.dialogShape,
+          title: const Text(AppStrings.editAppliance, style: AppText.dialogTitle),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppDialogField(controller: productController, hint: AppStrings.productNameHint),
+                const SizedBox(height: 10),
+                AppDialogField(controller: brandController, hint: AppStrings.brandHint),
+                const SizedBox(height: 10),
+                AppDialogField(
+                    controller: warrantyController, hint: AppStrings.warrantyOptionalHint),
+                const SizedBox(height: 14),
 
-                    final result = await EntityUpdateService.update(
-                      homeId: e.homeId,
-                      deviceId: e.deviceId,
-                      product: productController.text.trim().isNotEmpty
-                          ? productController.text.trim()
-                          : null,
-                      brand: brandController.text.trim().isNotEmpty
-                          ? brandController.text.trim()
-                          : null,
-                      warranty: warrantyChanged ? newWarranty : null,
-                    );
-                    if (dialogContext.mounted) Navigator.pop(dialogContext);
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text(result['success'] == true
-                              ? AppStrings.applianceUpdated
-                              : (result['message']?.toString() ?? AppStrings.updateFailed))),
-                    );
-                    if (result['success'] == true) {
-                      e.raw['product'] = productController.text.trim();
-                      e.raw['brand'] = brandController.text.trim();
-                      if (warrantyChanged) e.raw['warranty'] = newWarranty;
-                      onChanged?.call();
-                    }
-                  },
-            child: isSaving
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2))
-                : const Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
+                // ---- warranty card row ----
+                Row(
+                  children: [
+                    if (hasCard)
+                      GestureDetector(
+                        onTap: () => showWarrantyCardViewer(
+                          context,
+                          url: pendingCard == null ? existingCardUrl : null,
+                          file: pendingCard,
+                        ),
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          margin: const EdgeInsets.only(right: 12),
+                          decoration: BoxDecoration(
+                            color: AppColors.borderSubtle,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: pendingCard != null
+                              ? Image.file(pendingCard!, fit: BoxFit.cover)
+                              : Image.network(
+                                  existingCardUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const Icon(
+                                      Icons.receipt_long_rounded,
+                                      size: 24,
+                                      color: AppColors.textFaint),
+                                ),
+                        ),
+                      ),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: (scanningCard || isSaving)
+                            ? null
+                            : () async {
+                                final picked = await ImagePicker().pickImage(
+                                    source: ImageSource.gallery, imageQuality: 80);
+                                if (picked == null) return;
+
+                                final file = File(picked.path);
+                                setDialogState(() {
+                                  pendingCard = file;
+                                  scanningCard = true;
+                                  cardMsg = null;
+                                });
+
+                                // OCR -> auto-fill warranty period
+                                final period = await WarrantyOcr.extractPeriod(file);
+                                setDialogState(() {
+                                  scanningCard = false;
+                                  if (period != null) {
+                                    warrantyController.text = period;
+                                    cardMsg = 'Warranty detected: $period';
+                                    cardMsgOk = true;
+                                  } else {
+                                    cardMsg =
+                                        'Could not read warranty period. Please enter it manually.';
+                                    cardMsgOk = false;
+                                  }
+                                });
+                              },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.primaryBorder),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                        ),
+                        icon: scanningCard
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: AppColors.primary),
+                              )
+                            : Icon(
+                                hasCard ? Icons.sync_rounded : Icons.add_a_photo_outlined,
+                                size: 16,
+                                color: AppColors.primary,
+                              ),
+                        label: Text(
+                          scanningCard
+                              ? 'Reading card...'
+                              : hasCard
+                                  ? 'Change card'
+                                  : AppStrings.uploadWarrantyCard,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.linkAction,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (cardMsg != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    cardMsg!,
+                    style: TextStyle(
+                      color: cardMsgOk ? AppColors.success : AppColors.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+              child: const Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              onPressed: (isSaving || scanningCard)
+                  ? null
+                  : () async {
+                      setDialogState(() => isSaving = true);
+
+                      // empty -> 'N/A' (same as manual add)
+                      final newWarranty = warrantyController.text.trim().isEmpty
+                          ? 'N/A'
+                          : warrantyController.text.trim();
+                      final oldNormalized = oldWarranty.isEmpty ? 'N/A' : oldWarranty;
+                      final warrantyChanged = newWarranty != oldNormalized;
+
+                      final result = await EntityUpdateService.update(
+                        homeId: e.homeId,
+                        deviceId: e.deviceId,
+                        product: productController.text.trim().isNotEmpty
+                            ? productController.text.trim()
+                            : null,
+                        brand: brandController.text.trim().isNotEmpty
+                            ? brandController.text.trim()
+                            : null,
+                        warranty: warrantyChanged ? newWarranty : null,
+                        warrantyFile: pendingCard, // NEW — null = card unchanged
+                      );
+                      if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(result['success'] == true
+                                ? AppStrings.applianceUpdated
+                                : (result['message']?.toString() ?? AppStrings.updateFailed))),
+                      );
+                      if (result['success'] == true) {
+                        e.raw['product'] = productController.text.trim();
+                        e.raw['brand'] = brandController.text.trim();
+                        if (warrantyChanged) e.raw['warranty'] = newWarranty;
+                        onChanged?.call();
+                      }
+                    },
+              child: isSaving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          color: AppColors.textPrimary, strokeWidth: 2))
+                  : const Text(AppStrings.save, style: TextStyle(color: AppColors.textPrimary)),
+            ),
+          ],
+        );
+      },
     ),
   );
 }

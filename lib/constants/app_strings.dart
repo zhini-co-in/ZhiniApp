@@ -422,4 +422,10 @@ class AppStrings {
      static const String statusExpired = 'Expired';
    static const String statusExpiringSoon = 'Expiring soon';
    static const String statusActive = 'Active';
+
+   static const String addYourDevices = 'Add Your Devices';
+static const String addYourDevicesDesc =
+    'Register your appliances to manage device details, track warranty information, and request services easily.';
+static const String addDevices = 'Add Devices';
+static const String setUpYourHomeButton = 'Set Up Your Home';
 }
