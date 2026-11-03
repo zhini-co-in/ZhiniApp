@@ -37,11 +37,12 @@ class ServiceTab extends StatefulWidget {
   });
 
   @override
-  State<ServiceTab> createState() => _ServiceTabState();
+  State<ServiceTab> createState() => ServiceTabState();
 }
 
-class _ServiceTabState extends State<ServiceTab> {
+class ServiceTabState extends State<ServiceTab> {
   bool _loading = true;
+   bool _loadedOnce = false;
   String? _error;
   List<Map<String, dynamic>> _tickets = [];
   String _selectedFilter = 'all'; // 'all', 'open', 'in_progress', 'completed', 'cancelled'
@@ -81,21 +82,31 @@ class _ServiceTabState extends State<ServiceTab> {
       if (mounted) setState(() => _quickBookCounts[type] = count);
     });
   }
+    // Called by MainShell when the Service tab is tapped.
+    Future<void> refresh() async {
+    if (!mounted) return;
+    _prefetchQuickBookCounts();
+    await _fetchTickets(silent: true);
+  }
 
   // ---------------------------------------------------------------------
   // FETCH TICKETS
   // ---------------------------------------------------------------------
-  Future<void> _fetchTickets() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _fetchTickets({bool silent = false}) async {
+    // Spinner first load-ku mattum. Aprom list appadiye irukkum.
+    final showSpinner = !silent && !_loadedOnce;
+    if (showSpinner) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+
     try {
       final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
       final response = await ApiClient.get(ApiConfig.customerBillingUrl(plainMobile));
 
       debugPrint('🎫 Service tickets status: ${response.statusCode}');
-      debugPrint('🎫 Service tickets body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -103,20 +114,18 @@ class _ServiceTabState extends State<ServiceTab> {
           final rawData = data['data'];
           final List rawList = rawData is List ? rawData : (rawData == null ? [] : [rawData]);
           final tickets = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-          if (tickets.isNotEmpty) {
-  debugPrint('🔑 Ticket keys: ${tickets.first.keys.toList()}');
-  debugPrint('🔑 assignedTo: ${tickets.first['assignedTo']}');
-  debugPrint('🔑 serviceDetails: ${tickets.first['serviceDetails']}');
-}
           if (mounted) {
             setState(() {
               _tickets = tickets;
               _loading = false;
+              _loadedOnce = true;
+              _error = null;
             });
           }
           return;
         }
-        if (mounted) {
+        // Silent-ah irundha pazhaya list-ah azhikkaadha, error mattum ignore
+        if (mounted && !(silent && _loadedOnce)) {
           setState(() {
             _error = data['message']?.toString() ?? AppStrings.couldNotLoadTickets;
             _loading = false;
@@ -125,7 +134,7 @@ class _ServiceTabState extends State<ServiceTab> {
         return;
       }
 
-      if (mounted) {
+      if (mounted && !(silent && _loadedOnce)) {
         setState(() {
           _error = AppStrings.couldNotLoadTicketsCode(response.statusCode);
           _loading = false;
@@ -133,7 +142,7 @@ class _ServiceTabState extends State<ServiceTab> {
       }
     } catch (e) {
       debugPrint('❌ Service tickets fetch error: $e');
-      if (mounted) {
+      if (mounted && !(silent && _loadedOnce)) {
         setState(() {
           _error = AppStrings.networkErrorPullRetry;
           _loading = false;
@@ -170,7 +179,7 @@ class _ServiceTabState extends State<ServiceTab> {
         ),
       );
 
-      if (ok) _fetchTickets(); // refresh list to reflect new status
+     if (ok) _fetchTickets(silent: true);// refresh list to reflect new status
     } catch (e) {
       debugPrint('❌ Cancel ticket error: $e');
       if (!mounted) return;
@@ -795,7 +804,7 @@ String _serviceLabel(Map<String, dynamic> t) {
               child: RefreshIndicator(
                 color: AppColors.primary,
                 backgroundColor: AppColors.cardBg,
-                onRefresh: _fetchTickets,
+                onRefresh: () => _fetchTickets(silent: true),
                 child: _loading
                     ? Center(child: CircularProgressIndicator(color: AppColors.primary))
                     : ListView(

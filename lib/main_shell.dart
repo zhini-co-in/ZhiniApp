@@ -39,6 +39,7 @@ class _Slot {
 
 class _MainShellState extends State<MainShell> {
   final _homeTabKey = GlobalKey<HomeTabState>();
+  final _serviceTabKey = GlobalKey<ServiceTabState>();
   late String _name = widget.name;
   int _currentIndex = _Slot.home;
 
@@ -98,6 +99,9 @@ bool _hasRegisteredHomeInCache() {
       final sel = _newHomeIdToSelect;
       _newHomeIdToSelect = null;
       _homeTabKey.currentState?.refresh(selectHomeId: sel);
+    }
+        if (index == _Slot.service) {
+      _serviceTabKey.currentState?.refresh();
     }
   }
 
@@ -166,6 +170,7 @@ final devicesTab = DevicesTab(
 );
 
 final serviceTab = ServiceTab(
+  key: _serviceTabKey,
   mobileNumber: widget.mobileNumber,
   address: tabAddress,
   pincode: tabPincode,

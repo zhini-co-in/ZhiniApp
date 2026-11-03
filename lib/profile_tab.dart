@@ -484,6 +484,82 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
     );
   }
+    static const String _supportPhone = '1111111111';
+
+  void _openHelpSupportSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardBg,
+      shape: AppDecor.sheetShape,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(AppStrings.helpSupport, style: AppText.dialogTitle),
+            const SizedBox(height: 6),
+            Text('How would you like to reach us?', style: AppText.faintCaption),
+            const SizedBox(height: 16),
+            _groupCard([
+              _accountRow(
+                icon: Icons.call_rounded,
+                iconColor: AppColors.success,
+                title: 'Call us',
+                subtitle: _supportPhone,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _callSupport();
+                },
+              ),
+              _accountRow(
+                icon: Icons.email_outlined,
+                iconColor: AppColors.primary,
+                title: 'Email us',
+                subtitle: AppStrings.supportEmail,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _emailSupport();
+                },
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _callSupport() async {
+    final uri = Uri(scheme: 'tel', path: _supportPhone);
+    try {
+      final ok = await launchUrl(uri);
+      if (!ok) throw 'launch failed';
+    } catch (e) {
+      debugPrint('❌ Call launch error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.couldNotStartCall)),
+      );
+    }
+  }
+
+  Future<void> _emailSupport() async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: AppStrings.supportEmail,
+      query: 'subject=${Uri.encodeComponent(AppStrings.supportEmailSubject)}',
+    );
+    try {
+      final ok = await launchUrl(uri);
+      if (!ok) throw 'launch failed';
+    } catch (e) {
+      debugPrint('❌ Email launch error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.couldNotOpenMail)),
+      );
+    }
+  }
 
   void _openReferSheet() {
     const referralMessage = AppStrings.referralMessage;
@@ -505,18 +581,30 @@ class _ProfileTabState extends State<ProfileTab> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
             onPressed: () {
-              Clipboard.setData(const ClipboardData(text: referralMessage));
               Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text(AppStrings.referralCopied)),
-              );
+              _shareOnWhatsApp(referralMessage);
             },
-            icon: Icon(Icons.copy_rounded, size: 16, color: AppColors.textPrimary),
-            label: Text(AppStrings.copyLink, style: TextStyle(color: AppColors.textPrimary)),
+            icon: Icon(Icons.share_rounded, size: 16, color: AppColors.onPrimary),
+            label: Text('Refer', style: TextStyle(color: AppColors.onPrimary)),
           ),
         ],
       ),
     );
+  }
+    Future<void> _shareOnWhatsApp(String message) async {
+    final uri = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(message)}');
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) throw 'launch failed';
+    } catch (e) {
+      debugPrint('❌ WhatsApp share error: $e');
+      // WhatsApp illana message-ah copy pannidum
+      await Clipboard.setData(ClipboardData(text: message));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open WhatsApp. Link copied instead.')),
+      );
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -763,9 +851,9 @@ class _ProfileTabState extends State<ProfileTab> {
                       const SizedBox(height: 10),
                       _groupCard([
                         _accountRow(
-                          icon: Icons.shield_outlined,
-                          iconColor: AppColors.success,
-                          title: AppStrings.warrantyVault,
+  icon: Icons.verified_user_outlined,
+  iconColor: AppColors.success,
+  title: AppStrings.warrantyVault,
                           subtitle: _warrantyVaultSubtitle(homes),
                           onTap: () => _openComingSoon(
                               AppStrings.warrantyVault, AppStrings.warrantyVaultDesc),
@@ -824,13 +912,12 @@ class _ProfileTabState extends State<ProfileTab> {
                               AppStrings.preferences, AppStrings.preferencesDesc),
                         ),
                         _accountRow(
-                          icon: Icons.help_outline_rounded,
-                          iconColor: AppColors.primary,
-                          title: AppStrings.helpSupport,
-                          subtitle: AppStrings.helpSupportSub,
-                          onTap: () => _openComingSoon(
-                              AppStrings.helpSupport, AppStrings.helpSupportDesc),
-                        ),
+  icon: Icons.help_outline_rounded,
+  iconColor: AppColors.primary,
+  title: AppStrings.helpSupport,
+  subtitle: AppStrings.helpSupportSub,
+  onTap: _openHelpSupportSheet,
+),
                         _accountRow(
                           icon: Icons.info_outline_rounded,
                           iconColor: AppColors.textMuted,

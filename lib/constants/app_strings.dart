@@ -314,9 +314,9 @@ class AppStrings {
   static const String homeRegistered = 'Home registered successfully ✅';
   static const String homeRegisterFailed = 'Failed to register home';
 
-  static const String referNeighbour = 'Refer a Neighbour';
+    static const String referNeighbour = 'Refer a Friend';
   static const String referNeighbourDesc =
-      "Share ZHINI with a neighbour — they'll be able to track their own home's appliances too.";
+      "Share ZHINI with a friend — they'll be able to track their own home's appliances too.";
   static const String copyLink = 'Copy Link';
   static const String referralCopied = 'Referral message copied — paste it anywhere ✅';
   static const String referralMessage =
@@ -393,7 +393,7 @@ class AppStrings {
       'Get notified before warranties expire or a service is due.';
 
   static const String rewardsBilling = 'REWARDS & BILLING';
-  static const String referNeighbourRow = 'Refer a neighbour';
+  static const String referNeighbourRow = 'Refer a Friend';
   static const String referNeighbourSub = '2 referrals · ₹200 earned';
   static const String referNeighbourChip = 'Earn ₹100';
   static const String paymentsBilling = 'Payments and billing';
@@ -410,7 +410,7 @@ class AppStrings {
   static const String helpSupportDesc =
       'Reach ZHINI support via chat, call, or browse the FAQ.';
   static const String aboutZhini = 'About ZHINI';
-  static const String aboutZhiniSub = 'v1.0.0 · Built by two kids';
+  static const String aboutZhiniSub = 'v1.0.26110301';
   static const String aboutZhiniDesc =
       "ZHINI v1.0.0 — your home's appliance and warranty companion.";
 

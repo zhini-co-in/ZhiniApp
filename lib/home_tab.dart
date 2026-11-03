@@ -158,6 +158,7 @@ class HomeTabState extends State<HomeTab> {
   final PageController _bannerController = PageController(viewportFraction: 0.92);
   int _bannerIndex = 0;
   Timer? _bannerTimer;
+  final ScrollController _servicesController = ScrollController();
 
   static const List<String> _bannerImages = [
     'assets/images/banner_ac.png',
@@ -182,6 +183,7 @@ class HomeTabState extends State<HomeTab> {
   void dispose() {
     _bannerTimer?.cancel();
     _bannerController.dispose();
+    _servicesController.dispose();
     super.dispose();
   }
 
@@ -1534,6 +1536,7 @@ class HomeTabState extends State<HomeTab> {
   }
 
   // ── Services near you ──
+  // ── Services near you ──
   Widget _buildServicesNearYou() {
     final categories = HomeServices.categories;
 
@@ -1545,8 +1548,8 @@ class HomeTabState extends State<HomeTab> {
         LayoutBuilder(
           builder: (context, constraints) {
             const gap = 10.0;
-            const visible = 3; // how many cards visible on screen
-            final cardWidth = (constraints.maxWidth - gap * (visible - 1)) / visible;
+            const visible = 3.3; // 3 full cards + 4th card lighta peek
+            final cardWidth = (constraints.maxWidth - gap * 3) / visible;
 
             return SizedBox(
               height: 118,
@@ -1560,13 +1563,13 @@ class HomeTabState extends State<HomeTab> {
                   final count = _serviceCounts[cat['type'] as String];
                   return LightCard(
                     width: cardWidth,
-                   onTap: () => HomeServices.openSheet(
-  context,
-  cat,
-  _currentPincode,
-  latitude: _useGps ? _lat : null,
-  longitude: _useGps ? _lng : null,
-),
+                    onTap: () => HomeServices.openSheet(
+                      context,
+                      cat,
+                      _currentPincode,
+                      latitude: _useGps ? _lat : null,
+                      longitude: _useGps ? _lng : null,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
