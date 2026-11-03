@@ -21,6 +21,9 @@ import 'widgets/warranty_badge.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
+// TODO: unga actual Add New Home screen file path + class name vechu maathunga
+import 'address_screen.dart';
+
 class ScanTab extends StatefulWidget {
   final String mobileNumber;
   final String address;
@@ -103,6 +106,17 @@ class _ScanTabState extends State<ScanTab> {
   bool _aiThinking = false;
   File? _lastCapturedImage;
   String? _currentHomeId;
+
+  // Address / pincode of a home created from the Add New Home screen
+  // (used when the user was not registered / had no home before).
+  String? _homeAddress;
+  String? _homePincode;
+
+  String get _effectiveAddress =>
+      (_homeAddress?.isNotEmpty ?? false) ? _homeAddress! : widget.address;
+
+  String get _effectivePincode =>
+      (_homePincode?.isNotEmpty ?? false) ? _homePincode! : widget.pincode;
 
   // ---- Capture flow: photo review (OK / Cancel, 6s) -> AI ----
   static const int _reviewSecs = 6;
@@ -258,6 +272,18 @@ class _ScanTabState extends State<ScanTab> {
         _showSnack(AppStrings.sessionExpired);
         return false;
       }
+            if (response.statusCode == 400) {
+        // Server said: not a serviceable appliance -> show its message.
+        String msg =
+            'Please take a clear picture of a supported home appliance or electronic device.';
+        try {
+          final err = jsonDecode(response.body);
+          final serverMsg = err['message']?.toString().trim();
+          if (serverMsg != null && serverMsg.isNotEmpty) msg = serverMsg;
+        } catch (_) {}
+        if (!silent) await _showNotApplianceDialog(msg);
+        return false;
+      }
       if (response.statusCode != 200) {
         if (!silent) _showSnack(AppStrings.scanFailed(response.statusCode));
         return false;
@@ -350,7 +376,7 @@ class _ScanTabState extends State<ScanTab> {
 
   Future<List<Map<String, dynamic>>> _fetchNearbyServices() async {
     if (!_isValidDetection) return [];
-    debugPrint('📍 widget.pincode = "${widget.pincode}"');
+    debugPrint('📍 pincode = "$_effectivePincode"');
     debugPrint('🛡️ isUnderWarranty = $_isUnderWarrantyNow');
 
     final locationQuery = await _buildGpsLocationQuery() ?? '';
@@ -360,7 +386,7 @@ class _ScanTabState extends State<ScanTab> {
         '${ApiConfig.serviceLocatorUrl}'
         '?brand=${Uri.encodeQueryComponent(_effectiveBrand ?? "")}'
         '&product=${Uri.encodeQueryComponent(_resultLabel ?? "")}'
-        '&pincode=${widget.pincode}'
+        '&pincode=${Uri.encodeQueryComponent(_effectivePincode)}'
         '&isUnderWarranty=$_isUnderWarrantyNow'
         '$locationQuery',
       );
@@ -394,6 +420,32 @@ class _ScanTabState extends State<ScanTab> {
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+    Future<void> _showNotApplianceDialog(String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        shape: AppDecor.dialogShape,
+        title: const Text(
+          'Appliance not recognized',
+          style: AppText.dialogTitle,
+        ),
+        content: Text(
+          message,
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Try again',
+                style: TextStyle(color: AppColors.onPrimary)),
+          ),
+        ],
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -542,7 +594,8 @@ class _ScanTabState extends State<ScanTab> {
                   Text(
                     cardMsg!,
                     style: TextStyle(
-                      color: cardMsgOk ? AppColors.success : AppColors.textMuted,
+                      color:
+                          cardMsgOk ? AppColors.success : AppColors.textMuted,
                       fontSize: 12,
                     ),
                   ),
@@ -562,30 +615,31 @@ class _ScanTabState extends State<ScanTab> {
               onPressed: scanningCard
                   ? null
                   : () async {
-                final brand = brandCtrl.text.trim();
-                final product = productCtrl.text.trim();
-                final warranty = warrantyCtrl.text.trim();
+                      final brand = brandCtrl.text.trim();
+                      final product = productCtrl.text.trim();
+                      final warranty = warrantyCtrl.text.trim();
 
-                setState(() {
-                  _manualBrand = brand.isNotEmpty ? brand : null;
-                  if (product.isNotEmpty) _resultLabel = product;
-                  _manualWarranty = warranty.isNotEmpty ? warranty : null;
-                  _detectedWarranty = null; // manual entry overrides AI value
-                  _warrantyCardFile = pendingCard;
-                  _warrantyCardUrl = pendingCard?.path;
-                });
-                Navigator.pop(dialogContext);
+                      setState(() {
+                        _manualBrand = brand.isNotEmpty ? brand : null;
+                        if (product.isNotEmpty) _resultLabel = product;
+                        _manualWarranty = warranty.isNotEmpty ? warranty : null;
+                        _detectedWarranty =
+                            null; // manual entry overrides AI value
+                        _warrantyCardFile = pendingCard;
+                        _warrantyCardUrl = pendingCard?.path;
+                      });
+                      Navigator.pop(dialogContext);
 
-                if (_showDetectedCard) {
-                  final services = await _fetchNearbyServices();
-                  if (mounted) {
-                    setState(() {
-                      _nearbyServices = services;
-                      _servicePage = 0;
-                    });
-                  }
-                }
-              },
+                      if (_showDetectedCard) {
+                        final services = await _fetchNearbyServices();
+                        if (mounted) {
+                          setState(() {
+                            _nearbyServices = services;
+                            _servicePage = 0;
+                          });
+                        }
+                      }
+                    },
               child: Text(AppStrings.save,
                   style: TextStyle(color: AppColors.textPrimary)),
             ),
@@ -596,21 +650,119 @@ class _ScanTabState extends State<ScanTab> {
   }
 
   // ---------------------------------------------------------------------
+  // HOME CREATION — unregistered user: send to "Add New Home" screen,
+  // then continue saving the same scanned device.
+  // ---------------------------------------------------------------------
+Future<bool> _createHomeThenContinue() async {
+  // 1) User ku explain pannunga
+  final go = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.cardBg,
+      shape: AppDecor.dialogShape,
+      title: const Text(
+        'No home registered yet.',
+        style: AppText.dialogTitle,
+      ),
+      content: const Text(
+        'Please create a home first — your device will be saved to it '
+        'automatically once you’re done.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(AppStrings.cancel,
+              style: TextStyle(color: AppColors.textMuted)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text('Create home',
+              style: TextStyle(color: AppColors.onPrimary)),
+        ),
+      ],
+    ),
+  );
+  if (go != true || !mounted) return false;
+
+  // 2) Add New Home screen (AddressScreen, Add Home mode)
+  final result = await Navigator.push<Map<String, String>>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => AddressScreen(
+        mobileNumber: widget.mobileNumber,
+        isAddingHome: true,
+      ),
+    ),
+  );
+  if (result == null || !mounted) return false; // user back pannitaanga
+
+  final address = result['address'] ?? '';
+  final pincode = result['pincode'] ?? '';
+  final name = result['name'] ?? widget.name;
+
+  // 3) Intha real address vechu server la home create pannunga
+  final homeId = await _createHomeOnServer(
+    address: address,
+    pincode: pincode,
+    name: name,
+  );
+  if (homeId == null || !mounted) return false;
+
+  setState(() {
+    _currentHomeId = homeId;
+    _homeAddress = address;
+    _homePincode = pincode;
+  });
+  widget.onHomeCreated?.call(homeId);
+  await SessionManager.updateHomeId(homeId);
+  return true;
+}
+Future<String?> _createHomeOnServer({
+  required String address,
+  required String pincode,
+  required String name,
+}) async {
+  try {
+    final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
+      'name': name,
+      'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+      'address': address,
+      'pincode': pincode,
+      'homeName': address.split(',').first.trim(),
+    });
+    debugPrint('🏠 Create home status: ${response.statusCode}');
+    debugPrint('🏠 Create home body: ${response.body}');
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      if (data['success'] == true && data['data'] != null) {
+        return data['data']['homeId']?.toString();
+      }
+    }
+  } catch (e) {
+    debugPrint('❌ Create home error: $e');
+  }
+  return null;
+}
+
+  // ---------------------------------------------------------------------
   // SUBMIT
   // ---------------------------------------------------------------------
   Future<void> _confirmAndSubmit() async {
     if (_resultLabel == null || !_isValidDetection || _isSubmitting) return;
     setState(() => _isSubmitting = true);
     try {
-      if (_currentHomeId == null) {
-        final createdHomeId = await _ensureHomeExists();
-        if (createdHomeId == null) {
+      final needsRealHome = _currentHomeId == null ||
+    (_homeAddress == null &&
+        (widget.address.trim().isEmpty || widget.address == 'Default'));
+
+if (needsRealHome) {
+        final created = await _createHomeThenContinue();
+        if (!created) {
           _showSnack(AppStrings.couldNotSetupHome);
-          return;
+          return; // finally block resets _isSubmitting
         }
-        _currentHomeId = createdHomeId;
-        widget.onHomeCreated?.call(createdHomeId);
-        await SessionManager.updateHomeId(createdHomeId);
       }
 
       final request = http.MultipartRequest(
@@ -620,12 +772,12 @@ class _ScanTabState extends State<ScanTab> {
       request.headers.addAll(await ApiClient.authHeaders());
 
       request.fields['homeId'] = _currentHomeId!;
-      request.fields['address'] = widget.address;
+      request.fields['address'] = _effectiveAddress;
       request.fields['product'] = _resultLabel!;
       request.fields['brand'] = _effectiveBrand ?? 'Unknown';
       request.fields['mobile'] =
           ApiConfig.stripCountryCode(widget.mobileNumber);
-      request.fields['pincode'] = widget.pincode;
+      request.fields['pincode'] = _effectivePincode;
       request.fields['warranty'] =
           _detectedWarranty ?? _manualWarranty ?? 'N/A';
       request.fields['roomName'] = 'Default';
@@ -671,28 +823,6 @@ class _ScanTabState extends State<ScanTab> {
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
-  }
-
-  Future<String?> _ensureHomeExists() async {
-    try {
-      final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
-        'name': widget.name,
-        'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-        'address': widget.address,
-        'pincode': widget.pincode,
-        'homeName': widget.address.split(',').first.trim(),
-      });
-      debugPrint('🏠 Ensure-home status: ${response.statusCode}');
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          return data['data']['homeId']?.toString();
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ Ensure-home error: $e');
-    }
-    return null;
   }
 
   Future<void> _openDirections(String? address) async {
@@ -980,49 +1110,55 @@ class _ScanTabState extends State<ScanTab> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            Row(
                 children: [
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => widget.onBack?.call(),
-                        child: Icon(Icons.arrow_back,
-                            color: AppColors.textPrimary, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(AppStrings.productDetected,
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold)),
-                    ],
+                  GestureDetector(
+                    onTap: () => widget.onBack?.call(),
+                    child: Icon(Icons.arrow_back,
+                        color: AppColors.textPrimary, size: 22),
                   ),
-                  OutlinedButton.icon(
-                    onPressed: _aiThinking ? null : _recheckWithAi,
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: AppColors.primaryBorder),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                    ),
-                    icon: _aiThinking
-                        ? SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(
-                              color: AppColors.primary,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Icon(Icons.refresh_rounded,
-                            size: 14, color: AppColors.primary),
-                    label: Text(
-                      _aiThinking ? AppStrings.checking : AppStrings.askZhini,
-                      style: AppText.linkAction,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      AppStrings.productDetected,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                 Flexible(
+  child: OutlinedButton.icon(
+    onPressed: _aiThinking ? null : _recheckWithAi,
+    style: OutlinedButton.styleFrom(
+      side: BorderSide(color: AppColors.primaryBorder),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20)),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      minimumSize: const Size(0, 0),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    ),
+    icon: _aiThinking
+        ? SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 2,
+            ),
+          )
+        : Icon(Icons.refresh_rounded, size: 14, color: AppColors.primary),
+    label: Text(
+      _aiThinking ? AppStrings.checking : AppStrings.askZhini,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppText.linkAction,
+    ),
+  ),
+),
                 ],
               ),
               const SizedBox(height: 16),
@@ -1050,8 +1186,10 @@ class _ScanTabState extends State<ScanTab> {
                         Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                _effectiveBrand ?? AppStrings.unbranded,
+  child: Text(
+    _effectiveBrand ?? AppStrings.unbranded,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: _effectiveBrand != null
                                       ? AppColors.textPrimary
@@ -1061,18 +1199,23 @@ class _ScanTabState extends State<ScanTab> {
                                 ),
                               ),
                             ),
-                            TextButton.icon(
-                              onPressed: _openEditDialog,
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(0, 0),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              icon: Icon(Icons.edit_outlined,
-                                  size: 14, color: AppColors.primary),
-                              label: const Text(AppStrings.edit,
-                                  style: AppText.linkAction),
-                            ),
+                            OutlinedButton.icon(
+  onPressed: _openEditDialog,
+  style: OutlinedButton.styleFrom(
+    side: BorderSide(color: AppColors.primaryBorder),
+    shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20)),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    minimumSize: const Size(0, 0),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  ),
+  icon: Icon(Icons.edit_outlined, size: 14, color: AppColors.primary),
+  label: const Text(
+    AppStrings.edit,
+    maxLines: 1,
+    style: AppText.linkAction,
+  ),
+),
                           ],
                         ),
                         const SizedBox(height: 4),

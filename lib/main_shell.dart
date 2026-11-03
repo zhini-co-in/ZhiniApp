@@ -55,6 +55,7 @@ class _MainShellState extends State<MainShell> {
   String? _selectedHomeId;
   String _selectedAddress = '';
   String _selectedPincode = '';
+   String? _newHomeIdToSelect;
 
  @override
 void initState() {
@@ -93,8 +94,10 @@ bool _hasRegisteredHomeInCache() {
     final switchingToHome = index == _Slot.home;
     setState(() => _currentIndex = index);
 
-    if (switchingToHome) {
-      _homeTabKey.currentState?.refresh();
+        if (switchingToHome) {
+      final sel = _newHomeIdToSelect;
+      _newHomeIdToSelect = null;
+      _homeTabKey.currentState?.refresh(selectHomeId: sel);
     }
   }
 
@@ -188,8 +191,10 @@ final serviceTab = ServiceTab(
             name: _name,
             homeId: _scanHomeId,
             onBack: () => _switchTab(_Slot.home),
-            onHomeCreated: (newId) {
-              setState(() => _scanHomeId = newId);
+                        onHomeCreated: (newId) {
+              // setState / _scanHomeId maathaadheenga. Maathina ScanTab key maari
+              // rebuild aagi, save aagura nerathula state poiduum.
+              _newHomeIdToSelect = newId;
             },
             initialRoom: null,
             lockRoom: false,

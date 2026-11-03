@@ -85,6 +85,8 @@ class HomeTabState extends State<HomeTab> {
   // Source of truth for the selected home. Index can shift when the list is
   // re-ordered, so after every refresh we re-find the home by this id.
   String? _selectedHomeId;
+    // MainShell sollura "intha home ah select pannu" request (new home create aana apram).
+  String? _pendingSelectHomeId;
 
   // Last values sent to MainShell (avoid redundant notifications).
   String? _lastNotifiedId;
@@ -195,12 +197,14 @@ class HomeTabState extends State<HomeTab> {
   // Called by MainShell when the Home tab is tapped.
   // Service counts are NOT cleared here (avoids "..." flicker) — the old
   // numbers stay visible and get replaced when the new ones arrive.
-  Future<void> refresh() async {
+   Future<void> refresh({String? selectHomeId}) async {
+    if (selectHomeId != null) _pendingSelectHomeId = selectHomeId;
     while (_fetchInFlight) {
       await Future.delayed(const Duration(milliseconds: 100));
     }
     await _fetchAppliances();
     if (!mounted) return;
+    _notifySelectedHome();
     _prefetchServiceCounts();
   }
 
@@ -490,11 +494,24 @@ class HomeTabState extends State<HomeTab> {
       (_homes.isEmpty || _selectedHomeIndex >= _homes.length) ? null : _homes[_selectedHomeIndex];
 
   // After any list change, point the index back at the SAME home (by id).
-  void _restoreSelection() {
+   void _restoreSelection() {
     if (_homes.isEmpty) {
       _selectedHomeIndex = 0;
       return;
     }
+
+    // Pudhusa create aana home ah select pannanum na, adhu list la vandha udane pick pannu.
+    if (_pendingSelectHomeId != null) {
+      final p = _homes.indexWhere(
+          (h) => h['id']?.toString() == _pendingSelectHomeId);
+      if (p != -1) {
+        _selectedHomeIndex = p;
+        _selectedHomeId = _pendingSelectHomeId;
+        _pendingSelectHomeId = null;
+        return;
+      }
+    }
+
     if (_selectedHomeId != null) {
       final i = _homes.indexWhere((h) => h['id']?.toString() == _selectedHomeId);
       if (i != -1) {
@@ -502,7 +519,6 @@ class HomeTabState extends State<HomeTab> {
         return;
       }
     }
-    // Selected home no longer exists (or first load) -> fall back to index 0.
     if (_selectedHomeIndex >= _homes.length) _selectedHomeIndex = 0;
     _selectedHomeId = _homes[_selectedHomeIndex]['id']?.toString();
   }
@@ -1666,6 +1682,8 @@ Widget _buildSetUpHomeButton() {
               letterSpacing: 0.2,
             ),
           ),
+          const SizedBox(width: 10),
+          Icon(Icons.arrow_forward_rounded, color: accent, size: 22),
         ],
       ),
     ),
