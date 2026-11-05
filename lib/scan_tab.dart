@@ -23,7 +23,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 
 // TODO: unga actual Add New Home screen file path + class name vechu maathunga
 import 'address_screen.dart';
-
+import 'device_edit_screen.dart';
 class ScanTab extends StatefulWidget {
   final String mobileNumber;
   final String address;
@@ -91,6 +91,13 @@ class _ScanTabState extends State<ScanTab> {
   String? _manualWarranty;
   String? _warrantyCardUrl;
   File? _warrantyCardFile;
+    // Extra purchase details + extra photos (extra photos go as 'others')
+  String? _purchasedShopName;
+  String? _shopWarranty;
+  String? _modelNumber;
+  String? _serialNumber;
+  List<File> _extraPhotos = [];
+  static const int _maxExtraPhotos = 10;
 
   bool get _isUnderWarrantyNow =>
       WarrantyUtils.isActive(_detectedWarranty ?? _manualWarranty);
@@ -499,154 +506,56 @@ class _ScanTabState extends State<ScanTab> {
   // ---------------------------------------------------------------------
   // COMMON EDIT DIALOG — brand + product + warranty + warranty card
   // ---------------------------------------------------------------------
-  void _openEditDialog() {
-    final brandCtrl = TextEditingController(text: _effectiveBrand ?? '');
-    final productCtrl = TextEditingController(text: _resultLabel ?? '');
-    final warrantyCtrl = TextEditingController(
-      text: _detectedWarranty ?? _manualWarranty ?? '',
-    );
-    File? pendingCard = _warrantyCardFile;
-    bool scanningCard = false;
-    String? cardMsg;
-    bool cardMsgOk = false;
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.cardBg,
-          shape: AppDecor.dialogShape,
-          title: const Text('Edit details', style: AppText.dialogTitle),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AppDialogField(
-                    controller: brandCtrl, hint: AppStrings.brandDialogHint),
-                const SizedBox(height: 12),
-                AppDialogField(controller: productCtrl, hint: 'Product name'),
-                const SizedBox(height: 12),
-                AppDialogField(
-                    controller: warrantyCtrl,
-                    hint: AppStrings.warrantyDialogHint),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: scanningCard
-                      ? null
-                      : () async {
-                          final picked = await ImagePicker().pickImage(
-                              source: ImageSource.gallery, imageQuality: 80);
-                          if (picked == null) return;
-
-                          final file = File(picked.path);
-                          setDialogState(() {
-                            pendingCard = file;
-                            scanningCard = true;
-                            cardMsg = null;
-                          });
-
-                          // OCR -> auto-fill warranty period
-                          final period = await _extractWarrantyFromCard(file);
-                          setDialogState(() {
-                            scanningCard = false;
-                            if (period != null) {
-                              warrantyCtrl.text = period;
-                              cardMsg = 'Warranty detected: $period';
-                              cardMsgOk = true;
-                            } else {
-                              cardMsg =
-                                  'Could not read warranty period. Please enter it manually.';
-                              cardMsgOk = false;
-                            }
-                          });
-                        },
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: AppColors.primaryBorder),
-                  ),
-                  icon: scanningCard
-                      ? SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: AppColors.primary),
-                        )
-                      : Icon(
-                          pendingCard != null
-                              ? Icons.check_circle
-                              : Icons.add_a_photo_outlined,
-                          size: 16,
-                          color: pendingCard != null
-                              ? AppColors.success
-                              : AppColors.primary,
-                        ),
-                  label: Text(
-                    scanningCard
-                        ? 'Reading warranty card...'
-                        : pendingCard != null
-                            ? AppStrings.warrantyCardAdded
-                            : AppStrings.uploadWarrantyCard,
-                    style: AppText.linkAction,
-                  ),
-                ),
-                if (cardMsg != null) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    cardMsg!,
-                    style: TextStyle(
-                      color:
-                          cardMsgOk ? AppColors.success : AppColors.textMuted,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+    Future<void> _openEditDialog() async {
+    final result = await Navigator.push<DeviceEditData>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DeviceEditScreen(
+          title: 'Edit details',
+          photoFile: _lastCapturedImage,
+          building: _effectiveAddress.split(',').first.trim(),
+          initial: DeviceEditData(
+            product: _resultLabel ?? '',
+            brand: _effectiveBrand ?? '',
+            warranty: _detectedWarranty ?? _manualWarranty ?? '',
+            shop: _purchasedShopName ?? '',
+            shopWarranty: _shopWarranty ?? '',
+            model: _modelNumber ?? '',
+            serial: _serialNumber ?? '',
+            warrantyCard: _warrantyCardFile,
+            extraPhotos: _extraPhotos,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(AppStrings.cancel,
-                  style: TextStyle(color: AppColors.textMuted)),
-            ),
-            ElevatedButton(
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-              onPressed: scanningCard
-                  ? null
-                  : () async {
-                      final brand = brandCtrl.text.trim();
-                      final product = productCtrl.text.trim();
-                      final warranty = warrantyCtrl.text.trim();
-
-                      setState(() {
-                        _manualBrand = brand.isNotEmpty ? brand : null;
-                        if (product.isNotEmpty) _resultLabel = product;
-                        _manualWarranty = warranty.isNotEmpty ? warranty : null;
-                        _detectedWarranty =
-                            null; // manual entry overrides AI value
-                        _warrantyCardFile = pendingCard;
-                        _warrantyCardUrl = pendingCard?.path;
-                      });
-                      Navigator.pop(dialogContext);
-
-                      if (_showDetectedCard) {
-                        final services = await _fetchNearbyServices();
-                        if (mounted) {
-                          setState(() {
-                            _nearbyServices = services;
-                            _servicePage = 0;
-                          });
-                        }
-                      }
-                    },
-              child: Text(AppStrings.save,
-                  style: TextStyle(color: AppColors.textPrimary)),
-            ),
-          ],
+          // scan flow: nothing to upload yet, just keep values in state
+          onSave: (_) async => null,
         ),
       ),
     );
+    if (result == null || !mounted) return;
+
+    String? n(String s) => s.trim().isEmpty ? null : s.trim();
+    setState(() {
+      _manualBrand = n(result.brand);
+      if (result.product.isNotEmpty) _resultLabel = result.product;
+      _manualWarranty = n(result.warranty);
+      _detectedWarranty = null;
+      _warrantyCardFile = result.warrantyCard;
+      _warrantyCardUrl = result.warrantyCard?.path;
+      _purchasedShopName = n(result.shop);
+      _shopWarranty = n(result.shopWarranty);
+      _modelNumber = n(result.model);
+      _serialNumber = n(result.serial);
+      _extraPhotos = List<File>.from(result.extraPhotos);
+    });
+
+    if (_showDetectedCard) {
+      final services = await _fetchNearbyServices();
+      if (mounted) {
+        setState(() {
+          _nearbyServices = services;
+          _servicePage = 0;
+        });
+      }
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -782,6 +691,17 @@ if (needsRealHome) {
           _detectedWarranty ?? _manualWarranty ?? 'N/A';
       request.fields['roomName'] = 'Default';
       request.fields['name'] = widget.name;
+            if (_purchasedShopName != null) {
+        request.fields['purchasedShopName'] = _purchasedShopName!;
+      }
+      if (_shopWarranty != null) request.fields['shopWarranty'] = _shopWarranty!;
+      if (_modelNumber != null) request.fields['modelNumber'] = _modelNumber!;
+      if (_serialNumber != null) request.fields['serialNumber'] = _serialNumber!;
+
+      // extra photos -> 'others'
+      for (final f in _extraPhotos) {
+        request.files.add(await http.MultipartFile.fromPath('others', f.path));
+      }
 
       if (_lastCapturedImage != null) {
         request.files.add(
@@ -867,6 +787,11 @@ if (needsRealHome) {
       _manualWarranty = null;
       _warrantyCardUrl = null;
       _warrantyCardFile = null;
+            _purchasedShopName = null;
+      _shopWarranty = null;
+      _modelNumber = null;
+      _serialNumber = null;
+      _extraPhotos = [];
     });
 
     // Back to the live camera.
@@ -1242,6 +1167,18 @@ if (needsRealHome) {
                     Text(AppStrings.warrantyCardAdded,
                         style: TextStyle(
                             color: AppColors.success, fontSize: 12)),
+                  ],
+                ),
+              ],
+                            if (_extraPhotos.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.photo_library_outlined,
+                        size: 14, color: AppColors.success),
+                    const SizedBox(width: 6),
+                    Text('${_extraPhotos.length} extra photo(s) added',
+                        style: TextStyle(color: AppColors.success, fontSize: 12)),
                   ],
                 ),
               ],

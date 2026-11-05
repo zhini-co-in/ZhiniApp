@@ -26,6 +26,7 @@ import 'widgets/section_header.dart';
 import 'package:geolocator/geolocator.dart';
 import 'theme/theme_controller.dart';
 import 'dart:math' as math;
+import 'device_details_screen.dart';
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
@@ -608,21 +609,21 @@ class HomeTabState extends State<HomeTab> {
   }
 
   // Card tap -> common details sheet (same as Devices tab).
-  void _openDeviceDetails(DeviceEntry e) {
-    showDeviceDetailsSheet(
-      context,
-      e,
-      mobileNumber: widget.mobileNumber,
-      name: _displayName,
-      onChanged: () {
-        if (_currentHomeId != null) {
-          _fetchAppliances(homeId: _currentHomeId);
-        } else {
-          _fetchAppliances();
-        }
-      },
-    );
-  }
+void _openDeviceDetails(DeviceEntry e) {
+  showDeviceDetailsSheet(
+    context,
+    e,
+    mobileNumber: widget.mobileNumber,
+    name: _displayName,
+    onChanged: () {
+      if (_currentHomeId != null) {
+        _fetchAppliances(homeId: _currentHomeId);
+      } else {
+        _fetchAppliances();
+      }
+    },
+  );
+}
 
   // ---------------------------------------------------------------------
   // WARRANTY HELPERS

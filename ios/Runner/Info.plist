@@ -43,6 +43,8 @@
 	<string>Zhini needs contacts access so you can invite friends from your contact list.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>App ku location access thevai</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Zhini needs photo library access so you can attach appliance and warranty card photos.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
