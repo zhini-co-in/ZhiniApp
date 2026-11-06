@@ -609,7 +609,7 @@ void showDeviceServiceSheet(
                                   ? () => _openMapDirections(address)
                                   : null,
                             ),
-                            // Book button -> LOCAL (out of warranty) only
+                                                        /* Book button -> LOCAL (out of warranty) only
                             if (!e.isUnderWarranty) ...[
                               const SizedBox(height: 6),
                               ElevatedButton.icon(
@@ -631,6 +631,7 @@ void showDeviceServiceSheet(
                                         color: AppColors.textPrimary)),
                               ),
                             ],
+                            */
                           ],
                         );
                       },

@@ -551,30 +551,32 @@ Future<void> _confirmDeleteProduct(Map<String, dynamic> item) async {
                                     ? () => _openMapDirections(address)
                                     : null,
                               ),
-                                                            if (!isUnderWarranty) ...[
+                                                                                      /*
+                              if (!isUnderWarranty) ...[
                                 const SizedBox(height: 6),
                                 SizedBox(
                                   width: double.infinity,
-                                                                  child: ElevatedButton.icon(
-                                  onPressed: hasPhone
-                                      ? () => _openBookingDialog(p, item, isUnderWarranty)
-                                      : null,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primary,
-                                    foregroundColor: AppColors.onPrimary,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  child: ElevatedButton.icon(
+                                    onPressed: hasPhone
+                                        ? () => _openBookingDialog(p, item, isUnderWarranty)
+                                        : null,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: AppColors.onPrimary,
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                    ),
+                                    icon: Icon(Icons.calendar_month_rounded, size: 15, color: AppColors.onPrimary),
+                                    label: Text('Book this provider',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.onPrimary)),
                                   ),
-                                  icon: Icon(Icons.calendar_month_rounded, size: 15, color: AppColors.onPrimary),
-                                  label: Text('Book this provider',
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.onPrimary)),
-                                ),
                                 ),
                               ],
+                              */
                             ],
                           );
                         },

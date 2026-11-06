@@ -24,6 +24,9 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 // TODO: unga actual Add New Home screen file path + class name vechu maathunga
 import 'address_screen.dart';
 import 'device_edit_screen.dart';
+import 'package:flutter/foundation.dart' show compute;
+import 'package:image/image.dart' as imglib;
+import 'package:native_device_orientation/native_device_orientation.dart';
 class ScanTab extends StatefulWidget {
   final String mobileNumber;
   final String address;
@@ -179,7 +182,7 @@ class _ScanTabState extends State<ScanTab> {
     // No auto-capture. User taps the shutter button when ready.
   }
 
-  Future<void> _captureForReview() async {
+  Future<void> _captureForReview() async {  
     final c = _cameraController;
     if (c == null || !c.value.isInitialized || c.value.isTakingPicture) {
       _startLiveCountdown();
@@ -187,19 +190,48 @@ class _ScanTabState extends State<ScanTab> {
     }
     if (mounted) setState(() => _capturing = true);
     try {
-      final XFile file = await c.takePicture();
-      final previous = _lastCapturedImage;
-      _lastCapturedImage = File(file.path);
-      if (previous != null && previous.path != file.path) {
-        previous.delete().catchError((_) => previous);
-      }
-      if (!mounted) return;
+  // 1) takePicture-ku MUNNADI sensor orientation padikkanum
+  final orientation = await NativeDeviceOrientationCommunicator()
+      .orientation(useSensor: true);
+  debugPrint('orientation = $orientation');
 
-      setState(() {
-        _capturing = false;
-        _reviewing = true;
-        _reviewCountdown = _reviewSecs;
-      });
+  final XFile file = await c.takePicture();
+  final previous = _lastCapturedImage;
+
+  // 2) Orientation-ku thagundha angle
+  int angle = 0;
+  switch (orientation) {
+    case NativeDeviceOrientation.landscapeLeft:
+      angle = -90;
+      break;
+    case NativeDeviceOrientation.landscapeRight:
+      angle = 90;
+      break;
+    case NativeDeviceOrientation.portraitDown:
+      angle = 180;
+      break;
+    default:
+      angle = 0;
+  }
+
+  // 3) Rotate pannitu, rotate aana file-a use pannunga
+  final fixedPath =
+      await compute(_rotateToPortraitIsolate, [file.path, angle]);
+      await FileImage(File(fixedPath)).evict();
+_lastCapturedImage = File(fixedPath);
+  _lastCapturedImage = File(fixedPath);
+
+  // 4) Keela irukkradhu apdiye (maathadheenga)
+  if (previous != null && previous.path != fixedPath) {
+    previous.delete().catchError((_) => previous);
+  }
+  if (!mounted) return;
+
+  setState(() {
+    _capturing = false;
+    _reviewing = true;
+    _reviewCountdown = _reviewSecs;
+  });
 
       // 6..0 — if the user does nothing, the photo is cancelled and the
       // camera starts again automatically.
@@ -1309,4 +1341,20 @@ if (needsRealHome) {
       ),
     );
   }
+}
+// args = [path, angle]
+Future<String> _rotateToPortraitIsolate(List<dynamic> args) async {
+  final path = args[0] as String;
+  final angle = args[1] as int;
+  if (angle == 0) return path;
+
+  final file = File(path);
+  final decoded = imglib.decodeImage(await file.readAsBytes());
+  if (decoded == null) return path;
+
+  var image = imglib.bakeOrientation(decoded);
+  image = imglib.copyRotate(image, angle: angle);
+
+  await file.writeAsBytes(imglib.encodeJpg(image, quality: 90), flush: true);
+  return path;
 }

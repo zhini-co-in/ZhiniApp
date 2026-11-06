@@ -43,6 +43,8 @@ dependencies:
   country_flags: ^3.0.0
   in_app_update: ^4.2.3
   webview_flutter: ^4.9.0
+  native_device_orientation: ^2.0.3
+  gal: ^2.3.0
 
 
 dev_dependencies:

@@ -41,6 +41,7 @@ class ServiceTab extends StatefulWidget {
 }
 
 class ServiceTabState extends State<ServiceTab> {
+  static const bool _comingSoon = true;
   bool _loading = true;
    bool _loadedOnce = false;
   String? _error;
@@ -58,10 +59,19 @@ class ServiceTabState extends State<ServiceTab> {
 
   static const double _defaultGstPercent = 18;
 
+  // ---------------------------------------------------------------------
+  // QUICK BOOK COUNTS (shared HomeServices, pincode only)
+  // ---------------------------------------------------------------------
+  void _prefetchQuickBookCounts() {
+    HomeServices.prefetchCounts(widget.pincode, (type, count) {
+      if (mounted) setState(() => _quickBookCounts[type] = count);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-    _fetchTickets();
+    if (!_comingSoon) _fetchTickets();
     _prefetchQuickBookCounts();
   }
 
@@ -74,19 +84,10 @@ class ServiceTabState extends State<ServiceTab> {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // QUICK BOOK COUNTS (shared HomeServices, pincode only)
-  // ---------------------------------------------------------------------
-  void _prefetchQuickBookCounts() {
-    HomeServices.prefetchCounts(widget.pincode, (type, count) {
-      if (mounted) setState(() => _quickBookCounts[type] = count);
-    });
-  }
-    // Called by MainShell when the Service tab is tapped.
-    Future<void> refresh() async {
+  Future<void> refresh() async {
     if (!mounted) return;
     _prefetchQuickBookCounts();
-    await _fetchTickets(silent: true);
+    if (!_comingSoon) await _fetchTickets(silent: true);
   }
 
   // ---------------------------------------------------------------------
@@ -786,9 +787,12 @@ String _serviceLabel(Map<String, dynamic> t) {
   // -----------------------------------------------------------------
   // BUILD
   // -----------------------------------------------------------------
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+ @override
+Widget build(BuildContext context) {
+  // ignore: dead_code
+  if (_comingSoon) return _buildComingSoon();
+  // ignore: dead_code
+  return Scaffold(
       backgroundColor: AppColors.scaffoldBg,
       body: SafeArea(
         child: Column(
@@ -848,6 +852,60 @@ String _serviceLabel(Map<String, dynamic> t) {
       ),
     );
   }
+  Widget _buildComingSoon() {
+  return Scaffold(
+    backgroundColor: AppColors.scaffoldBg,
+    body: SafeArea(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(AppStrings.service,
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 2),
+                      Text('Coming soon', style: AppText.caption),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Filters: All / Open / In Progress / Completed / Cancelled -> disabled
+          IgnorePointer(
+            child: Opacity(opacity: 0.35, child: _filterChipsRow()),
+          ),
+
+                    Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _ComingSoonCard(),
+                  const SizedBox(height: 24),
+                  _sectionHeader(AppStrings.quickBook),
+                  const SizedBox(height: 10),
+                  _buildQuickBookGrid(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildHeader() {
     final city = widget.address.split(',').first.trim();
@@ -1169,4 +1227,157 @@ class _BillBreakdown {
         gstAmount: 0,
         total: 0,
       );
+}
+// ---------------------------------------------------------------------------
+// Premium "Coming Soon" card
+// ---------------------------------------------------------------------------
+class _ComingSoonCard extends StatefulWidget {
+  const _ComingSoonCard();
+
+  @override
+  State<_ComingSoonCard> createState() => _ComingSoonCardState();
+}
+
+class _ComingSoonCardState extends State<_ComingSoonCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  Widget _feature(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: AppColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(text,
+                style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500)),
+          ),
+          Icon(Icons.lock_outline_rounded,
+              size: 15, color: AppColors.textFaint),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(22, 32, 22, 26),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.08),
+            blurRadius: 30,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // ---- Glowing icon ----
+          AnimatedBuilder(
+            animation: _pulse,
+            builder: (_, child) {
+              final t = _pulse.value;
+              return Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.primary.withValues(alpha: 0.25),
+                      AppColors.primary.withValues(alpha: 0.05),
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.12 + 0.18 * t),
+                      blurRadius: 18 + 22 * t,
+                      spreadRadius: 2 + 4 * t,
+                    ),
+                  ],
+                ),
+                child: child,
+              );
+            },
+            child: Icon(Icons.auto_awesome_rounded,
+                size: 42, color: AppColors.primary),
+          ),
+          const SizedBox(height: 22),
+
+          // ---- Coming soon pill ----
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.schedule_rounded, size: 13, color: AppColors.primary),
+                const SizedBox(width: 5),
+                Text('COMING SOON',
+                    style: TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          Text('ZHINI Services',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Text(
+            'We\'re putting the finishing touches on something special. '
+            'ZHINI Services will be live as soon as possible.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: AppColors.textMuted, fontSize: 13.5, height: 1.5),
+          ),
+        ],
+      ),
+    );
+  }
 }

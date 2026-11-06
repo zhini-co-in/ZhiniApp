@@ -1072,6 +1072,7 @@ void _openDeviceDetails(DeviceEntry e) {
         return Scaffold(
           backgroundColor: AppColors.lightBg,
           body: SafeArea(
+            top: false,
         child: _loading
             ? Center(child: CircularProgressIndicator(color: AppColors.lightPrimary))
             : Stack(
@@ -1082,6 +1083,7 @@ void _openDeviceDetails(DeviceEntry e) {
                     behavior: const _NoStretchScrollBehavior(),
                     child: RefreshIndicator(
                     color: AppColors.lightPrimary,
+                    edgeOffset: MediaQuery.of(context).padding.top,
                     onRefresh: _silentRefresh,
                     child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(
@@ -1146,8 +1148,10 @@ void _openDeviceDetails(DeviceEntry e) {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Logo + search + avatar
+                    // Logo + avatar
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            padding: EdgeInsets.fromLTRB(
+                20, 12 + MediaQuery.of(context).padding.top, 20, 0),
             child: Row(
               children: [
                 Text(
@@ -1159,34 +1163,7 @@ void _openDeviceDetails(DeviceEntry e) {
                     letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Container(
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: AppColors.lightSurface,
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.06),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      style: TextStyle(fontSize: 13),
-                      decoration: InputDecoration(
-                        hintText: AppStrings.searchHere,
-                        hintStyle: TextStyle(color: AppColors.lightHint, fontSize: 12),
-                        prefixIcon: Icon(Icons.search_rounded, color: AppColors.lightHint, size: 20),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 10),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
+                const Spacer(),
                 GestureDetector(
                   onTap: widget.onProfileTap,
                   child: CircleAvatar(

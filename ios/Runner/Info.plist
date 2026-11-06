@@ -45,6 +45,8 @@
 	<string>App ku location access thevai</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Zhini needs photo library access so you can attach appliance and warranty card photos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Zhini needs permission to save appliance and warranty card photos to your gallery.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

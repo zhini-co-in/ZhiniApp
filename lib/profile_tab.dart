@@ -233,9 +233,10 @@ class _ProfileTabState extends State<ProfileTab> {
                       if (dialogContext.mounted) Navigator.pop(dialogContext);
                       if (!mounted) return;
 
-                      if (result['success'] == true) {
+                                            if (result['success'] == true) {
                         setState(() => _displayName = value);
                         widget.onNameChanged?.call(value);
+                        await _refreshHomes(homeId: homeId); // Hive members name sync
                       }
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -750,7 +751,8 @@ class _ProfileTabState extends State<ProfileTab> {
         final allHomes = box.values.map((h) => h.toMap()).toList();
         final homes = _registeredHomes(allHomes); // Default home excluded from display
         // Skip-flow users have no registered home yet — trimmed view.
-        final hasHome = homes.isNotEmpty;
+        // ignore: dead_code
+const hasHome = true; // new user-ku kooda full profile
 
         final selectedId = _selectedHome(homes)?['id']?.toString();
 
@@ -815,22 +817,23 @@ class _ProfileTabState extends State<ProfileTab> {
                       _sectionHeader(AppStrings.myHomes),
                       const SizedBox(height: 10),
                       ..._buildHomesList(homes),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _openAddHomeDialog,
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: BorderSide(color: AppColors.borderMuted),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          icon: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
-                          label: Text(AppStrings.addAnotherHome,
-                              style: TextStyle(
-                                  color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        ),
-                      ),
+const SizedBox(height: 4),
+SizedBox(
+  width: double.infinity,
+  child: OutlinedButton.icon(
+    onPressed: _openAddHomeDialog,
+    style: OutlinedButton.styleFrom(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      side: BorderSide(color: AppColors.borderMuted),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+    icon: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
+    label: Text(
+        homes.isEmpty ? AppStrings.addHome : AppStrings.addAnotherHome,
+        style: TextStyle(
+            color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
+  ),
+),
                       const SizedBox(height: 24),
 
                                             _sectionHeader(AppStrings.appearance),
@@ -842,82 +845,44 @@ class _ProfileTabState extends State<ProfileTab> {
                                             _buildFontSizeSelector(),
                       const SizedBox(height: 24),
 
-                      _sectionHeader(AppStrings.myProtectionPlan),
-                      const SizedBox(height: 10),
-                      _buildProtectionPlan(),
-                      const SizedBox(height: 24),
 
-                      _sectionHeader(AppStrings.myStuff),
+                                                                _sectionHeader(AppStrings.myStuff),
                       const SizedBox(height: 10),
                       _groupCard([
                         _accountRow(
-  icon: Icons.verified_user_outlined,
-  iconColor: AppColors.success,
-  title: AppStrings.warrantyVault,
+                          icon: Icons.verified_user_outlined,
+                          iconColor: AppColors.success,
+                          title: AppStrings.warrantyVault,
                           subtitle: _warrantyVaultSubtitle(homes),
                           onTap: () => _openComingSoon(
                               AppStrings.warrantyVault, AppStrings.warrantyVaultDesc),
                         ),
-                        _accountRow(
-                          icon: Icons.description_outlined,
-                          iconColor: AppColors.primary,
-                          title: AppStrings.documentLocker,
-                          subtitle: AppStrings.documentLockerSub,
-                          trailing: _chipLabel(AppStrings.documentLockerChip),
-                          onTap: () => _openComingSoon(
-                              AppStrings.documentLocker, AppStrings.documentLockerDesc),
-                        ),
-                        _accountRow(
-                          icon: Icons.notifications_outlined,
-                          iconColor: AppColors.warning,
-                          title: AppStrings.reminders,
-                          subtitle: AppStrings.remindersSub,
-                          onTap: () =>
-                              _openComingSoon(AppStrings.reminders, AppStrings.remindersDesc),
-                        ),
                       ]),
                       const SizedBox(height: 24),
 
-                      _sectionHeader(AppStrings.rewardsBilling),
+                                                                  _sectionHeader(AppStrings.rewardsBilling),
                       const SizedBox(height: 10),
                       _groupCard([
                         _accountRow(
                           icon: Icons.people_outline_rounded,
                           iconColor: AppColors.primary,
-                          title: AppStrings.referNeighbourRow,
-                          subtitle: AppStrings.referNeighbourSub,
-                          trailing: _chipLabel(AppStrings.referNeighbourChip),
+                          title: 'Refer a friend',
+                          subtitle: 'Share ZHINI with your friends',
                           onTap: _openReferSheet,
-                        ),
-                        _accountRow(
-                          icon: Icons.credit_card_outlined,
-                          iconColor: AppColors.success,
-                          title: AppStrings.paymentsBilling,
-                          subtitle: AppStrings.paymentsBillingSub,
-                          onTap: () => _openComingSoon(
-                              AppStrings.paymentsBilling, AppStrings.paymentsBillingDesc),
                         ),
                       ]),
                       const SizedBox(height: 24),
 
-                      _sectionHeader(AppStrings.supportSection),
+                                            _sectionHeader(AppStrings.supportSection),
                       const SizedBox(height: 10),
                       _groupCard([
                         _accountRow(
-                          icon: Icons.settings_outlined,
-                          iconColor: AppColors.textSecondary,
-                          title: AppStrings.preferences,
-                          subtitle: AppStrings.preferencesSub,
-                          onTap: () => _openComingSoon(
-                              AppStrings.preferences, AppStrings.preferencesDesc),
+                          icon: Icons.help_outline_rounded,
+                          iconColor: AppColors.primary,
+                          title: AppStrings.helpSupport,
+                          subtitle: AppStrings.helpSupportSub,
+                          onTap: _openHelpSupportSheet,
                         ),
-                        _accountRow(
-  icon: Icons.help_outline_rounded,
-  iconColor: AppColors.primary,
-  title: AppStrings.helpSupport,
-  subtitle: AppStrings.helpSupportSub,
-  onTap: _openHelpSupportSheet,
-),
                         _accountRow(
                           icon: Icons.info_outline_rounded,
                           iconColor: AppColors.textMuted,
@@ -1157,9 +1122,12 @@ class _ProfileTabState extends State<ProfileTab> {
           )
         else
           ...members.map((m) {
-            final name = m['name']?.toString() ?? AppStrings.member;
+                        final rawName = m['name']?.toString() ?? AppStrings.member;
             final mobile = m['mobile']?.toString() ?? '';
             final isMe = mobile == myPlain;
+            final name = (isMe && _displayName.trim().isNotEmpty)
+                ? _displayName.trim()
+                : rawName;
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 5),
               child: Row(

@@ -8,6 +8,7 @@ import 'scan_tab.dart';
 import 'theme/app_theme.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'models/home_model.dart';
+import 'theme/theme_controller.dart';
 
 class MainShell extends StatefulWidget {
   final String mobileNumber;
@@ -56,34 +57,34 @@ class _MainShellState extends State<MainShell> {
   String? _selectedHomeId;
   String _selectedAddress = '';
   String _selectedPincode = '';
-   String? _newHomeIdToSelect;
+  String? _newHomeIdToSelect;
 
- @override
-void initState() {
-  super.initState();
-  _scanHomeId = widget.homeId;
-  _scanAddress = widget.address;
-  _scanPincode = widget.pincode;
-  _scanKnownRooms = null;
+  @override
+  void initState() {
+    super.initState();
+    _scanHomeId = widget.homeId;
+    _scanAddress = widget.address;
+    _scanPincode = widget.pincode;
+    _scanKnownRooms = null;
 
-  _selectedHomeId = widget.homeId;
-  _selectedAddress = widget.address;
-  _selectedPincode = widget.pincode;
+    _selectedHomeId = widget.homeId;
+    _selectedAddress = widget.address;
+    _selectedPincode = widget.pincode;
 
-  _hasHome = _hasRegisteredHomeInCache();
-}
-
-bool _hasRegisteredHomeInCache() {
-  try {
-    final box = Hive.box<HomeModel>('homes');
-    return box.values.any((h) {
-      final addr = h.toMap()['address']?.toString().trim().toLowerCase() ?? '';
-      return addr.isNotEmpty && addr != 'default';
-    });
-  } catch (_) {
-    return false;
+    _hasHome = _hasRegisteredHomeInCache();
   }
-}
+
+  bool _hasRegisteredHomeInCache() {
+    try {
+      final box = Hive.box<HomeModel>('homes');
+      return box.values.any((h) {
+        final addr = h.toMap()['address']?.toString().trim().toLowerCase() ?? '';
+        return addr.isNotEmpty && addr != 'default';
+      });
+    } catch (_) {
+      return false;
+    }
+  }
 
   void _switchTab(int index) {
     if (!_hasHome && (index == _Slot.devices || index == _Slot.service)) {
@@ -95,12 +96,12 @@ bool _hasRegisteredHomeInCache() {
     final switchingToHome = index == _Slot.home;
     setState(() => _currentIndex = index);
 
-        if (switchingToHome) {
+    if (switchingToHome) {
       final sel = _newHomeIdToSelect;
       _newHomeIdToSelect = null;
       _homeTabKey.currentState?.refresh(selectHomeId: sel);
     }
-        if (index == _Slot.service) {
+    if (index == _Slot.service) {
       _serviceTabKey.currentState?.refresh();
     }
   }
@@ -115,17 +116,16 @@ bool _hasRegisteredHomeInCache() {
     });
   }
 
-  // HomeTab tells us which home is selected. No setState needed — we only
-  // read these values when the Scan button is tapped.
+  // HomeTab tells us which home is selected.
   void _onSelectedHomeChanged(String? homeId, String address, String pincode) {
-  final changed = _selectedHomeId != homeId ||
-      _selectedAddress != address ||
-      _selectedPincode != pincode;
-  _selectedHomeId = homeId;
-  _selectedAddress = address;
-  _selectedPincode = pincode;
-  if (changed && mounted) setState(() {});
-}
+    final changed = _selectedHomeId != homeId ||
+        _selectedAddress != address ||
+        _selectedPincode != pincode;
+    _selectedHomeId = homeId;
+    _selectedAddress = address;
+    _selectedPincode = pincode;
+    if (changed && mounted) setState(() {});
+  }
 
   void _goToScan({
     String? homeId,
@@ -143,8 +143,16 @@ bool _hasRegisteredHomeInCache() {
     });
   }
 
+  // Theme maarum bodhu (light/dark) full shell rebuild aagum.
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: ThemeController.notifier,
+      builder: (context, _, __) => _buildShell(context),
+    );
+  }
+
+  Widget _buildShell(BuildContext context) {
     final homeTab = HomeTab(
       key: _homeTabKey,
       mobileNumber: widget.mobileNumber,
@@ -159,23 +167,23 @@ bool _hasRegisteredHomeInCache() {
     );
 
     final tabAddress = _selectedAddress.isNotEmpty ? _selectedAddress : widget.address;
-final tabPincode = _selectedPincode.isNotEmpty ? _selectedPincode : widget.pincode;
+    final tabPincode = _selectedPincode.isNotEmpty ? _selectedPincode : widget.pincode;
 
-final devicesTab = DevicesTab(
-  mobileNumber: widget.mobileNumber,
-  address: tabAddress,
-  pincode: tabPincode,
-  name: _name,
-  onScanTap: _goToScan,
-);
+    final devicesTab = DevicesTab(
+      mobileNumber: widget.mobileNumber,
+      address: tabAddress,
+      pincode: tabPincode,
+      name: _name,
+      onScanTap: _goToScan,
+    );
 
-final serviceTab = ServiceTab(
-  key: _serviceTabKey,
-  mobileNumber: widget.mobileNumber,
-  address: tabAddress,
-  pincode: tabPincode,
-  name: _name,
-);
+    final serviceTab = ServiceTab(
+      key: _serviceTabKey,
+      mobileNumber: widget.mobileNumber,
+      address: tabAddress,
+      pincode: tabPincode,
+      name: _name,
+    );
 
     final profileTab = ProfileTab(
       mobileNumber: widget.mobileNumber,
@@ -196,7 +204,7 @@ final serviceTab = ServiceTab(
             name: _name,
             homeId: _scanHomeId,
             onBack: () => _switchTab(_Slot.home),
-                        onHomeCreated: (newId) {
+            onHomeCreated: (newId) {
               // setState / _scanHomeId maathaadheenga. Maathina ScanTab key maari
               // rebuild aagi, save aagura nerathula state poiduum.
               _newHomeIdToSelect = newId;
@@ -223,116 +231,116 @@ final serviceTab = ServiceTab(
     );
   }
 
-Widget _buildBottomNavBar() {
-  return Container(
-    decoration: BoxDecoration(
-      color: AppColors.cardBg,
-      border: Border(top: BorderSide(color: AppColors.borderSubtle)),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.06),
-          blurRadius: 12,
-          offset: const Offset(0, -2),
-        ),
-      ],
-    ),
-        child: SafeArea(
-      top: false,
-      child: MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(
-            MediaQuery.of(context).textScaler.scale(1.0).clamp(1.0, 1.16),
-          ),
-        ),
-        child: SizedBox(
-          height: 68,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
-              if (_hasHome)
-                _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
-              _addDeviceButton(),
-              if (_hasHome)
-                _navItem(icon: Icons.build_rounded, label: 'Services', slot: _Slot.service),
-              _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-Widget _navItem({required IconData icon, required String label, required int slot}) {
-  final selected = _currentIndex == slot;
-  final color = selected ? AppColors.primary : AppColors.textFaint;
-
-  return InkWell(
-    onTap: () => _switchTab(slot),
-    borderRadius: BorderRadius.circular(12),
-    child: SizedBox(
-      width: 64,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 22, color: color),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10.5,
-              color: color,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            ),
+  Widget _buildBottomNavBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        border: Border(top: BorderSide(color: AppColors.borderSubtle)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, -2),
           ),
         ],
       ),
-    ),
-  );
-}
-
-Widget _addDeviceButton() {
-  return GestureDetector(
-    onTap: () => _goToScan(
-      homeId: _selectedHomeId ?? widget.homeId,
-      address: _selectedAddress.isNotEmpty ? _selectedAddress : widget.address,
-      pincode: _selectedPincode.isNotEmpty ? _selectedPincode : widget.pincode,
-    ),
-    child: SizedBox(
-      width: 64,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.35),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
+      child: SafeArea(
+        top: false,
+        child: MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(
+              MediaQuery.of(context).textScaler.scale(1.0).clamp(1.0, 1.16),
+            ),
+          ),
+          child: SizedBox(
+            height: 68,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
+                if (_hasHome)
+                  _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
+                _addDeviceButton(),
+                if (_hasHome)
+                  _navItem(icon: Icons.build_rounded, label: 'Services', slot: _Slot.service),
+                _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),
               ],
             ),
-            child: const Icon(Icons.add_rounded, color: AppColors.onPrimary, size: 26),
           ),
-          const SizedBox(height: 2),
-          const Text(
-            'Add Device',
-            style: TextStyle(
-              fontSize: 9.5,
-              color: AppColors.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
+
+  Widget _navItem({required IconData icon, required String label, required int slot}) {
+    final selected = _currentIndex == slot;
+    final color = selected ? AppColors.primary : AppColors.textFaint;
+
+    return InkWell(
+      onTap: () => _switchTab(slot),
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 22, color: color),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                color: color,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _addDeviceButton() {
+    return GestureDetector(
+      onTap: () => _goToScan(
+        homeId: _selectedHomeId ?? widget.homeId,
+        address: _selectedAddress.isNotEmpty ? _selectedAddress : widget.address,
+        pincode: _selectedPincode.isNotEmpty ? _selectedPincode : widget.pincode,
+      ),
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Icon(Icons.add_rounded, color: AppColors.onPrimary, size: 26),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Add Device',
+              style: TextStyle(
+                fontSize: 9.5,
+                color: AppColors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

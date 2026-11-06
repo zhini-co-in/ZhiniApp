@@ -17,6 +17,7 @@ class DeviceEditData {
   File? warrantyCard;
   List<File> extraPhotos;
   List<String> removedExtraUrls;
+  bool removeWarrantyCard;
 
   DeviceEditData({
     this.product = '',
@@ -29,8 +30,15 @@ class DeviceEditData {
     this.warrantyCard,
     List<File>? extraPhotos,
     List<String>? removedExtraUrls,
+    this.removeWarrantyCard = false,
   })  : extraPhotos = extraPhotos ?? [],
         removedExtraUrls = removedExtraUrls ?? [];
+}
+
+class _PhotoItem {
+  final String? url;
+  final File? file;
+  const _PhotoItem({this.url, this.file});
 }
 
 class DeviceEditScreen extends StatefulWidget {
@@ -41,7 +49,7 @@ class DeviceEditScreen extends StatefulWidget {
   final List<String> existingExtraUrls;
   final String building; // unused (kept so old callers still compile)
   final IconData fallbackIcon;
-    final bool photosEditable; // false = hide Photos card (backend update API doesn't support files)
+  final bool photosEditable; // false = hide Photos card (backend update API doesn't support files)
   final String? existingWarrantyUrl;
 
   /// Return null on success, or an error message to show.
@@ -57,8 +65,8 @@ class DeviceEditScreen extends StatefulWidget {
     this.existingExtraUrls = const [],
     this.building = '',
     this.fallbackIcon = Icons.devices_other_rounded,
-        this.photosEditable = true,
-        this.existingWarrantyUrl,
+    this.photosEditable = true,
+    this.existingWarrantyUrl,
   });
 
   @override
@@ -76,6 +84,7 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
       _model,
       _serial;
   File? _card;
+  bool _cardRemoved = false; // existing warranty card deleted (applied on save)
   late List<File> _extras;
   late List<String> _existingUrls;
   final List<String> _removedUrls = [];
@@ -128,16 +137,39 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
       _scanningCard = true;
       _cardMsg = null;
     });
-    final period = await extractWarrantyFromCard(file);
+
+    final info = await extractCardInfo(file);
     if (!mounted) return;
+
     setState(() {
       _scanningCard = false;
-      if (period != null) {
-        _warranty.text = period;
-        _cardMsg = 'Warranty detected: $period';
+      final found = <String>[];
+
+      // warranty period: always updated from the card
+      if (info.warranty != null) {
+        _warranty.text = info.warranty!;
+        found.add('warranty');
+      }
+
+      // other fields: only fill if the user hasn't typed anything
+      void fill(TextEditingController c, String? v, String label) {
+        if (v == null || v.isEmpty) return;
+        if (c.text.trim().isEmpty) {
+          c.text = v;
+          found.add(label);
+        }
+      }
+
+      fill(_shop, info.shop, 'purchased from');
+      fill(_shopWarranty, info.shopWarranty, 'shop warranty');
+      fill(_model, info.model, 'model no');
+      fill(_serial, info.serial, 'serial no');
+
+      if (found.isNotEmpty) {
+        _cardMsg = 'Detected: ${found.join(', ')}. Please verify.';
         _cardMsgOk = true;
       } else {
-        _cardMsg = 'Could not read warranty period. Please enter it manually.';
+        _cardMsg = 'Could not read details. Please enter them manually.';
         _cardMsgOk = false;
       }
     });
@@ -173,6 +205,7 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
       warrantyCard: _card,
       extraPhotos: _extras,
       removedExtraUrls: _removedUrls,
+      removeWarrantyCard: _card == null && _cardRemoved,
     );
     setState(() => _saving = true);
     final err = await widget.onSave(data);
@@ -195,8 +228,14 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
       : const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFFD6E8FF), Color(0xFFF1F6FF), Color(0xFFF5F8FF)],
-          stops: [0, 0.4, 1]);
+          colors: [
+            Color(0xFF4BA3F0),
+            Color(0xFF7EC0F8),
+            Color(0xFFB8DFFC),
+            Color(0xFFEAF6FF),
+            Color(0xFFF5F8FF),
+          ],
+          stops: [0, 0.12, 0.25, 0.37, 0.5]);
 
   Widget _box({required Widget child}) => Container(
         width: double.infinity,
@@ -209,7 +248,7 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
         child: child,
       );
 
-  Widget _header(IconData icon, String title) => Row(
+  Widget _header(IconData icon, String title, {Widget? trailing}) => Row(
         children: [
           Container(
             width: 34,
@@ -226,7 +265,31 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
                     fontSize: 18,
                     fontWeight: FontWeight.w700)),
           ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing],
         ],
+      );
+
+  Widget _pillBtn(IconData icon, String label, Color color, VoidCallback onTap) =>
+      InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 5),
+              Text(label,
+                  style: TextStyle(
+                      color: color, fontSize: 12.5, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
       );
 
   InputDecoration _dec(String hint) => InputDecoration(
@@ -317,107 +380,293 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
             ),
         ],
       );
-        Widget _photosCard() {
-    final total = _existingUrls.length + _extras.length;
-    final canAdd = total < _maxExtra;
-    return _box(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+
+  // ── Warranty card + extra photos (same look as details screen) ──
+  Color get _purple => AppColors.lightPurple;
+
+  Widget _fileRow({
+    required IconData fallbackIcon,
+    required Color color,
+    required Widget? thumb,
+    required String title,
+    required String subtitle,
+    required bool enabled,
+    required VoidCallback onView,
+    required VoidCallback onDelete,
+  }) {
+    Widget act(IconData i, Color c, VoidCallback f) => IconButton(
+          onPressed: enabled ? f : null,
+          icon: Icon(i,
+              size: 22,
+              color: enabled ? c : AppColors.textMuted.withValues(alpha: 0.4)),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+          visualDensity: VisualDensity.compact,
+        );
+
+    final placeholder = Icon(fallbackIcon, color: color, size: 22);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+      decoration: BoxDecoration(
+        color: AppColors.cardBgAlt,
+        border: Border.all(color: AppColors.borderSubtle),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
         children: [
-          _header(Icons.photo_library_outlined, 'Photos'),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _scanningCard ? null : _pickCard,
-            style: OutlinedButton.styleFrom(
-                side: BorderSide(color: AppColors.primaryBorder)),
-            icon: _scanningCard
-                ? SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: AppColors.primary))
-                : Icon(
-                    _card != null
-                        ? Icons.check_circle
-                        : Icons.add_a_photo_outlined,
-                    size: 16,
-                    color:
-                        _card != null ? AppColors.success : AppColors.primary),
-            label: Text(
-              _scanningCard
-                  ? 'Reading warranty card...'
-                  : _card != null
-                      ? 'Warranty card added (tap to change)'
-                      : 'Upload warranty card',
-              style: AppText.linkAction,
-            ),
-          ),
-          if (_cardMsg != null) ...[
-            const SizedBox(height: 6),
-            Text(_cardMsg!,
-                style: TextStyle(
-                    color: _cardMsgOk ? AppColors.success : AppColors.textMuted,
-                    fontSize: 12)),
-          ],
-          const SizedBox(height: 14),
-          Text('Extra Photos ($total)',
-              style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: canAdd ? _pickExtras : null,
-            style: OutlinedButton.styleFrom(
-                side: BorderSide(color: AppColors.primaryBorder)),
-            icon: Icon(Icons.add_photo_alternate_outlined,
-                size: 16, color: AppColors.primary),
-            label: Text(total == 0 ? 'Add extra photos' : 'Add more',
-                style: AppText.linkAction),
-          ),
-          if (total > 0) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 68,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final u in _existingUrls)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _thumb(
-                          Image.network(u,
-                              fit: BoxFit.cover,
-                              cacheWidth: 200,
-                              errorBuilder: (_, __, ___) =>
-                                  const Icon(Icons.broken_image_outlined)),
-                          onRemove: () => setState(() {
-                            _existingUrls.remove(u);
-                            _removedUrls.add(u);
-                          }),
-                        ),
-                      ),
-                    for (int i = 0; i < _extras.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _thumb(
-                          Image.file(_extras[i],
-                              fit: BoxFit.cover, cacheWidth: 200),
-                          onRemove: () => setState(() => _extras.removeAt(i)),
-                        ),
-                      ),
-                  ],
-                ),
+          GestureDetector(
+            onTap: enabled ? onView : null,
+            child: Container(
+              width: 48,
+              height: 48,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
               ),
+              child: thumb ?? Center(child: placeholder),
             ),
-          ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style:
+                        TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
+              ],
+            ),
+          ),
+          act(Icons.visibility_outlined, AppColors.primary, onView),
+          act(Icons.delete_outline_rounded, AppColors.textPrimary, onDelete),
         ],
       ),
     );
   }
 
-   Widget _photosViewCard() {
+  Widget _imgOf(_PhotoItem it) => it.url != null
+      ? Image.network(it.url!,
+          fit: BoxFit.cover,
+          cacheWidth: 200,
+          errorBuilder: (_, __, ___) =>
+              Icon(Icons.broken_image_outlined, color: AppColors.textMuted))
+      : Image.file(it.file!, fit: BoxFit.cover, cacheWidth: 200);
+
+  // Swipe viewer. If deletable, a delete icon removes the current photo
+  // (staged until "Save Changes").
+  void _openViewer(List<_PhotoItem> source, int start,
+      {bool deletable = true}) {
+    final items = List<_PhotoItem>.from(source);
+    final controller = PageController(initialPage: start);
+    var current = start;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StatefulBuilder(
+          builder: (ctx, setS) => Scaffold(
+            backgroundColor: Colors.black,
+            appBar: AppBar(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              title: items.length > 1
+                  ? Text('${current + 1} / ${items.length}',
+                      style: const TextStyle(fontSize: 16))
+                  : null,
+              actions: [
+                if (deletable)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    onPressed: () {
+                      final it = items[current];
+                      setState(() {
+                        if (it.url != null) {
+                          _existingUrls.remove(it.url);
+                          _removedUrls.add(it.url!);
+                        } else {
+                          _extras.remove(it.file);
+                        }
+                      });
+                      items.removeAt(current);
+                      if (items.isEmpty) {
+                        Navigator.pop(ctx);
+                        return;
+                      }
+                      setS(() {
+                        if (current >= items.length) current = items.length - 1;
+                      });
+                    },
+                  ),
+              ],
+            ),
+            body: PageView.builder(
+              controller: controller,
+              itemCount: items.length,
+              onPageChanged: (i) => setS(() => current = i),
+              itemBuilder: (_, i) {
+                final it = items[i];
+                return InteractiveViewer(
+                  child: Center(
+                    child: it.url != null
+                        ? Image.network(it.url!, fit: BoxFit.contain)
+                        : Image.file(it.file!, fit: BoxFit.contain),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _photosCard() {
+    final total = _existingUrls.length + _extras.length;
+    final canAdd = total < _maxExtra;
+    final hasExistingCard = !_cardRemoved &&
+        widget.existingWarrantyUrl != null &&
+        widget.existingWarrantyUrl!.isNotEmpty;
+    final hasCard = _card != null || hasExistingCard;
+
+    final photoItems = <_PhotoItem>[
+      for (final u in _existingUrls) _PhotoItem(url: u),
+      for (final f in _extras) _PhotoItem(file: f),
+    ];
+
+    // ---------- warranty card thumb ----------
+    Widget? cardThumb;
+    if (_scanningCard) {
+      cardThumb = Center(
+        child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: AppColors.primary)),
+      );
+    } else if (_card != null) {
+      cardThumb = Image.file(_card!, fit: BoxFit.cover, cacheWidth: 200);
+    } else if (hasExistingCard) {
+      cardThumb = Image.network(widget.existingWarrantyUrl!,
+          fit: BoxFit.cover,
+          cacheWidth: 200,
+          errorBuilder: (_, __, ___) =>
+              Icon(Icons.broken_image_outlined, color: AppColors.textMuted));
+    }
+
+    final cardSubtitle = _scanningCard
+        ? 'Reading details...'
+        : _card != null
+            ? 'New image'
+            : hasExistingCard
+                ? '1 image'
+                : 'Not added';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ===== Warranty Card card =====
+        _box(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _header(
+                Icons.verified_outlined,
+                'Warranty Card',
+                trailing: _scanningCard
+                    ? null
+                    : hasCard
+                        ? _pillBtn(Icons.edit_outlined, 'Replace', _purple,
+                            _pickCard)
+                        : _pillBtn(Icons.add_a_photo_outlined, 'Upload',
+                            AppColors.primary, _pickCard),
+              ),
+              const SizedBox(height: 12),
+              _fileRow(
+                fallbackIcon: Icons.verified_outlined,
+                color: AppColors.danger,
+                thumb: cardThumb,
+                title: 'Warranty Card',
+                subtitle: cardSubtitle,
+                enabled: hasCard && !_scanningCard,
+                onView: () => _openViewer([
+                  _card != null
+                      ? _PhotoItem(file: _card)
+                      : _PhotoItem(url: widget.existingWarrantyUrl),
+                ], 0, deletable: false),
+                onDelete: () => setState(() {
+                  _card = null;
+                  _cardMsg = null;
+                  if (widget.existingWarrantyUrl != null &&
+                      widget.existingWarrantyUrl!.isNotEmpty) {
+                    _cardRemoved = true;
+                  }
+                }),
+              ),
+              if (_cardMsg != null) ...[
+                const SizedBox(height: 6),
+                Text(_cardMsg!,
+                    style: TextStyle(
+                        color: _cardMsgOk
+                            ? AppColors.success
+                            : AppColors.textMuted,
+                        fontSize: 12)),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // ===== Extra Photos card =====
+        _box(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _header(
+                Icons.photo_library_outlined,
+                'Extra Photos ($total)',
+                trailing: canAdd
+                    ? _pillBtn(Icons.add_a_photo_outlined, 'Upload',
+                        AppColors.primary, _pickExtras)
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              if (total == 0)
+                Text('No photos added',
+                    style:
+                        TextStyle(color: AppColors.textMuted, fontSize: 14))
+              else
+                _fileRow(
+                  fallbackIcon: Icons.photo_library_outlined,
+                  color: _purple,
+                  thumb: _imgOf(photoItems.first),
+                  title: 'Device Photos ($total)',
+                  subtitle: '$total image${total > 1 ? 's' : ''}',
+                  enabled: true,
+                  onView: () => _openViewer(photoItems, 0),
+                  onDelete: () => setState(() {
+                    _removedUrls.addAll(_existingUrls);
+                    _existingUrls.clear();
+                    _extras.clear();
+                  }),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _photosViewCard() {
     final card = widget.existingWarrantyUrl;
     final hasCard = card != null && card.isNotEmpty;
     final urls = widget.existingExtraUrls;
@@ -433,7 +682,8 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
                     foregroundColor: Colors.white,
                     elevation: 0),
                 body: InteractiveViewer(
-                    child: Center(child: Image.network(u, fit: BoxFit.contain))),
+                    child:
+                        Center(child: Image.network(u, fit: BoxFit.contain))),
               ),
             ),
           ),
@@ -463,7 +713,7 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
           _header(Icons.photo_library_outlined, 'Photos'),
           label('Warranty Card'),
           if (hasCard)
-                        Row(children: [tile(card)])
+            Row(children: [tile(card)])
           else
             Text('No warranty card added',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
@@ -573,7 +823,7 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
                           ],
                         ),
                       ),
-                                                                                        const SizedBox(height: 12),
+                      const SizedBox(height: 12),
                       widget.photosEditable ? _photosCard() : _photosViewCard(),
                     ],
                   ),
@@ -633,37 +883,176 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
 }
 
 // ── Warranty card OCR (shared) ──
-Future<String?> extractWarrantyFromCard(File file) async {
+class WarrantyCardInfo {
+  final String? warranty;
+  final String? shop;
+  final String? shopWarranty;
+  final String? model;
+  final String? serial;
+  const WarrantyCardInfo({
+    this.warranty,
+    this.shop,
+    this.shopWarranty,
+    this.model,
+    this.serial,
+  });
+}
+
+Future<WarrantyCardInfo> extractCardInfo(File file) async {
   final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
   try {
     final result = await recognizer.processImage(InputImage.fromFile(file));
-    return parseWarrantyPeriod(result.text);
+    debugPrint('🧾 OCR text: ${result.text}');
+    return parseCardInfo(result.text);
   } catch (e) {
     debugPrint('❌ OCR error: $e');
-    return null;
+    return const WarrantyCardInfo();
   } finally {
     recognizer.close();
   }
 }
 
-String? parseWarrantyPeriod(String raw) {
-  final text = raw.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
-  const unit = r'(years?|yrs?|months?|mths?|days?)';
-  final patterns = <RegExp>[
-    RegExp(r'(?:warranty|guarantee)[^0-9]{0,40}(\d{1,3})\s*-?\s*' + unit),
-    RegExp(r'(\d{1,3})\s*-?\s*' +
-        unit +
-        r'(?:\s+[a-z]+){0,3}\s+(?:warranty|guarantee)'),
-  ];
-  for (final p in patterns) {
-    final m = p.firstMatch(text);
+// kept so older callers still compile
+Future<String?> extractWarrantyFromCard(File file) async =>
+    (await extractCardInfo(file)).warranty;
+
+const _periodUnit = r'(years?|yrs?|months?|mths?|days?)';
+
+String _normPeriod(int n, String u) {
+  final word =
+      u.startsWith('y') ? 'year' : u.startsWith('m') ? 'month' : 'day';
+  return '$n $word${n > 1 ? 's' : ''}';
+}
+
+// Lines that are only a label (used to detect a block of labels)
+final _labelLine = RegExp(
+  r'^(customer\s*name|product\s*name|product\s*description|model(\s*(no|number|num|name))?|serial\s*(no|number|num)|bill\s*(no|number|date)|invoice\s*(no|number|date)|purchase\s*date|date\s*of\s*purchase|warranty\s*period|contact\s*(no|number)|phone|name|address|order\s*(no|number)|dealer(\s*name)?|shop(\s*name)?|seller|retailer|purchased\s*from|sold\s*by)\.?\s*:?$',
+  caseSensitive: false,
+);
+
+String _cleanVal(String s) =>
+    s.replaceAll(RegExp(r'^[\s:\-#.]+'), '').replaceAll(RegExp(r'[\s,;:]+$'), '').trim();
+
+String? _periodFrom(String s) {
+  final m = RegExp(r'(\d{1,3})\s*-?\s*' + _periodUnit, caseSensitive: false)
+      .firstMatch(s);
+  if (m == null) return null;
+  final n = int.tryParse(m.group(1)!);
+  if (n == null || n <= 0) return null;
+  return _normPeriod(n, m.group(2)!.toLowerCase());
+}
+
+// Finds the value for a label: same line ("Label : value"),
+// or the matching position in the values block, or the next line.
+String? _valueFor(List<String> lines, RegExp label,
+    {bool needDigit = false}) {
+  bool ok(String v) =>
+      v.length >= 2 &&
+      v.length <= 40 &&
+      (!needDigit || RegExp(r'\d').hasMatch(v));
+
+  for (var i = 0; i < lines.length; i++) {
+    final m = label.firstMatch(lines[i]);
     if (m == null) continue;
-    final n = int.tryParse(m.group(1)!);
-    if (n == null || n <= 0) continue;
-    final u = m.group(2)!;
-    final word =
-        u.startsWith('y') ? 'year' : u.startsWith('m') ? 'month' : 'day';
-    return '$n $word${n > 1 ? 's' : ''}';
+
+    // 1) same line
+    final same = _cleanVal(m.namedGroup('v') ?? '');
+    if (ok(same)) return same;
+
+    // 2) label block -> value at same position after the block
+    var s = i, e = i;
+    while (s > 0 && _labelLine.hasMatch(lines[s - 1])) {
+      s--;
+    }
+    while (e < lines.length - 1 && _labelLine.hasMatch(lines[e + 1])) {
+      e++;
+    }
+    final idx = e + 1 + (i - s);
+    if (idx < lines.length && !_labelLine.hasMatch(lines[idx])) {
+      final v = _cleanVal(lines[idx]);
+      if (ok(v)) return v;
+    }
   }
   return null;
 }
+
+WarrantyCardInfo parseCardInfo(String raw) {
+  final lines = raw
+      .split('\n')
+      .map((l) => l.replaceAll(RegExp(r'[ \t]+'), ' ').trim())
+      .where((l) => l.isNotEmpty)
+      .toList();
+  final flat = lines.join(' ').toLowerCase();
+
+  // ---- main warranty ----
+  String? warranty;
+  final wp = _valueFor(
+      lines, RegExp(r'^warranty\s*period\b(?<v>.*)$', caseSensitive: false));
+  if (wp != null) warranty = _periodFrom(wp);
+  if (warranty == null) {
+    for (final p in <String>[
+      r'(?:warranty|guarantee)[^0-9]{0,40}(\d{1,3})\s*-?\s*' + _periodUnit,
+      r'(\d{1,3})\s*-?\s*' +
+          _periodUnit +
+          r'(?:\s+[a-z]+){0,3}\s+(?:warranty|guarantee)',
+    ]) {
+      final m = RegExp(p).firstMatch(flat);
+      if (m == null) continue;
+      final n = int.tryParse(m.group(1)!);
+      if (n == null || n <= 0) continue;
+      warranty = _normPeriod(n, m.group(2)!);
+      break;
+    }
+  }
+
+  // ---- shop warranty ----
+  String? shopWarranty;
+  final sw = _valueFor(
+      lines,
+      RegExp(r'^(?:shop|dealer|seller|store)\s*warranty\b(?<v>.*)$',
+          caseSensitive: false));
+  if (sw != null) shopWarranty = _periodFrom(sw);
+
+  // ---- purchased from ----
+  var shop = _valueFor(
+      lines,
+      RegExp(
+          r'^(?:purchased\s*from|bought\s*from|sold\s*by|dealer(?:\s*name)?|shop(?:\s*name)?|seller|retailer)(?!\s*warranty)\b(?<v>.*)$',
+          caseSensitive: false));
+  // fallback: company line like "Zhini Technologies Pvt. Ltd."
+  shop ??= () {
+    final re = RegExp(
+        r'(pvt\.?\s*ltd|private\s*limited|\bltd\b|traders|enterprises|stores?\b|electronics|agencies)',
+        caseSensitive: false);
+    for (final l in lines) {
+      if (re.hasMatch(l) && l.length <= 50) return _cleanVal(l);
+    }
+    return null;
+  }();
+
+  // ---- model number ----
+  final model = _valueFor(
+      lines,
+      RegExp(r'^model\s*(?:no|number|num)?\.?\s*[:#\-]?(?<v>.*)$',
+          caseSensitive: false),
+      needDigit: true);
+
+  // ---- serial number ----
+  final serial = _valueFor(
+      lines,
+      RegExp(
+          r'^(?:serial\s*(?:no|number|num)?|s\/n|sr\.?\s*no)\.?\s*[:#\-]?(?<v>.*)$',
+          caseSensitive: false),
+      needDigit: true);
+
+  return WarrantyCardInfo(
+    warranty: warranty,
+    shop: shop,
+    shopWarranty: shopWarranty,
+    model: model,
+    serial: serial,
+  );
+}
+
+// kept so older callers still compile
+String? parseWarrantyPeriod(String raw) => parseCardInfo(raw).warranty;
