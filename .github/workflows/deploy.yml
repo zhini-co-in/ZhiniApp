@@ -1,16 +1,12 @@
-name: Deploy to Google Play Internal Testing
+name: Deploy Production Update to Google Play
 
 on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: 'App Version Name (e.g., 1.0.0)'
+        description: 'App Version Name (e.g., 1.0.1)'
         required: true
-        default: '1.0.0'
-      release_tag:
-        description: 'Release Tag / Note (Optional identifier)'
-        required: false
-        default: 'manual-trigger'
+        default: '1.0.1'
 
 permissions:
   contents: read
@@ -42,7 +38,6 @@ jobs:
       - name: Generate Dynamic Version Code
         id: versioning
         run: |
-          # Formats as YYMMDD (e.g., 261110) + 2-digit run counter
           DATE_PREFIX=$(date +'%y%m%d')
           RUN_SEQ=$(printf "%02d" $((GITHUB_RUN_NUMBER % 100)))
           VERSION_CODE="${DATE_PREFIX}${RUN_SEQ}"
@@ -79,11 +74,11 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
-      - name: Upload to Google Play Internal Testing
+      - name: Upload to Google Play Production
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ steps.auth.outputs.credentials_file_path }}
           packageName: com.zhini.mobile
           releaseFiles: build/app/outputs/bundle/release/app-release.aab
-          track: internal
+          track: production
           status: completed
