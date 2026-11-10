@@ -33,6 +33,25 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate Dynamic Version Code
+        id: versioning
+        run: |
+          # Formats as YYMMDD (e.g., 261110) + 2-digit run number (e.g., 01, 02)
+          DATE_PREFIX=$(date +'%y%m%d')
+          RUN_SEQ=$(printf "%02d" $((GITHUB_RUN_NUMBER % 100)))
+          VERSION_CODE="${DATE_PREFIX}${RUN_SEQ}"
+
+          # Extract base version (e.g. 1.0.0) from pubspec.yaml
+          BASE_VERSION=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/')
+          if [ -z "$BASE_VERSION" ]; then
+            BASE_VERSION="1.0.0"
+          fi
+
+          echo "Calculated Version Code: $VERSION_CODE"
+          echo "Calculated Version Name: $BASE_VERSION"
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "version_name=$BASE_VERSION" >> $GITHUB_OUTPUT
+
       - name: Decode keystore & configure key.properties
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -49,7 +68,10 @@ jobs:
           EOF
 
       - name: Build Android App Bundle
-        run: flutter build appbundle --release
+        run: |
+          flutter build appbundle --release \
+            --build-name="${{ steps.versioning.outputs.version_name }}" \
+            --build-number=${{ steps.versioning.outputs.version_code }}
 
       - name: Authenticate to Google Cloud (WIF)
         id: auth
