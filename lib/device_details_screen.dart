@@ -141,9 +141,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           }
           m ??= j;
         }
-        if (m != null &&
-            (m.containsKey('_id') || m.containsKey('deviceId')) &&
-            (m.containsKey('otherUrls') || m.containsKey('warrantyUrl'))) {
+                if (m != null &&
+            (m.containsKey('_id') || m.containsKey('deviceId'))) {
           _lastCreated = Map<String, dynamic>.from(m);
         }
       } catch (_) {}
@@ -171,7 +170,9 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           photoUrl: e.imageUrl,
           fallbackIcon: widget.fallbackIcon,
           existingExtraUrls: _photos,
-          existingWarrantyUrl: _warrantyCardUrl,
+                    existingWarrantyUrl: _warrantyCardUrl,
+          warrantyStartDate:
+              DateTime.tryParse(_raw['createdAt']?.toString() ?? ''),
           initial: _baseData(),
           onSave: (d) async {
             if (deviceId == null) return 'Device id not found';
@@ -311,7 +312,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           colors: [Color(0xFF16406B), Color(0xFF0F2347), Color(0xFF0A1628)],
           stops: [0, 0.4, 1],
         )
-      : const LinearGradient(
+            : const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
@@ -321,8 +322,6 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
             Color(0xFFEAF6FF),
             Color(0xFFF5F8FF),
           ],
-          // stops are squeezed into the top half, so the blue fades out
-          // like the home header and the rest of the page is plain F5F8FF
           stops: [0, 0.12, 0.25, 0.37, 0.5],
         );
 
@@ -335,7 +334,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       valueListenable: ThemeController.notifier,
       builder: (context, _, __) => Scaffold(
         backgroundColor: AppColors.scaffoldBg,
-        body: Container(
+         body: Container(
           decoration: BoxDecoration(gradient: _bgGradient),
           child: SafeArea(
             child: Column(
@@ -616,7 +615,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                   style: TextStyle(color: AppColors.textMuted, fontSize: 15)),
             ),
             const SizedBox(width: 10),
-                        Expanded(
+            Expanded(
               flex: 5,
               child: trailing != null
                   ? Align(alignment: Alignment.centerRight, child: trailing)

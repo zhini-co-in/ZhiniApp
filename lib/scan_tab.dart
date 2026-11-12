@@ -868,7 +868,19 @@ if (needsRealHome) {
       );
     }
     // Expired -> old badge
-    return WarrantyBadge(expiry: expiry);
+        // Expired -> red shield + "Warranty expired"
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.gpp_bad_outlined, size: 16, color: AppColors.danger),
+        const SizedBox(width: 4),
+        Text('Warranty expired',
+            style: TextStyle(
+                color: AppColors.danger,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600)),
+      ],
+    );
   }
 
   @override

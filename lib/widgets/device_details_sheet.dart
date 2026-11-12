@@ -136,7 +136,16 @@ class DeviceWarrantyIndicator extends StatelessWidget {
         ],
       );
     }
-    return WarrantyBadge(expiry: e.expiry);
+        return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.gpp_bad_outlined, size: 16, color: AppColors.danger),
+        SizedBox(width: 4),
+        Text('Warranty expired',
+            style: TextStyle(
+                color: AppColors.danger, fontSize: 11.5, fontWeight: FontWeight.w600)),
+      ],
+    );
   }
 }
 

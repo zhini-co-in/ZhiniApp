@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
+import 'utils/warranty_utils.dart';
 
 class DeviceEditData {
   String product;
@@ -51,6 +52,7 @@ class DeviceEditScreen extends StatefulWidget {
   final IconData fallbackIcon;
   final bool photosEditable; // false = hide Photos card (backend update API doesn't support files)
   final String? existingWarrantyUrl;
+  final DateTime? warrantyStartDate; // device added date (for expiry); null = today
 
   /// Return null on success, or an error message to show.
   final Future<String?> Function(DeviceEditData data) onSave;
@@ -67,6 +69,7 @@ class DeviceEditScreen extends StatefulWidget {
     this.fallbackIcon = Icons.devices_other_rounded,
     this.photosEditable = true,
     this.existingWarrantyUrl,
+    this.warrantyStartDate,
   });
 
   @override
@@ -104,6 +107,9 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
     _shopWarranty = TextEditingController(text: d.shopWarranty);
     _model = TextEditingController(text: d.model);
     _serial = TextEditingController(text: d.serial);
+    _warranty.addListener(() {
+      if (mounted) setState(() {}); // refresh warranty status live
+    });
     _card = d.warrantyCard;
     _extras = List<File>.from(d.extraPhotos);
     _existingUrls = List<String>.from(widget.existingExtraUrls);
@@ -291,6 +297,44 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
           ),
         ),
       );
+
+  // Live warranty status under the Warranty field (active / expired / none)
+  Widget _warrantyStatus() {
+    final expiry = WarrantyUtils.parseExpiry(_warranty.text.trim(),
+        referenceDate: widget.warrantyStartDate ?? DateTime.now());
+    final Color color;
+    final IconData icon;
+    final String label;
+    if (expiry == null) {
+      color = AppColors.danger;
+      icon = Icons.gpp_bad_outlined;
+      label = 'No warranty';
+    } else if (expiry.isAfter(DateTime.now())) {
+      color = AppColors.success;
+      icon = Icons.verified_user_rounded;
+      label = 'Warranty active';
+    } else {
+      color = AppColors.danger;
+      icon = Icons.gpp_bad_outlined;
+      label = 'Warranty expired';
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(
+                    color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
 
   InputDecoration _dec(String hint) => InputDecoration(
         hintText: hint,
@@ -814,6 +858,7 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
                             const SizedBox(height: 12),
                             _row('Brand', _brand, hint: 'e.g. Daikin'),
                             _row('Warranty', _warranty, hint: 'e.g. 2 years'),
+                            _warrantyStatus(),
                             _row('Purchased From', _shop,
                                 hint: 'Shop / website'),
                             _row('Shop Warranty', _shopWarranty,
