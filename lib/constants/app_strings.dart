@@ -79,7 +79,7 @@ class AppStrings {
   static const String warrantyOptionalHint = 'Warranty (e.g. 2 Years, optional)';
   static const String addApplianceButton = 'Add appliance';
 
-  static const String servicesNearYou = 'Services near you';
+  static const String servicesNearYou = 'Other Services';
   static String nearbyCount(int n) => '$n nearby';
   static const String installation = 'Installation';
   static const String installationDesc = 'Get expert setup at your home';

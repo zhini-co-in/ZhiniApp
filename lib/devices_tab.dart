@@ -16,6 +16,9 @@ import 'models/home_model.dart';
 import 'theme/app_theme.dart';
 import 'utils/devices_filter_bus.dart';
 import 'widgets/device_details_sheet.dart';
+import 'utils/appliance_bus.dart';
+import 'widgets/service_group_card.dart';
+import 'widgets/service_group_sheet.dart';
 
 class DevicesTab extends StatefulWidget {
   final String mobileNumber;
@@ -23,6 +26,7 @@ class DevicesTab extends StatefulWidget {
   final String pincode;
   final String name;
   final ScanRequest? onScanTap;
+  final String? homeId;
 
   const DevicesTab({
     super.key,
@@ -30,6 +34,7 @@ class DevicesTab extends StatefulWidget {
     required this.address,
     required this.pincode,
     this.name = '',
+    this.homeId,
     this.onScanTap,
   });
 
@@ -62,6 +67,9 @@ class _DevicesTabState extends State<DevicesTab> {
     {'label': AppStrings.catFan, 'key': 'fan'},
   ];
   String? _categoryFilter;
+    bool _showAllHomes = false; // "View all" -> devices from every home
+      bool _showCatalog = false; // "See All" from Home -> appliance catalog
+      final GlobalKey _catalogKey = GlobalKey(); // "See All" -> scroll here
 
   bool get _searchActive => _searchFocus.hasFocus || _query.trim().isNotEmpty;
 
@@ -82,12 +90,24 @@ class _DevicesTabState extends State<DevicesTab> {
     if (f == null) return;
     devicesFilterRequest.value = null; // consume
 
-    void apply() {
-      _activeTab = f;
+          void apply() {
+      _activeTab = f == 'Catalog' ? 'All' : f;
+      _showAllHomes = false;
       _quickFilters.clear();
       _roomFilter = null;
       _categoryFilter = null;
       _clearAdvanced();
+
+      // Home "See All" -> scroll down to the services section
+      if (f == 'Catalog') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final ctx = _catalogKey.currentContext;
+          if (ctx != null) {
+            Scrollable.ensureVisible(ctx,
+                duration: const Duration(milliseconds: 350), curve: Curves.easeInOut);
+          }
+        });
+      }
     }
 
     if (initial) {
@@ -111,22 +131,31 @@ class _DevicesTabState extends State<DevicesTab> {
   // DATA
   // -----------------------------------------------------------------
   Map<String, dynamic>? _findCurrentHome(List<HomeModel> homes) {
-    if (homes.isEmpty) return null;
-    final maps = homes.map((h) => h.toMap()).toList();
+  if (homes.isEmpty) return null;
+  final maps = homes.map((h) => h.toMap()).toList();
 
+  // 1) Selected homeId vechu match (most reliable)
+  if (widget.homeId != null && widget.homeId!.isNotEmpty) {
     for (final map in maps) {
-      final addr = map['address']?.toString() ?? '';
-      if (addr.isNotEmpty && widget.address.isNotEmpty && addr == widget.address) {
-        return map;
-      }
+      if (map['id']?.toString() == widget.homeId) return map;
     }
-    // Fallback: first registered home — skip the "Default" placeholder.
-    for (final map in maps) {
-      final addr = map['address']?.toString().trim().toLowerCase() ?? '';
-      if (addr != 'default') return map;
-    }
-    return maps.first;
   }
+
+  // 2) Address match
+  for (final map in maps) {
+    final addr = map['address']?.toString() ?? '';
+    if (addr.isNotEmpty && widget.address.isNotEmpty && addr == widget.address) {
+      return map;
+    }
+  }
+
+  // 3) Fallback: first registered home (skip "Default")
+  for (final map in maps) {
+    final addr = map['address']?.toString().trim().toLowerCase() ?? '';
+    if (addr != 'default') return map;
+  }
+  return maps.first;
+}
 
   List<_DeviceEntry> _flatten(Map<String, dynamic>? home) {
     if (home == null) return [];
@@ -148,6 +177,13 @@ class _DevicesTabState extends State<DevicesTab> {
       }
     });
     return entries;
+  }
+  List<_DeviceEntry> _flattenAllHomes(List<HomeModel> homes) {
+    final out = <_DeviceEntry>[];
+    for (final h in homes) {
+      out.addAll(_flatten(h.toMap()));
+    }
+    return out;
   }
 
   // -----------------------------------------------------------------
@@ -324,15 +360,27 @@ class _DevicesTabState extends State<DevicesTab> {
                   ),
                 ),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-                    child: _searchActive
-                        ? _buildSearchMode(allDevices, filtered)
-                        : (_advancedActive
-                            ? _buildFilteredView(allDevices, filtered)
-                            : _buildDashboard(allDevices)),
-                  ),
-                ),
+  child: SingleChildScrollView(
+    padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1) User's added devices (top)
+        _searchActive
+            ? _buildSearchMode(allDevices, filtered)
+            : (_advancedActive
+                ? _buildFilteredView(allDevices, filtered)
+                : _buildDashboard(allDevices)),
+
+        // 2) Appliances & Gadgets (below)
+        if (!_searchActive) ...[
+          const SizedBox(height: 28),
+          KeyedSubtree(key: _catalogKey, child: _buildCatalogView()),
+        ],
+      ],
+    ),
+  ),
+),
               ],
             ),
           ),
@@ -1206,6 +1254,54 @@ class _DevicesTabState extends State<DevicesTab> {
     return Text(title,
         style: const TextStyle(
             color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8));
+  }
+
+    // ---------------- APPLIANCE CATALOG (from Home "See All") ----------------
+  // ---------------- SERVICE GROUPS (from Home "See All") ----------------
+  // ---------------- APPLIANCE & GADGET SERVICES (below my devices) ----------------
+  Widget _buildCatalogView() {
+    final groups = kServiceGroups.toList(); // all groups
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Appliance & Gadget Services',
+            style: TextStyle(
+                color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 2),
+        const Text('Doorstep diagnosis & expert repair', style: AppText.caption),
+        const SizedBox(height: 12),
+        ...groups.map((g) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: ServiceGroupCard(group: g, onTap: () => _openGroupItems(g)),
+            )),
+      ],
+    );
+  }
+
+  // Tap on a card -> all appliances of that group
+void _openGroupItems(Map<String, dynamic> g) {
+  showServiceGroupSheet(
+    context,
+    group: g,
+    onSelect: _openCatalogService,
+    onScan: _requestScan,
+  );
+}
+    void _openCatalogService(String name) {
+    showDeviceServiceSheet(
+      context,
+      _DeviceEntry(
+        homeId: _currentHomeIdCache,
+        homeAddress: widget.address,
+        pincode: widget.pincode,
+        roomKey: 'default',
+        roomName: 'Default',
+        raw: {'product': name, 'brand': ''},
+      ),
+      mobileNumber: widget.mobileNumber,
+      name: widget.name,
+    );
   }
 
   // Dashboard card: tap -> details sheet, three-dot menu for quick actions.

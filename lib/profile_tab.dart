@@ -37,6 +37,7 @@ import 'dart:io';
 import 'widgets/theme_mode_toggle.dart';
 import 'utils/warranty_utils.dart';
 import 'theme/text_scale_controller.dart';
+import 'warranty_vault_screen.dart';
 
 // Optional, backend-fed extras. Leave null/default until you have a real
 // source for them — the UI degrades gracefully either way.
@@ -850,13 +851,21 @@ SizedBox(
                       const SizedBox(height: 10),
                       _groupCard([
                         _accountRow(
-                          icon: Icons.verified_user_outlined,
-                          iconColor: AppColors.success,
-                          title: AppStrings.warrantyVault,
-                          subtitle: _warrantyVaultSubtitle(homes),
-                          onTap: () => _openComingSoon(
-                              AppStrings.warrantyVault, AppStrings.warrantyVaultDesc),
-                        ),
+  icon: Icons.verified_user_outlined,
+  iconColor: AppColors.success,
+  title: AppStrings.warrantyVault,
+  subtitle: _warrantyVaultSubtitle(homes),
+  onTap: () => Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => WarrantyVaultScreen(
+        mobileNumber: widget.mobileNumber,
+        name: _displayName,
+        homeId: widget.selectedHomeId,
+      ),
+    ),
+  ),
+),
                       ]),
                       const SizedBox(height: 24),
 

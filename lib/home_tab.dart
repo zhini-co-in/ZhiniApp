@@ -27,6 +27,9 @@ import 'package:geolocator/geolocator.dart';
 import 'theme/theme_controller.dart';
 import 'dart:math' as math;
 import 'device_details_screen.dart';
+import 'utils/appliance_bus.dart';
+import 'widgets/service_group_card.dart';
+import 'widgets/service_group_sheet.dart';
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
@@ -75,8 +78,7 @@ class HomeTabState extends State<HomeTab> {
 
   bool _fetchInFlight = false;
 
-  // True while a pull-to-refresh is running in the background. Only used to
-  // show a thin progress bar at the top — the pull indicator closes at once.
+  // True while a pull-to-refresh is running in the background.
   bool _refreshing = false;
 
   // Each entry: { id, address, pincode, members, rooms: {roomKey: [items]}, roomIds }
@@ -86,7 +88,8 @@ class HomeTabState extends State<HomeTab> {
   // Source of truth for the selected home. Index can shift when the list is
   // re-ordered, so after every refresh we re-find the home by this id.
   String? _selectedHomeId;
-    // MainShell sollura "intha home ah select pannu" request (new home create aana apram).
+
+  // MainShell sollura "intha home ah select pannu" request (new home create aana apram).
   String? _pendingSelectHomeId;
 
   // Last values sent to MainShell (avoid redundant notifications).
@@ -124,10 +127,12 @@ class HomeTabState extends State<HomeTab> {
     'microwave': Icons.microwave_rounded,
     'water purifier': Icons.water_drop_rounded,
   };
+  static const List<String> _applianceCatalog = kApplianceCatalog;
 
   // serviceType -> provider count, shown as "X nearby".
   final Map<String, int> _serviceCounts = {};
-    // Register aagaadha user-ku current location use pannum
+
+  // Register aagaadha user-ku current location use pannum
   double? _lat;
   double? _lng;
 
@@ -185,22 +190,31 @@ class HomeTabState extends State<HomeTab> {
     _bannerTimer?.cancel();
     _bannerController.dispose();
     _servicesController.dispose();
+    applianceAddRequest.removeListener(_onApplianceAddRequest);
     super.dispose();
   }
 
   @override
   void initState() {
     super.initState();
+    applianceAddRequest.addListener(_onApplianceAddRequest);
     _fetchAppliances();
     _prefetchServiceCounts();
     _loadGps();
     _startBannerTimer();
   }
 
+  void _onApplianceAddRequest() {
+    final name = applianceAddRequest.value;
+    if (name == null) return;
+    applianceAddRequest.value = null; // consume
+    if (mounted) _openManualAddDialog(prefillProduct: name);
+  }
+
   // Called by MainShell when the Home tab is tapped.
   // Service counts are NOT cleared here (avoids "..." flicker) — the old
   // numbers stay visible and get replaced when the new ones arrive.
-   Future<void> refresh({String? selectHomeId}) async {
+  Future<void> refresh({String? selectHomeId}) async {
     if (selectHomeId != null) _pendingSelectHomeId = selectHomeId;
     while (_fetchInFlight) {
       await Future.delayed(const Duration(milliseconds: 100));
@@ -211,13 +225,11 @@ class HomeTabState extends State<HomeTab> {
     _prefetchServiceCounts();
   }
 
-  // Pull-to-refresh handler. Runs the fetch in the background so the pull
-  // indicator can close immediately and the screen stays where it is.
+  // Pull-to-refresh handler.
   Future<void> _silentRefresh() async {
     if (_refreshing) return;
     if (mounted) setState(() => _refreshing = true);
     try {
-      
       if (_currentHomeId != null) {
         await _fetchAppliances(homeId: _currentHomeId);
       } else {
@@ -236,7 +248,7 @@ class HomeTabState extends State<HomeTab> {
   // ---------------------------------------------------------------------
   // SERVICES NEAR YOU — data (shared HomeServices, pincode only)
   // ---------------------------------------------------------------------
-    void _prefetchServiceCounts() {
+  void _prefetchServiceCounts() {
     HomeServices.prefetchCounts(
       _currentPincode,
       (type, count) {
@@ -374,8 +386,6 @@ class HomeTabState extends State<HomeTab> {
           }
 
           // ---------- Full refresh ----------
-          // Order once, then use the SAME order for Hive and for the UI so
-          // ProfileTab and HomeTab always agree.
           final ordered = _stableOrderHomes(_homes, dedupedHomes);
           await _homeBox.clear();
           for (final h in ordered) {
@@ -497,7 +507,7 @@ class HomeTabState extends State<HomeTab> {
       (_homes.isEmpty || _selectedHomeIndex >= _homes.length) ? null : _homes[_selectedHomeIndex];
 
   // After any list change, point the index back at the SAME home (by id).
-   void _restoreSelection() {
+  void _restoreSelection() {
     if (_homes.isEmpty) {
       _selectedHomeIndex = 0;
       return;
@@ -505,8 +515,7 @@ class HomeTabState extends State<HomeTab> {
 
     // Pudhusa create aana home ah select pannanum na, adhu list la vandha udane pick pannu.
     if (_pendingSelectHomeId != null) {
-      final p = _homes.indexWhere(
-          (h) => h['id']?.toString() == _pendingSelectHomeId);
+      final p = _homes.indexWhere((h) => h['id']?.toString() == _pendingSelectHomeId);
       if (p != -1) {
         _selectedHomeIndex = p;
         _selectedHomeId = _pendingSelectHomeId;
@@ -609,21 +618,21 @@ class HomeTabState extends State<HomeTab> {
   }
 
   // Card tap -> common details sheet (same as Devices tab).
-void _openDeviceDetails(DeviceEntry e) {
-  showDeviceDetailsSheet(
-    context,
-    e,
-    mobileNumber: widget.mobileNumber,
-    name: _displayName,
-    onChanged: () {
-      if (_currentHomeId != null) {
-        _fetchAppliances(homeId: _currentHomeId);
-      } else {
-        _fetchAppliances();
-      }
-    },
-  );
-}
+  void _openDeviceDetails(DeviceEntry e) {
+    showDeviceDetailsSheet(
+      context,
+      e,
+      mobileNumber: widget.mobileNumber,
+      name: _displayName,
+      onChanged: () {
+        if (_currentHomeId != null) {
+          _fetchAppliances(homeId: _currentHomeId);
+        } else {
+          _fetchAppliances();
+        }
+      },
+    );
+  }
 
   // ---------------------------------------------------------------------
   // WARRANTY HELPERS
@@ -886,8 +895,8 @@ void _openDeviceDetails(DeviceEntry e) {
   // ---------------------------------------------------------------------
   // MANUAL ADD — product / brand / warranty. No room: always "Default".
   // ---------------------------------------------------------------------
-  void _openManualAddDialog() {
-    final productController = TextEditingController();
+  void _openManualAddDialog({String? prefillProduct}) {
+    final productController = TextEditingController(text: prefillProduct ?? '');
     final brandController = TextEditingController();
     final warrantyController = TextEditingController();
     bool isSubmitting = false;
@@ -925,8 +934,8 @@ void _openDeviceDetails(DeviceEntry e) {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.qr_code_scanner_rounded, color: AppColors.primary, size: 20),
-                          SizedBox(width: 4),
-                          Text(AppStrings.scan, style: AppText.linkAction),
+                          const SizedBox(width: 4),
+                          const Text(AppStrings.scan, style: AppText.linkAction),
                         ],
                       ),
                     ),
@@ -1057,6 +1066,7 @@ void _openDeviceDetails(DeviceEntry e) {
   @override
   Widget build(BuildContext context) {
     final stats = _loading ? null : _computeStats();
+    final deviceCount = stats?['devices'] ?? 0; // null-safe, used by SectionHeader
     final hasHome = !_loading && _hasRegisteredHome;
 
     if (!_loading) {
@@ -1066,76 +1076,78 @@ void _openDeviceDetails(DeviceEntry e) {
       });
     }
 
-        return ValueListenableBuilder<bool>(
+    return ValueListenableBuilder<bool>(
       valueListenable: ThemeController.notifier,
       builder: (context, _, __) {
         return Scaffold(
           backgroundColor: AppColors.lightBg,
           body: SafeArea(
             top: false,
-        child: _loading
-            ? Center(child: CircularProgressIndicator(color: AppColors.lightPrimary))
-            : Stack(
-                children: [
-                  // No stretch / bounce: content never moves while pulling.
-                  // The spinner just floats on top of the screen.
-                  ScrollConfiguration(
-                    behavior: const _NoStretchScrollBehavior(),
-                    child: RefreshIndicator(
-                    color: AppColors.lightPrimary,
-                    edgeOffset: MediaQuery.of(context).padding.top,
-                    onRefresh: _silentRefresh,
-                    child: CustomScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(
-                          parent: ClampingScrollPhysics()),
-                      slivers: [
-                        SliverToBoxAdapter(child: _buildHeader()),
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                          sliver: SliverList(
-                            delegate: SliverChildListDelegate([
-                              if (_error != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 16),
-                                  child: Text(_error!, style: TextStyle(color: AppColors.danger)),
-                                )
-                              else if (!hasHome) ...[
-                                _buildRegisterHomeCard(),
-                                _buildDefaultHomePreview(),
-                                const SizedBox(height: 28),
-                                _buildServicesNearYou(),
-                              ] else ...[
-                                _buildBuildingsHeader(),
-                                const SizedBox(height: 16),
-                                _buildStatsRow(stats!),
-                                const SizedBox(height: 24),
-                                SectionHeader(
-                                  AppStrings.devicesCount(stats['devices']!),
-                                  actionLabel: stats['devices']! > _maxDevicesOnHome
-                                      ? AppStrings.viewAll
-                                      : null,
-                                  onManage: stats['devices']! > _maxDevicesOnHome
-                                      ? () => _openDevicesTabWith('All')
-                                      : null,
+            child: _loading
+                ? Center(child: CircularProgressIndicator(color: AppColors.lightPrimary))
+                : Stack(
+                    children: [
+                      // No stretch / bounce: content never moves while pulling.
+                      ScrollConfiguration(
+                        behavior: const _NoStretchScrollBehavior(),
+                        child: RefreshIndicator(
+                          color: AppColors.lightPrimary,
+                          edgeOffset: MediaQuery.of(context).padding.top,
+                          onRefresh: _silentRefresh,
+                          child: CustomScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(
+                                parent: ClampingScrollPhysics()),
+                            slivers: [
+                              SliverToBoxAdapter(child: _buildHeader()),
+                              SliverPadding(
+                                padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                                sliver: SliverList(
+                                  delegate: SliverChildListDelegate([
+                                    if (_error != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 16),
+                                        child: Text(_error!,
+                                            style: TextStyle(color: AppColors.danger)),
+                                      )
+                                    else if (!hasHome) ...[
+                                      _buildRegisterHomeCard(),
+                                      _buildDefaultHomePreview(),
+                                      const SizedBox(height: 28),
+                                      _buildAppliancesGadgets(),
+                                      const SizedBox(height: 28),
+                                      _buildServicesNearYou(),
+                                    ] else ...[
+                                      _buildActiveHomeCard(),
+                                      const SizedBox(height: 24),
+                                      SectionHeader(
+                                        AppStrings.devicesCount(deviceCount),
+                                        actionLabel: deviceCount > _maxDevicesOnHome
+                                            ? AppStrings.viewAll
+                                            : null,
+                                        onManage: deviceCount > _maxDevicesOnHome
+                                            ? () => _openDevicesTabWith('All')
+                                            : null,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildDevicesList(),
+                                      const SizedBox(height: 28),
+                                      _buildAppliancesGadgets(),
+                                      const SizedBox(height: 28),
+                                      _buildServicesNearYou(),
+                                    ],
+                                  ]),
                                 ),
-                                const SizedBox(height: 12),
-                                _buildDevicesList(),
-                                const SizedBox(height: 28),
-                                _buildServicesNearYou(),
-                              ],
-                            ]),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                                 ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-        ),            // SafeArea mudiyuthu
-        );            // Scaffold mudiyuthu
-      },              // builder mudiyuthu
-    );                // ValueListenableBuilder mudiyuthu
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildHeader() {
@@ -1147,8 +1159,7 @@ void _openDeviceDetails(DeviceEntry e) {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Logo + search + avatar
-                    // Logo + avatar
+          // Logo + avatar
           Padding(
             padding: EdgeInsets.fromLTRB(
                 20, 12 + MediaQuery.of(context).padding.top, 20, 0),
@@ -1236,181 +1247,240 @@ void _openDeviceDetails(DeviceEntry e) {
     );
   }
 
-  // ── Buildings title + dropdown to choose the building ──
-  Widget _buildBuildingsHeader() {
+  // ── ACTIVE HOME card: home name, members avatars, Switch dropdown ──
+  Widget _buildActiveHomeCard() {
     final current = _currentHome;
-    final label = current == null ? AppStrings.select : _homeLabel(current, _selectedHomeIndex);
+    final title =
+        current == null ? AppStrings.select : _homeLabel(current, _selectedHomeIndex);
+    final deviceCount = _allDevices.length;
+    final registeredCount = _homes.where((h) => !_isDefaultHome(h)).length;
+    final myPlain = ApiConfig.stripCountryCode(widget.mobileNumber);
+    final members = (current?['members'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        <Map<String, dynamic>>[];
 
-    return Row(
-      children: [
-        const Text(AppStrings.buildings, style: AppText.lightSectionTitle),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: PopupMenuButton<int>(
-              offset: const Offset(0, 48),
-              color: AppColors.cardBg,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              onSelected: (value) {
-                if (value == -1) {
-                  _openAddHomeDialog();
-                  return;
-                }
-                if (value == _selectedHomeIndex) return;
-                setState(() {
-                  _selectedHomeIndex = value;
-                  _selectedHomeId = _homes[value]['id']?.toString();
-                  _serviceCounts.clear();
-                });
-                _notifySelectedHome();
-                _prefetchServiceCounts();
-              },
-              itemBuilder: (context) => [
-                for (int i = 0; i < _homes.length; i++)
-                  if (!_isDefaultHome(_homes[i]))
-                    PopupMenuItem<int>(
-                      value: i,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 240),
-                        child: Row(
-                          children: [
-                            Icon(
-                              i == _selectedHomeIndex
-                                  ? Icons.check_circle_rounded
-                                  : Icons.apartment_rounded,
-                              size: 18,
-                              color: i == _selectedHomeIndex
-                                  ? AppColors.lightPrimary
-                                  : AppColors.lightTextMuted,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _homeLabel(_homes[i], i),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppText.lightCardTitle,
-                                  ),
-                                  Text(
-                                    _homes[i]['address']?.toString() ?? '',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppText.lightCaption,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+    const avatarColors = [
+      Color(0xFF2563EB),
+      Color(0xFF7C6FE8),
+      Color(0xFF38A3D8),
+      Color(0xFF16A34A),
+      Color(0xFFD97706),
+    ];
+    const double size = 34;
+    const double overlap = 24;
+
+    String initialOf(Map<String, dynamic> m) {
+      if (m['mobile']?.toString() == myPlain) return 'You';
+      final n = (m['name']?.toString() ?? '').trim();
+      return n.isEmpty ? 'M' : n[0].toUpperCase();
+    }
+
+    Widget avatars() {
+      final shown = members.take(5).toList();
+      return SizedBox(
+        height: size,
+        width: shown.isEmpty ? 0 : overlap * (shown.length - 1) + size,
+        child: Stack(
+          children: [
+            for (int i = 0; i < shown.length; i++)
+              Positioned(
+                left: i * overlap,
+                child: Container(
+                  width: size,
+                  height: size,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: avatarColors[i % avatarColors.length],
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.cardBg, width: 2),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        initialOf(shown[i]),
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
                       ),
                     ),
-                const PopupMenuDivider(),
-                PopupMenuItem<int>(
-                  value: -1,
-                  child: Row(
-                    children: [
-                      Icon(Icons.add_circle_outline_rounded, size: 18, color: AppColors.lightPrimary),
-                      SizedBox(width: 10),
-                      Text(AppStrings.addNewBuilding, style: AppText.lightLink),
-                    ],
                   ),
                 ),
-              ],
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: AppDecor.lightCard(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── ACTIVE HOME  +  Switch (n) ──
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: AppColors.lightSurface,
+                  color: AppColors.lightPrimary.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.lightPrimary.withValues(alpha: 0.4)),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.apartment_rounded, size: 18, color: AppColors.lightPrimary),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                child: Icon(Icons.home_outlined, size: 20, color: AppColors.lightPrimary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text('ACTIVE HOME',
+                      maxLines: 1,
+                      style: TextStyle(
                           color: AppColors.lightPrimary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13.5,
-                        ),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _buildHomeSwitcher(registeredCount),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: AppColors.lightTextDark, fontSize: 22, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text('$deviceCount Registered Appliances', style: AppText.lightCaption),
+
+          Divider(height: 28, color: AppColors.lightBorder),
+
+          // ── Members ──
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text.rich(TextSpan(children: [
+                      TextSpan(
+                          text: 'Members ',
+                          style: TextStyle(
+                              color: AppColors.lightTextDark,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700)),
+                      TextSpan(
+                          text: '(${members.length})',
+                          style: TextStyle(color: AppColors.lightTextMuted, fontSize: 14)),
+                    ])),
+                    const SizedBox(height: 2),
+                    Text('Sharing devices & care', style: AppText.lightCaption),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: widget.onProfileTap, // members manage Profile tab la
+                child: Text('Manage', style: AppText.lightLink),
+              ),
+            ],
+          ),
+          if (members.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            avatars(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // "Switch (3) ▾" dropdown
+  Widget _buildHomeSwitcher(int count) {
+    return PopupMenuButton<int>(
+      offset: const Offset(0, 40),
+      color: AppColors.cardBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      onSelected: (value) {
+        if (value == -1) {
+          _openAddHomeDialog();
+          return;
+        }
+        if (value == _selectedHomeIndex) return;
+        setState(() {
+          _selectedHomeIndex = value;
+          _selectedHomeId = _homes[value]['id']?.toString();
+          _serviceCounts.clear();
+        });
+        _notifySelectedHome();
+        _prefetchServiceCounts();
+      },
+      itemBuilder: (context) => [
+        for (int i = 0; i < _homes.length; i++)
+          if (!_isDefaultHome(_homes[i]))
+            PopupMenuItem<int>(
+              value: i,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: Row(
+                  children: [
+                    Icon(
+                      i == _selectedHomeIndex
+                          ? Icons.check_circle_rounded
+                          : Icons.apartment_rounded,
+                      size: 18,
+                      color: i == _selectedHomeIndex
+                          ? AppColors.lightPrimary
+                          : AppColors.lightTextMuted,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_homeLabel(_homes[i], i),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.lightCardTitle),
+                          Text(_homes[i]['address']?.toString() ?? '',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.lightCaption),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    Icon(Icons.keyboard_arrow_down_rounded,
-                        size: 20, color: AppColors.lightPrimary),
                   ],
                 ),
               ),
             ),
+        const PopupMenuDivider(),
+        PopupMenuItem<int>(
+          value: -1,
+          child: Row(
+            children: [
+              Icon(Icons.add_circle_outline_rounded, size: 18, color: AppColors.lightPrimary),
+              const SizedBox(width: 10),
+              const Text(AppStrings.addNewBuilding, style: AppText.lightLink),
+            ],
           ),
         ),
       ],
-    );
-  }
-
-  // ── Stats ──
-  Widget _buildStatsRow(Map<String, int> stats) {
-    return Row(
-      children: [
-        _statCard(Icons.devices_other_rounded, AppColors.lightPrimary, '${stats['devices']}',
-            AppStrings.statAppliances,
-            onTap: () => _openDevicesTabWith('All')),
-        const SizedBox(width: 10),
-        _statCard(Icons.verified_user_outlined, AppColors.lightSuccess, '${stats['active']}',
-            AppStrings.statActiveWarranties,
-            onTap: () => _openDevicesTabWith('Warranty')),
-        const SizedBox(width: 10),
-        _statCard(Icons.warning_amber_rounded, AppColors.lightWarning, '${stats['attention']}',
-            AppStrings.statAttention,
-            highlight: (stats['attention'] ?? 0) > 0,
-            onTap: () => _openDevicesTabWith('Attention')),
-      ],
-    );
-  }
-
-  Widget _statCard(IconData icon, Color color, String value, String label,
-      {bool highlight = false, VoidCallback? onTap}) {
-    return Expanded(
-      child: LightCard(
-        onTap: onTap,
-        radius: 14,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-        borderColor: highlight ? color.withValues(alpha: 0.4) : AppColors.lightBorder,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 18),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              style: TextStyle(
-                color: AppColors.lightTextDark,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            Text(
-              label,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Switch ($count)',
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              softWrap: false,
               style: TextStyle(
-                color: AppColors.lightTextMuted,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
+                  color: AppColors.lightPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
+          const SizedBox(width: 2),
+          Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: AppColors.lightPrimary),
+        ],
       ),
     );
   }
@@ -1497,23 +1567,167 @@ void _openDeviceDetails(DeviceEntry e) {
     );
   }
 
-  Widget _buildAddApplianceButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: _openManualAddDialog,
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(color: AppColors.lightPrimary, width: 1.2),
-          padding: const EdgeInsets.symmetric(vertical: 13),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+  // ── Appliance & Gadget Services (first cards; See All -> Devices tab) ──
+  Widget _buildAppliancesGadgets() {
+    final shown = kServiceGroups.take(kHomeGroupCount).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Appliance & Gadget Services', style: AppText.lightSectionTitle),
+                  const SizedBox(height: 2),
+                  Text('Doorstep diagnosis & expert repair', style: AppText.lightCaption),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => _openDevicesTabWith('Catalog'),
+              child: Text('See All', style: AppText.lightLink),
+            ),
+          ],
         ),
-        icon: Icon(Icons.add_circle_outline_rounded, color: AppColors.lightPrimary, size: 18),
-        label: const Text(AppStrings.addApplianceManually, style: AppText.lightLink),
-      ),
+        const SizedBox(height: 12),
+        ServiceGroupGrid(
+          groups: shown,
+          light: !ThemeController.isDark,
+          onTap: _openServiceGroup,
+        ),
+      ],
     );
   }
 
-  // ── Services near you ──
+  // Tap on a card -> list of ALL services in that group
+void _openServiceGroup(Map<String, dynamic> g) {
+  showServiceGroupSheet(
+    context,
+    group: g,
+    onSelect: _openApplianceService,
+    onScan: _requestScan,
+  );
+}
+
+  // Tap on an appliance -> directly show nearby service providers.
+  void _openApplianceService(String name) {
+    final entry = DeviceEntry(
+      homeId: _currentHomeId,
+      homeAddress: _currentAddress,
+      pincode: _currentPincode,
+      roomKey: _defaultRoomName.toLowerCase(),
+      roomName: _defaultRoomName,
+      raw: {'product': name, 'brand': ''},
+    );
+    showDeviceServiceSheet(
+      context,
+      entry,
+      mobileNumber: widget.mobileNumber,
+      name: _displayName,
+    );
+  }
+
+  void _openApplianceCatalog() {
+    final searchCtrl = TextEditingController();
+    StateSetter? refreshSheet;
+    searchCtrl.addListener(() => refreshSheet?.call(() {}));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.cardBg,
+      shape: AppDecor.sheetShape,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheet) {
+            refreshSheet = setSheet;
+            final q = searchCtrl.text.trim().toLowerCase();
+            final filtered = _applianceCatalog
+                .where((n) => n.toLowerCase().contains(q))
+                .toList()
+              ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+            final rows = <Widget>[];
+            String? lastLetter;
+            for (final name in filtered) {
+              final letter = name[0].toUpperCase();
+              if (letter != lastLetter) {
+                lastLetter = letter;
+                rows.add(Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+                  child: Text(letter,
+                      style: TextStyle(
+                          color: AppColors.lightPrimary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13)),
+                ));
+              }
+              rows.add(ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openApplianceService(name);
+                },
+                leading: Icon(_iconForAppliance(name), color: AppColors.lightPrimary),
+                title: Text(name, style: AppText.lightCardTitle),
+                trailing: TextButton(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    _openManualAddDialog(prefillProduct: name);
+                  },
+                  child: Text('Add', style: AppText.lightLink),
+                ),
+              ));
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+              ),
+              child: SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * 0.75,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Appliances & Gadgets', style: AppText.dialogTitle),
+                    const SizedBox(height: 12),
+                    AppDialogField(
+                      controller: searchCtrl,
+                      hint: 'Search appliance or gadget',
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(
+                              child: TextButton(
+                                onPressed: () {
+                                  Navigator.pop(sheetContext);
+                                  _openManualAddDialog(prefillProduct: searchCtrl.text.trim());
+                                },
+                                child: Text('Not found? Add "${searchCtrl.text.trim()}"',
+                                    style: AppText.lightLink),
+                              ),
+                            )
+                          : ListView(children: rows),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // ── Services near you ──
   Widget _buildServicesNearYou() {
     final categories = HomeServices.categories;
@@ -1593,83 +1807,61 @@ void _openDeviceDetails(DeviceEntry e) {
     );
   }
 
-  Widget _infoCard(IconData icon, Color color, String title, String subtitle) {
-    return LightCard(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: AppText.lightCardTitle),
-                Text(subtitle, style: AppText.lightCaption.copyWith(fontSize: 11)),
-              ],
+  // ── "Set Up Your Home" pill button (follows app theme) ──
+  Widget _buildSetUpHomeButton() {
+    final isDark = ThemeController.isDark;
+    final Color fill = isDark ? const Color(0xFF0F2038) : Colors.white;
+    final Color fg = isDark ? Colors.white : const Color(0xFF0F1C3F);
+
+    final Color accent = AppColors.primary;
+    final Color onAccent = AppColors.onPrimary;
+
+    return GestureDetector(
+      onTap: _openAddHomeDialog,
+      child: Container(
+        height: 60,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(40),
+          border: Border.all(color: accent, width: 1.8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: HouseGearIcon(
+                  color: onAccent,
+                  bg: accent, // gear gap = box colour
+                  size: 28,
+                ),
+              ),
             ),
-          ),
-          Icon(Icons.chevron_right_rounded, color: AppColors.lightChevron, size: 18),
-        ],
+            const SizedBox(width: 14),
+            Text(
+              'Set Up Your Home',
+              style: TextStyle(
+                color: fg,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(Icons.arrow_forward_rounded, color: accent, size: 22),
+          ],
+        ),
       ),
     );
   }
-  // ── "Set Up Your Home" pill button (follows app theme) ──
-  // ── "Set Up Your Home" pill button (follows app theme) ──
-Widget _buildSetUpHomeButton() {
-  final isDark = ThemeController.isDark;
-  final Color fill = isDark ? const Color(0xFF0F2038) : Colors.white;
-  final Color fg = isDark ? Colors.white : const Color(0xFF0F1C3F);
 
-  // Border + icon box ku ore colour
-  final Color accent = AppColors.primary;
-  final Color onAccent = AppColors.onPrimary;
-
-  return GestureDetector(
-    onTap: _openAddHomeDialog,
-    child: Container(
-      height: 60,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(color: accent, width: 1.8),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: accent,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: HouseGearIcon(
-                color: onAccent,
-                bg: accent, // gear gap = box colour
-                size: 28,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Text(
-            'Set Up Your Home',
-            style: TextStyle(
-              color: fg,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Icon(Icons.arrow_forward_rounded, color: accent, size: 22),
-        ],
-      ),
-    ),
-  );
-}
   // ── Shown when user has no registered home (new user / skip-flow) ──
   Widget _buildRegisterHomeCard() {
     return Column(
@@ -1701,12 +1893,12 @@ Widget _buildSetUpHomeButton() {
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Center(
-  child: DevicesIcon(
-    color: AppColors.onPrimary,
-    bg: AppColors.primary,
-    size: 34,
-  ),
-),
+                        child: DevicesIcon(
+                          color: AppColors.onPrimary,
+                          bg: AppColors.primary,
+                          size: 34,
+                        ),
+                      ),
                     ),
                     Positioned(
                       right: 0,
@@ -1719,8 +1911,7 @@ Widget _buildSetUpHomeButton() {
                           shape: BoxShape.circle,
                           border: Border.all(color: AppColors.cardBg, width: 2),
                         ),
-                        child: Icon(Icons.add,
-                            color: AppColors.onPrimary, size: 14),
+                        child: Icon(Icons.add, color: AppColors.onPrimary, size: 14),
                       ),
                     ),
                   ],
@@ -1757,8 +1948,7 @@ Widget _buildSetUpHomeButton() {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  icon: Icon(Icons.add_rounded,
-                      color: AppColors.onPrimary, size: 26),
+                  icon: Icon(Icons.add_rounded, color: AppColors.onPrimary, size: 26),
                   label: Text(
                     'Add Devices',
                     style: TextStyle(
@@ -1883,6 +2073,7 @@ class _NoStretchScrollBehavior extends MaterialScrollBehavior {
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) => const ClampingScrollPhysics();
 }
+
 // ── House + gear icon (Set Up Your Home) ──
 class HouseGearIcon extends StatelessWidget {
   final Color color;

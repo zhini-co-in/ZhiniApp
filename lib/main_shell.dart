@@ -170,12 +170,13 @@ class _MainShellState extends State<MainShell> {
     final tabPincode = _selectedPincode.isNotEmpty ? _selectedPincode : widget.pincode;
 
     final devicesTab = DevicesTab(
-      mobileNumber: widget.mobileNumber,
-      address: tabAddress,
-      pincode: tabPincode,
-      name: _name,
-      onScanTap: _goToScan,
-    );
+  mobileNumber: widget.mobileNumber,
+  address: tabAddress,
+  pincode: tabPincode,
+  name: _name,
+  homeId: _selectedHomeId, // NEW
+  onScanTap: _goToScan,
+);
 
     final serviceTab = ServiceTab(
       key: _serviceTabKey,
