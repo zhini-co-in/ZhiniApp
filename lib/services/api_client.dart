@@ -34,11 +34,17 @@ static Future<Map<String, String>> authHeaders() async {
   }
 
   static String? _plainPhone() {
-    final raw = mobile ?? FirebaseAuth.instance.currentUser?.phoneNumber;
-    if (raw == null) return null;
-    final d = raw.replaceAll(RegExp(r'\D'), '');
-    return d.length > 10 ? d.substring(d.length - 10) : d;
+  final raw = FirebaseAuth.instance.currentUser?.phoneNumber ?? mobile;
+  if (raw == null || raw.isEmpty) return null;
+  final digits = raw.replaceAll(RegExp(r'\D'), '');
+
+  // India: DB la 10 digit format
+  if (digits.startsWith('91') && digits.length == 12) {
+    return digits.substring(2);
   }
+  // Matha countries: full number with +
+  return '+$digits';
+}
 
   // Token maarina mattum backend DB la authToken update pannum
   static Future<void> _syncSession(String token) async {
@@ -83,9 +89,10 @@ static Future<Map<String, String>> authHeaders() async {
       Future<http.Response> Function(Map<String, String> h) call) async {
     var res = await call(await _headers()).timeout(const Duration(seconds: 30));
     if (res.statusCode == 401 && FirebaseAuth.instance.currentUser != null) {
-      res = await call(await _headers(forceRefresh: true))
-          .timeout(const Duration(seconds: 30));
-    }
+  _lastSyncedToken = null;   // ← indha line add pannunga
+  res = await call(await _headers(forceRefresh: true))
+      .timeout(const Duration(seconds: 30));
+}
     return res;
   }
 

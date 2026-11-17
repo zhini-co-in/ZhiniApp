@@ -1065,8 +1065,6 @@ class HomeTabState extends State<HomeTab> {
   // =====================================================================
   @override
   Widget build(BuildContext context) {
-    final stats = _loading ? null : _computeStats();
-    final deviceCount = stats?['devices'] ?? 0; // null-safe, used by SectionHeader
     final hasHome = !_loading && _hasRegisteredHome;
 
     if (!_loading) {
@@ -1117,19 +1115,8 @@ class HomeTabState extends State<HomeTab> {
                                       const SizedBox(height: 28),
                                       _buildServicesNearYou(),
                                     ] else ...[
+                                      // Devices are now INSIDE the active home card.
                                       _buildActiveHomeCard(),
-                                      const SizedBox(height: 24),
-                                      SectionHeader(
-                                        AppStrings.devicesCount(deviceCount),
-                                        actionLabel: deviceCount > _maxDevicesOnHome
-                                            ? AppStrings.viewAll
-                                            : null,
-                                        onManage: deviceCount > _maxDevicesOnHome
-                                            ? () => _openDevicesTabWith('All')
-                                            : null,
-                                      ),
-                                      const SizedBox(height: 12),
-                                      _buildDevicesList(),
                                       const SizedBox(height: 28),
                                       _buildAppliancesGadgets(),
                                       const SizedBox(height: 28),
@@ -1247,7 +1234,7 @@ class HomeTabState extends State<HomeTab> {
     );
   }
 
-  // ── ACTIVE HOME card: home name, members avatars, Switch dropdown ──
+  // ── ACTIVE HOME card: home name, members avatars, devices, Switch dropdown ──
   Widget _buildActiveHomeCard() {
     final current = _currentHome;
     final title =
@@ -1267,45 +1254,65 @@ class HomeTabState extends State<HomeTab> {
       Color(0xFF16A34A),
       Color(0xFFD97706),
     ];
-    const double size = 34;
-    const double overlap = 24;
+        const double size = 26;
+    const double overlap = 18;
 
     String initialOf(Map<String, dynamic> m) {
-      if (m['mobile']?.toString() == myPlain) return 'You';
+      if (m['mobile']?.toString() == myPlain) return 'Y';
       final n = (m['name']?.toString() ?? '').trim();
       return n.isEmpty ? 'M' : n[0].toUpperCase();
     }
 
     Widget avatars() {
-      final shown = members.take(5).toList();
+      const maxShown = 4;
+      final extra = members.length - maxShown;
+      final shown = members.take(maxShown).toList();
+      final slots = shown.length + (extra > 0 ? 1 : 0);
+
+      Widget bubble({required Color color, required Widget child, required int index}) {
+        return Positioned(
+          left: index * overlap,
+          child: Container(
+            width: size,
+            height: size,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.cardBg, width: 1.5),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(3),
+              child: FittedBox(fit: BoxFit.scaleDown, child: child),
+            ),
+          ),
+        );
+      }
+
       return SizedBox(
         height: size,
-        width: shown.isEmpty ? 0 : overlap * (shown.length - 1) + size,
+        width: slots == 0 ? 0 : overlap * (slots - 1) + size,
         child: Stack(
           children: [
             for (int i = 0; i < shown.length; i++)
-              Positioned(
-                left: i * overlap,
-                child: Container(
-                  width: size,
-                  height: size,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: avatarColors[i % avatarColors.length],
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.cardBg, width: 2),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        initialOf(shown[i]),
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ),
+              bubble(
+                index: i,
+                color: avatarColors[i % avatarColors.length],
+                child: Text(
+                  initialOf(shown[i]),
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                ),
+              ),
+            // 4-ku mela irundha "+N"
+            if (extra > 0)
+              bubble(
+                index: shown.length,
+                color: AppColors.lightTextMuted,
+                child: Text(
+                  '+$extra',
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
                 ),
               ),
           ],
@@ -1356,45 +1363,90 @@ class HomeTabState extends State<HomeTab> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                   color: AppColors.lightTextDark, fontSize: 22, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 2),
-          Text('$deviceCount Registered Appliances', style: AppText.lightCaption),
-
           Divider(height: 28, color: AppColors.lightBorder),
 
-          // ── Members ──
+                    // ── Members (avatars next to the count) ──
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text.rich(TextSpan(children: [
-                      TextSpan(
-                          text: 'Members ',
-                          style: TextStyle(
-                              color: AppColors.lightTextDark,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700)),
-                      TextSpan(
-                          text: '(${members.length})',
-                          style: TextStyle(color: AppColors.lightTextMuted, fontSize: 14)),
-                    ])),
+                    Row(
+                      children: [
+                        Text.rich(TextSpan(children: [
+                          TextSpan(
+                              text: 'Members ',
+                              style: TextStyle(
+                                  color: AppColors.lightTextDark,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700)),
+                          TextSpan(
+                              text: '(${members.length})',
+                              style: TextStyle(
+                                  color: AppColors.lightTextMuted, fontSize: 14)),
+                        ])),
+                        if (members.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: avatars(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                     const SizedBox(height: 2),
-                    Text('Sharing devices & care', style: AppText.lightCaption),
+                    Text('Sharing devices & care',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.lightCaption),
                   ],
                 ),
               ),
               TextButton(
-                onPressed: widget.onProfileTap, // members manage Profile tab la
+                onPressed: widget.onProfileTap,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: Text('Manage', style: AppText.lightLink),
               ),
             ],
           ),
-          if (members.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            avatars(),
-          ],
+
+          // ── Devices (same layer, inside the Active Home card) ──
+          Divider(height: 28, color: AppColors.lightBorder),
+          Row(
+            children: [
+              Expanded(
+                child: Text.rich(TextSpan(children: [
+                  TextSpan(
+                      text: 'Devices ',
+                      style: TextStyle(
+                          color: AppColors.lightTextDark,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700)),
+                  TextSpan(
+                      text: '($deviceCount)',
+                      style: TextStyle(color: AppColors.lightTextMuted, fontSize: 14)),
+                ])),
+              ),
+              if (deviceCount > _maxDevicesOnHome)
+                TextButton(
+                  onPressed: () => _openDevicesTabWith('All'),
+                  child: Text('See All', style: AppText.lightLink),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildDevicesList(),
         ],
       ),
     );
@@ -1507,18 +1559,29 @@ class HomeTabState extends State<HomeTab> {
     }
 
     final shown = devices.take(_maxDevicesOnHome).toList();
+    final isDark = ThemeController.isDark;
 
-    return Container(
-      decoration: AppDecor.lightCard(),
-      child: Column(
-        children: [
-          for (int i = 0; i < shown.length; i++) ...[
-            _deviceRow(shown[i]),
-            if (i != shown.length - 1)
-              Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.lightBorder),
-          ],
-        ],
-      ),
+    return Column(
+      children: [
+        for (int i = 0; i < shown.length; i++)
+          Container(
+            margin: EdgeInsets.only(bottom: i == shown.length - 1 ? 0 : 10),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.cardBgAlt : Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: isDark
+                  ? null
+                  : const [
+                      BoxShadow(
+                        color: Color(0x14000000),
+                        blurRadius: 12,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+            ),
+            child: _deviceRow(shown[i]),
+          ),
+      ],
     );
   }
 
@@ -1561,6 +1624,8 @@ class HomeTabState extends State<HomeTab> {
             ),
             const SizedBox(width: 8),
             DeviceWarrantyIndicator(e),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded, color: AppColors.lightChevron, size: 22),
           ],
         ),
       ),
@@ -1597,6 +1662,7 @@ class HomeTabState extends State<HomeTab> {
         ServiceGroupGrid(
           groups: shown,
           light: !ThemeController.isDark,
+          compact: true,
           onTap: _openServiceGroup,
         ),
       ],
@@ -1604,14 +1670,14 @@ class HomeTabState extends State<HomeTab> {
   }
 
   // Tap on a card -> list of ALL services in that group
-void _openServiceGroup(Map<String, dynamic> g) {
-  showServiceGroupSheet(
-    context,
-    group: g,
-    onSelect: _openApplianceService,
-    onScan: _requestScan,
-  );
-}
+  void _openServiceGroup(Map<String, dynamic> g) {
+    showServiceGroupSheet(
+      context,
+      group: g,
+      onSelect: _openApplianceService,
+      onScan: _requestScan,
+    );
+  }
 
   // Tap on an appliance -> directly show nearby service providers.
   void _openApplianceService(String name) {

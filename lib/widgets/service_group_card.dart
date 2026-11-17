@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-/// Rounded card like the design: icon + badge, title, subtitle, footer row.
+/// Rounded card: icon + badge, title, subtitle.
+/// compact = false (Devices tab): icon border + footer row ("6 appliances >")
+/// compact = true  (Home tab)   : only icon, title, subtitle
 class ServiceGroupCard extends StatelessWidget {
   final Map<String, dynamic> group;
   final bool light; // true on Home tab (light theme), false on Devices tab
+  final bool compact;
   final VoidCallback onTap;
 
   const ServiceGroupCard({
@@ -12,6 +15,7 @@ class ServiceGroupCard extends StatelessWidget {
     required this.group,
     required this.onTap,
     this.light = false,
+    this.compact = false,
   });
 
   @override
@@ -20,10 +24,10 @@ class ServiceGroupCard extends StatelessWidget {
     final count = (group['items'] as List).length;
 
     final bg = AppColors.cardBg;
-final border = AppColors.borderSubtle;
-final titleColor = AppColors.textPrimary;
-final subColor = AppColors.textSecondary;
-final linkColor = AppColors.primary;
+    final border = AppColors.borderSubtle;
+    final titleColor = AppColors.textPrimary;
+    final subColor = AppColors.textSecondary;
+    final linkColor = AppColors.primary;
 
     return Material(
       color: bg,
@@ -47,7 +51,10 @@ final linkColor = AppColors.primary;
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: color.withValues(alpha: 0.25)),
+                  // Devices tab: border irukku, Home tab (compact): illa
+                  border: compact
+                      ? null
+                      : Border.all(color: color.withValues(alpha: 0.25)),
                 ),
                 child: Icon(group['icon'] as IconData, color: color, size: 22),
               ),
@@ -66,30 +73,32 @@ final linkColor = AppColors.primary;
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: subColor, fontSize: 11.5)),
-              const SizedBox(height: 10),
-              Divider(height: 1, color: border),
-              const SizedBox(height: 10),
 
-              // Footer: text shrinks to fit, so it never overflows on Large font.
-              Row(
-                children: [
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text('$count appliances',
-                          maxLines: 1,
-                          softWrap: false,
-                          style: TextStyle(
-                              color: linkColor,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700)),
+              // Footer: Devices tab-la mattum
+              if (!compact) ...[
+                const SizedBox(height: 10),
+                Divider(height: 1, color: border),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text('$count appliances',
+                            maxLines: 1,
+                            softWrap: false,
+                            style: TextStyle(
+                                color: linkColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700)),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 2),
-                  Icon(Icons.chevron_right_rounded, size: 18, color: subColor),
-                ],
-              ),
+                    const SizedBox(width: 2),
+                    Icon(Icons.chevron_right_rounded, size: 18, color: subColor),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -102,6 +111,7 @@ final linkColor = AppColors.primary;
 class ServiceGroupGrid extends StatelessWidget {
   final List<Map<String, dynamic>> groups;
   final bool light;
+  final bool compact;
   final void Function(Map<String, dynamic>) onTap;
 
   const ServiceGroupGrid({
@@ -109,6 +119,7 @@ class ServiceGroupGrid extends StatelessWidget {
     required this.groups,
     required this.onTap,
     this.light = false,
+    this.compact = false,
   });
 
   @override
@@ -124,12 +135,14 @@ class ServiceGroupGrid extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                  child: ServiceGroupCard(group: a, light: light, onTap: () => onTap(a))),
+                  child: ServiceGroupCard(
+                      group: a, light: light, compact: compact, onTap: () => onTap(a))),
               const SizedBox(width: 12),
               Expanded(
                 child: b == null
                     ? const SizedBox.shrink()
-                    : ServiceGroupCard(group: b, light: light, onTap: () => onTap(b)),
+                    : ServiceGroupCard(
+                        group: b, light: light, compact: compact, onTap: () => onTap(b)),
               ),
             ],
           ),
