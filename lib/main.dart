@@ -56,6 +56,7 @@ void main() async {
   await Hive.openBox('session');
 
   await ThemeController.load(); // saved Light / Dark mode
+  await TextScaleController.init();
   ThemeController.notifier.addListener(() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WidgetsBinding.instance.reassembleApplication();
@@ -112,18 +113,22 @@ class MyApp extends StatelessWidget {
             scaffoldBackgroundColor: AppColors.scaffoldBg,
           ),
                     builder: (context, child) {
-            return ValueListenableBuilder<FontSizeOption>(
-              valueListenable: TextScaleController.notifier,
-              builder: (context, option, _) {
-                return MediaQuery(
-                  data: MediaQuery.of(context).copyWith(
-                    textScaler: TextScaler.linear(TextScaleController.scaleOf(option)),
-                  ),
-                  child: child!,
-                );
-              },
-            );
-          },
+  return ValueListenableBuilder<FontSizeOption>(
+    valueListenable: TextScaleController.notifier,
+    builder: (context, option, _) {
+      final mq = MediaQuery.of(context);
+      final system = mq.textScaler.scale(1.0);
+      return MediaQuery(
+        data: mq.copyWith(
+          textScaler: TextScaler.linear(
+            (system * TextScaleController.scaleOf(option)).clamp(0.8, 1.6),
+          ),
+        ),
+        child: child!,
+      );
+    },
+  );
+},
           home: SplashScreen(),
         );
       },

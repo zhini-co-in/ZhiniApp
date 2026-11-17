@@ -1740,7 +1740,7 @@ SizedBox(
             children: [
               chip('Small', FontSizeOption.small),
               const SizedBox(width: 8),
-              chip('Default', FontSizeOption.normal),
+              chip('Medium', FontSizeOption.normal),
               const SizedBox(width: 8),
               chip('Large', FontSizeOption.large),
             ],
