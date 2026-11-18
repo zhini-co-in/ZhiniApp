@@ -21,6 +21,7 @@ import 'confirm_action_dialog.dart';
 import 'service_provider_card.dart';
 import 'warranty_badge.dart';
 import '../device_details_screen.dart';
+import 'package:hive_ce/hive_ce.dart';
 
 // ---------------------------------------------------------------------
 // MODEL — one appliance + the home it belongs to
@@ -520,6 +521,23 @@ Future<void> _openMapDirections(String address) async {
   } catch (_) {}
 }
 
+// Offline-ku last providers cache (Hive 'session' box, opened in main.dart)
+String _nearbyCacheKey(DeviceEntry e) =>
+    'nearby:${e.brand.toLowerCase()}|${e.product.toLowerCase()}|${e.pincode}|${e.isUnderWarranty}';
+
+List<Map<String, dynamic>>? _readNearbyCache(DeviceEntry e) {
+  try {
+    final raw = Hive.box('session').get(_nearbyCacheKey(e));
+    if (raw is! String) return null;
+    return (jsonDecode(raw) as List)
+        .map((x) => Map<String, dynamic>.from(x as Map))
+        .toList();
+  } catch (err) {
+    debugPrint('❌ Nearby cache read error: $err');
+    return null;
+  }
+}
+
 Future<List<Map<String, dynamic>>> _fetchNearbyProviders(DeviceEntry e) async {
   try {
     final response = await ApiClient.post(ApiConfig.nearbyServiceUrl, body: {
@@ -533,13 +551,21 @@ Future<List<Map<String, dynamic>>> _fetchNearbyProviders(DeviceEntry e) async {
       if (data['success'] == true && data['data'] != null) {
         final rawData = data['data'];
         final List<dynamic> rawList = rawData is List ? rawData : [rawData];
-        return rawList.map((x) => Map<String, dynamic>.from(x as Map)).toList();
+        final list =
+            rawList.map((x) => Map<String, dynamic>.from(x as Map)).toList();
+        try {
+          Hive.box('session').put(_nearbyCacheKey(e), jsonEncode(list));
+        } catch (err) {
+          debugPrint('❌ Nearby cache write error: $err');
+        }
+        return list;
       }
     }
   } catch (err) {
     debugPrint('❌ Nearby service fetch error: $err');
   }
-  return [];
+  // Failed (offline / error) -> last cached list, else empty
+  return _readNearbyCache(e) ?? [];
 }
 
 void showDeviceServiceSheet(
@@ -548,8 +574,10 @@ void showDeviceServiceSheet(
   required String mobileNumber,
   String name = '',
 }) {
-  final providersFuture = _fetchNearbyProviders(e)
-      .timeout(const Duration(seconds: 30), onTimeout: () => <Map<String, dynamic>>[]);
+    final providersFuture = _fetchNearbyProviders(e).timeout(
+    const Duration(seconds: 30),
+    onTimeout: () => _readNearbyCache(e) ?? <Map<String, dynamic>>[],
+  );
 
   showModalBottomSheet(
     context: context,
@@ -768,4 +796,29 @@ void _openBookingDialog(
       ),
     ),
   );
+}
+/// Background prefetch: providers fetch panni cache pannum (UI illa).
+/// Success na true, offline/error na false.
+Future<bool> prefetchNearbyProviders(DeviceEntry e) async {
+  try {
+    final response = await ApiClient.post(ApiConfig.nearbyServiceUrl, body: {
+      'brand': e.brand,
+      'product': e.product,
+      'pincode': e.pincode,
+      'isUnderWarranty': e.isUnderWarranty,
+    });
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data['success'] == true) {
+        final raw = data['data'];
+        final List<dynamic> rawList =
+            raw == null ? <dynamic>[] : (raw is List ? raw : [raw]);
+        final list =
+            rawList.map((x) => Map<String, dynamic>.from(x as Map)).toList();
+        Hive.box('session').put(_nearbyCacheKey(e), jsonEncode(list));
+        return true;
+      }
+    }
+  } catch (_) {}
+  return false;
 }

@@ -132,6 +132,29 @@ class HomeTabState extends State<HomeTab> {
   // serviceType -> provider count, shown as "X nearby".
   final Map<String, int> _serviceCounts = {};
 
+  // Counts are cached per pincode so they still show when the network is off.
+  final _sessionBox = Hive.box('session');
+
+  // True while the background "cache every appliance's providers" job runs.
+  bool _prefetching = false;
+
+  String get _countsKey => 'serviceCounts:$_currentPincode';
+
+  // Last known counts (offline-ku).
+  void _loadCachedCounts() {
+    try {
+      final raw = _sessionBox.get(_countsKey);
+      _serviceCounts.clear();
+      if (raw is Map) {
+        raw.forEach((k, v) {
+          if (v is num) _serviceCounts[k.toString()] = v.toInt();
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Load cached counts error: $e');
+    }
+  }
+
   // Register aagaadha user-ku current location use pannum
   double? _lat;
   double? _lng;
@@ -198,6 +221,7 @@ class HomeTabState extends State<HomeTab> {
   void initState() {
     super.initState();
     applianceAddRequest.addListener(_onApplianceAddRequest);
+    _loadCachedCounts();
     _fetchAppliances();
     _prefetchServiceCounts();
     _loadGps();
@@ -249,14 +273,86 @@ class HomeTabState extends State<HomeTab> {
   // SERVICES NEAR YOU — data (shared HomeServices, pincode only)
   // ---------------------------------------------------------------------
   void _prefetchServiceCounts() {
+    final key = _countsKey; // capture the pincode this request is for
     HomeServices.prefetchCounts(
       _currentPincode,
       (type, count) {
-        if (mounted) setState(() => _serviceCounts[type] = count);
+        if (!mounted) return;
+        setState(() => _serviceCounts[type] = count);
+        _sessionBox.put(key, Map<String, int>.from(_serviceCounts));
       },
       latitude: _useGps ? _lat : null,
       longitude: _useGps ? _lng : null,
     );
+  }
+
+  // ---------------------------------------------------------------------
+  // OFFLINE PREFETCH — every appliance's nearby providers, cached in Hive
+  // so the provider sheet works offline for ANY appliance.
+  // ---------------------------------------------------------------------
+  Future<void> _prefetchAllApplianceProviders() async {
+    if (_prefetching) return;
+    if (_homes.isEmpty) return; // wait until homes are loaded (correct pincode)
+    final pin = _currentPincode;
+    if (pin.isEmpty) return;
+
+    // V2 key: an old stale stamp is ignored.
+    final stampKey = 'nearbyPrefetchV2:$pin';
+    final last = _sessionBox.get(stampKey);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (last is int && nowMs - last < 12 * 3600 * 1000) return;
+
+    // All appliance names from every group (String items or Map items).
+    final names = <String>{};
+    for (final g in kServiceGroups) {
+      for (final it in (g['items'] as List)) {
+        String? n;
+        if (it is Map) {
+          for (final k in const ['name', 'title', 'label', 'product', 'service']) {
+            final v = it[k]?.toString().trim();
+            if (v != null && v.isNotEmpty) {
+              n = v;
+              break;
+            }
+          }
+        } else {
+          n = it?.toString().trim();
+        }
+        if (n != null && n.isNotEmpty) names.add(n);
+      }
+    }
+
+    final list = names.toList();
+    debugPrint('🔧 Prefetch start: ${list.length} appliances, pincode $pin');
+    if (list.isEmpty) return;
+
+    _prefetching = true;
+    try {
+      var okCount = 0;
+      for (int i = 0; i < list.length; i += 4) {
+        if (!mounted) return;
+        final results = await Future.wait(list.skip(i).take(4).map((n) {
+          return prefetchNearbyProviders(DeviceEntry(
+            homeId: _currentHomeId,
+            homeAddress: _currentAddress,
+            pincode: pin,
+            roomKey: _defaultRoomName.toLowerCase(),
+            roomName: _defaultRoomName,
+            raw: {'product': n, 'brand': ''},
+          ));
+        }));
+        okCount += results.where((r) => r).length;
+        if (i == 0 && okCount == 0) {
+          debugPrint('🔧 Prefetch stopped: offline');
+          return;
+        }
+      }
+      debugPrint('🔧 Prefetch done: $okCount/${list.length} cached');
+      // Stamp only when EVERYTHING succeeded; otherwise it retries next time.
+      if (okCount == list.length) _sessionBox.put(stampKey, nowMs);
+    } finally {
+      _prefetching = false;
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -288,6 +384,7 @@ class HomeTabState extends State<HomeTab> {
         setState(() {
           _homes = _homeBox.values.map((h) => h.toMap()).toList();
           _restoreSelection();
+          _loadCachedCounts();
           _loading = false;
         });
       } else if (mounted) {
@@ -398,6 +495,8 @@ class HomeTabState extends State<HomeTab> {
               _restoreSelection();
               _loading = false;
             });
+            // Homes are loaded -> pincode is correct -> cache all providers.
+            _prefetchAllApplianceProviders();
           }
           return;
         }
@@ -776,11 +875,12 @@ class HomeTabState extends State<HomeTab> {
             _selectedHomeIndex = idx;
             _selectedHomeId = existingDefaultId;
           }
-          _serviceCounts.clear();
+          _loadCachedCounts();
         });
         await SessionManager.updateHomeId(existingDefaultId);
         _notifySelectedHome();
         _prefetchServiceCounts();
+        _prefetchAllApplianceProviders();
       }
       return;
     }
@@ -809,11 +909,12 @@ class HomeTabState extends State<HomeTab> {
       final idx = _homes.indexWhere((h) => h['id']?.toString() == newHomeId);
       _selectedHomeIndex = idx != -1 ? idx : (_homes.isEmpty ? 0 : _homes.length - 1);
       _selectedHomeId = _homes.isNotEmpty ? _homes[_selectedHomeIndex]['id']?.toString() : null;
-      _serviceCounts.clear();
+      _loadCachedCounts();
     });
     await SessionManager.updateHomeId(newHomeId);
     _notifySelectedHome();
     _prefetchServiceCounts();
+    _prefetchAllApplianceProviders();
     _snack(AppStrings.homeAdded);
   }
 
@@ -1115,7 +1216,7 @@ class HomeTabState extends State<HomeTab> {
                                       const SizedBox(height: 28),
                                       _buildServicesNearYou(),
                                     ] else ...[
-                                      // Devices are now INSIDE the active home card.
+                                      // Devices are INSIDE the active home card.
                                       _buildActiveHomeCard(),
                                       const SizedBox(height: 28),
                                       _buildAppliancesGadgets(),
@@ -1254,7 +1355,7 @@ class HomeTabState extends State<HomeTab> {
       Color(0xFF16A34A),
       Color(0xFFD97706),
     ];
-        const double size = 26;
+    const double size = 26;
     const double overlap = 18;
 
     String initialOf(Map<String, dynamic> m) {
@@ -1263,11 +1364,13 @@ class HomeTabState extends State<HomeTab> {
       return n.isEmpty ? 'M' : n[0].toUpperCase();
     }
 
-    Widget avatars() {
-      const maxShown = 4;
-      final extra = members.length - maxShown;
-      final shown = members.take(maxShown).toList();
-      final slots = shown.length + (extra > 0 ? 1 : 0);
+    // Max 4 avatars, anything more is shown as "+N".
+// Max 3 avatars, anything more is shown as "+N".
+Widget avatars() {
+  const maxShown = 3;
+  final extra = members.length - maxShown;
+  final shown = members.take(maxShown).toList();
+  final slots = shown.length + (extra > 0 ? 1 : 0);
 
       Widget bubble({required Color color, required Widget child, required int index}) {
         return Positioned(
@@ -1304,7 +1407,6 @@ class HomeTabState extends State<HomeTab> {
                       color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
                 ),
               ),
-            // 4-ku mela irundha "+N"
             if (extra > 0)
               bubble(
                 index: shown.length,
@@ -1365,7 +1467,7 @@ class HomeTabState extends State<HomeTab> {
                   color: AppColors.lightTextDark, fontSize: 22, fontWeight: FontWeight.w800)),
           Divider(height: 28, color: AppColors.lightBorder),
 
-                    // ── Members (avatars next to the count) ──
+          // ── Members (avatars next to the count) ──
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -1467,10 +1569,11 @@ class HomeTabState extends State<HomeTab> {
         setState(() {
           _selectedHomeIndex = value;
           _selectedHomeId = _homes[value]['id']?.toString();
-          _serviceCounts.clear();
+          _loadCachedCounts();
         });
         _notifySelectedHome();
         _prefetchServiceCounts();
+        _prefetchAllApplianceProviders();
       },
       itemBuilder: (context) => [
         for (int i = 0; i < _homes.length; i++)
@@ -1522,10 +1625,10 @@ class HomeTabState extends State<HomeTab> {
           ),
         ),
       ],
-      child: Row(
+            child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Switch ($count)',
+          Text(count > 1 ? 'Switch ($count)' : 'Switch',
               maxLines: 1,
               softWrap: false,
               style: TextStyle(
@@ -1537,7 +1640,7 @@ class HomeTabState extends State<HomeTab> {
     );
   }
 
-  // ── Devices list (flat, first few) ──
+  // ── Devices list (each device = its own card) ──
   Widget _buildDevicesList() {
     final devices = _allDeviceEntries;
 
