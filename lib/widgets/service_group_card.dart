@@ -35,8 +35,8 @@ class ServiceGroupCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.all(14),
+                child: Container(
+          padding: EdgeInsets.all(compact ? 10 : 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: border),
@@ -45,34 +45,37 @@ class ServiceGroupCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 44,
-                height: 44,
+                            Container(
+                width: compact ? 36 : 44,
+                height: compact ? 36 : 44,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(compact ? 11 : 14),
                   // Devices tab: border irukku, Home tab (compact): illa
                   border: compact
                       ? null
                       : Border.all(color: color.withValues(alpha: 0.25)),
                 ),
-                child: Icon(group['icon'] as IconData, color: color, size: 22),
+                child: Icon(group['icon'] as IconData,
+                    color: color, size: compact ? 18 : 22),
               ),
-              const SizedBox(height: 14),
+              SizedBox(height: compact ? 8 : 14),
 
               // Title: up to 2 lines so "Smartphones & Tablets" is not cut.
               Text(group['title'] as String,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      color: titleColor, fontSize: 14.5, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 3),
+                      color: titleColor,
+                      fontSize: compact ? 13 : 14.5,
+                      fontWeight: FontWeight.w800)),
+              const SizedBox(height: 2),
 
               // Subtitle: up to 2 lines.
               Text(group['sub'] as String,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: subColor, fontSize: 11.5)),
+                  style: TextStyle(color: subColor, fontSize: compact ? 10.5 : 11.5)),
 
               // Footer: Devices tab-la mattum
               if (!compact) ...[

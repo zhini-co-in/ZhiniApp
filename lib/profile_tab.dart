@@ -812,29 +812,34 @@ const hasHome = true; // new user-ku kooda full profile
                       ]),
                     ] else ...[
                       // ============= FULL PROFILE — real home exists =============
-                                                                  const SizedBox(height: 22),
-                      _buildHouseholdSection(homes),
-                      const SizedBox(height: 24),
-                      _sectionHeader(AppStrings.myHomes),
+                                            const SizedBox(height: 22),
+                      _sectionHeader(homes.length > 1
+    ? '${AppStrings.myHomes} (${homes.length})'
+    : AppStrings.myHomes),
                       const SizedBox(height: 10),
                       ..._buildHomesList(homes),
-const SizedBox(height: 4),
-SizedBox(
-  width: double.infinity,
-  child: OutlinedButton.icon(
-    onPressed: _openAddHomeDialog,
-    style: OutlinedButton.styleFrom(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      side: BorderSide(color: AppColors.borderMuted),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
-    icon: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
-    label: Text(
-        homes.isEmpty ? AppStrings.addHome : AppStrings.addAnotherHome,
-        style: TextStyle(
-            color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
-  ),
-),
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _openAddHomeDialog,
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: BorderSide(color: AppColors.borderMuted),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: Icon(Icons.add_home_rounded, color: AppColors.primary, size: 18),
+                          label: Text(
+                              homes.isEmpty ? AppStrings.addHome : AppStrings.addAnotherHome,
+                              style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _buildHouseholdSection(homes),
+                      const SizedBox(height: 24),
                       const SizedBox(height: 24),
 
                                             _sectionHeader(AppStrings.appearance),
@@ -1122,7 +1127,9 @@ SizedBox(
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionHeader(AppStrings.household),
+                _sectionHeader(members.length > 1
+            ? 'MEMBERS (${members.length})'
+            : 'MEMBERS'),
         const SizedBox(height: 10),
         if (members.isEmpty)
           Padding(

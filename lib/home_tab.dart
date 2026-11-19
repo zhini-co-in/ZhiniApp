@@ -1367,7 +1367,7 @@ class HomeTabState extends State<HomeTab> {
     // Max 4 avatars, anything more is shown as "+N".
 // Max 3 avatars, anything more is shown as "+N".
 Widget avatars() {
-  const maxShown = 3;
+  const maxShown = 2;
   final extra = members.length - maxShown;
   final shown = members.take(maxShown).toList();
   final slots = shown.length + (extra > 0 ? 1 : 0);
@@ -1433,38 +1433,40 @@ Widget avatars() {
           Row(
             children: [
               Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: AppColors.lightPrimary.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(Icons.home_outlined, size: 20, color: AppColors.lightPrimary),
-              ),
+  width: 32,
+  height: 32,
+  decoration: BoxDecoration(
+    color: AppColors.lightPrimary.withValues(alpha: 0.10),
+    borderRadius: BorderRadius.circular(10),
+  ),
+  child: Icon(Icons.home_outlined, size: 17, color: AppColors.lightPrimary),
+),
               const SizedBox(width: 10),
               Expanded(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: Text('ACTIVE HOME',
-                      maxLines: 1,
-                      style: TextStyle(
-                          color: AppColors.lightPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6)),
+    maxLines: 1,
+    style: TextStyle(
+        color: AppColors.lightPrimary,
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.5)),
                 ),
               ),
               const SizedBox(width: 8),
               _buildHomeSwitcher(registeredCount),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: AppColors.lightTextDark, fontSize: 22, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 14),
+          Text(current?['address']?.toString() ?? title,
+    maxLines: 2,
+    overflow: TextOverflow.ellipsis,
+    style: TextStyle(
+        color: AppColors.lightTextDark,
+        fontSize: 12,
+        fontWeight: FontWeight.w500)),
           Divider(height: 28, color: AppColors.lightBorder),
 
           // ── Members (avatars next to the count) ──
@@ -1476,33 +1478,26 @@ Widget avatars() {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      children: [
-                        Text.rich(TextSpan(children: [
-                          TextSpan(
-                              text: 'Members ',
-                              style: TextStyle(
-                                  color: AppColors.lightTextDark,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700)),
-                          TextSpan(
-                              text: '(${members.length})',
-                              style: TextStyle(
-                                  color: AppColors.lightTextMuted, fontSize: 14)),
-                        ])),
-                        if (members.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: avatars(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+  children: [
+    Text('Members',
+        style: TextStyle(
+            color: AppColors.lightTextDark,
+            fontSize: 15,
+            fontWeight: FontWeight.w700)),
+    if (members.isNotEmpty) ...[
+      const SizedBox(width: 8),
+      Flexible(
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: avatars(),
+          ),
+        ),
+      ),
+    ],
+  ],
+),
                     const SizedBox(height: 2),
                     Text('Sharing devices & care',
                         maxLines: 1,

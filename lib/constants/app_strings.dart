@@ -334,7 +334,7 @@ class AppStrings {
   static const String appearance = 'APPEARANCE';
   static const String accountActions = 'ACCOUNT ACTIONS';
 
-  static const String household = 'HOUSEHOLD';
+  static const String household = 'MEMBERS';
   static const String noMembersYet = 'No members added yet.';
   static const String member = 'Member';
   static const String owner = 'Owner';
