@@ -78,7 +78,7 @@ static Future<Map<String, dynamic>> deleteMember({
     try {
       final plainMobile = ApiConfig.stripCountryCode(mobileNumber);
       final response = await ApiClient.get(
-  '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile&homeId=$homeId',
+  ApiConfig.submissionSearchWith(plainMobile, homeId: homeId),
 );
       if (response.statusCode != 200) return;
 

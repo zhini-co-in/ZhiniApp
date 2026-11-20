@@ -747,13 +747,13 @@ class _ProfileTabState extends State<ProfileTab> {
     };
   }
 
-  Future<void> _refreshHomes({String? homeId}) async {
-    try {
-      final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
-      var url = '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile';
-      if (homeId != null) url += '&homeId=$homeId';
+  // ✅ Ippadi irukkanum
+Future<void> _refreshHomes({String? homeId}) async {
+  try {
+    final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
+    final url = ApiConfig.submissionSearchWith(plainMobile, homeId: homeId);
 
-      final response = await ApiClient.get(url);
+    final response = await ApiClient.get(url);
       if (response.statusCode != 200) return;
 
       final data = jsonDecode(response.body);

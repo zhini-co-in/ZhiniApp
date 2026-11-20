@@ -243,7 +243,7 @@ class _OtpScreenState extends State<OtpScreen> {
   // ---------------------------------------------------------------------
   Future<void> _checkExistingUserAndNavigate() async {
     final plainMobile = ApiConfig.stripCountryCode(widget.phoneNumber);
-    final url = '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile';
+    final url = ApiConfig.submissionSearchWith(plainMobile);
     debugPrint('🔍 Checking existing user: $url');
 
     try {

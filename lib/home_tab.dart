@@ -398,8 +398,7 @@ class HomeTabState extends State<HomeTab> {
 
     try {
       final plainMobile = ApiConfig.stripCountryCode(widget.mobileNumber);
-      var url = '${ApiConfig.submissionSearchUrl}?mobile=$plainMobile';
-      if (isSingleHomeRefresh) url += '&homeId=$homeId';
+      final url = ApiConfig.submissionSearchWith(plainMobile, homeId: isSingleHomeRefresh ? homeId : null);
 
       final response = await ApiClient.get(url);
       debugPrint('🏠 Home fetch status: ${response.statusCode}');

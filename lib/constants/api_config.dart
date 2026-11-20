@@ -8,7 +8,18 @@ class ApiConfig {
   static const String serviceLocatorUrl = '$baseUrl/service/service';
   static const String memberAddUrl = '$baseUrl/product/member'; // 👈 ADDED
 
-  static String stripCountryCode(String phone) => phone.replaceFirst('+91', '').trim();
+  // RESTORED + CHANGED: +91 mattum strip, foreign number '+' ode appadiye irukkum
+  static String stripCountryCode(String phone) {
+    final p = phone.trim();
+    return p.startsWith('+91') ? p.substring(3).trim() : p;
+  }
+
+  static String submissionSearchWith(String phone, {String? homeId}) {
+    final q = StringBuffer(
+        '$submissionSearchUrl?mobile=${Uri.encodeQueryComponent(phone)}');
+    if (homeId != null) q.write('&homeId=${Uri.encodeQueryComponent(homeId)}');
+    return q.toString();
+  }
   static String get aiAssistUrl => '$baseUrl/product/ai';
   static const String homeServicesUrl = '$baseUrl/service/home-services';
   // existing pattern la irukura maari, homeId ah path la pass pannum
@@ -23,16 +34,22 @@ static String memberDeleteUrl(String homeId) => '$baseUrl/product/delete/$homeId
   static String productDeleteUrl(String homeId) => '$baseUrl/product/delete/$homeId';
   static String get commonDeleteUrl => '$baseUrl/product/delete';
   static String get createServiceProviderUrl => '$baseUrl/service/create-provider';
+
+  // CHANGED: Uri.encodeQueryComponent
   static String getServiceProviderUrl(String mobileNumber) =>
-    '$baseUrl/service/provider?mobile=$mobileNumber';
+    '$baseUrl/service/provider?mobile=${Uri.encodeQueryComponent(mobileNumber)}';
+
     // constants/api_config.dart
 static String get updateEntityUrl => '$baseUrl/product/update';
 static const String nearbyServiceUrl = '$baseUrl/service/service';
 static const String createServiceTicketUrl = '$baseUrl/service/create-ticket';
 static String get providerTicketsUrl => '$baseUrl/service/provider-tickets';
     static String get ticketRespondUrl => '$baseUrl/service/update-status';
+
+    // CHANGED: Uri.encodeComponent
     static String customerBillingUrl(String phone) =>
-    '$baseUrl/service/billing/$phone';
+    '$baseUrl/service/billing/${Uri.encodeComponent(phone)}';
+
     static String cancelTicketUrl() => '$baseUrl/service/cancel-ticket';
     static String get createHomeUrl => '$baseUrl/product/home'; // adjust path if different on your backend
     static String deleteRoomUrl(String homeId) => '$baseUrl/product/delete-room/$homeId';
