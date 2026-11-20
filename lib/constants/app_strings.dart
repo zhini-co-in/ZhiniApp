@@ -428,4 +428,11 @@ static const String addYourDevicesDesc =
     'Register your appliances to manage device details, track warranty information, and request services easily.';
 static const String addDevices = 'Add Devices';
 static const String setUpYourHomeButton = 'Set Up Your Home';
+static const String deleteAccount = 'Delete Account';
+static const String deleteAccountSub = 'Permanently delete your account and data';
+static const String deleteAccountQ = 'Delete account?';
+static const String deleteAccountContent =
+    'This will permanently delete your account, homes, appliances and warranty details. This cannot be undone.';
+static const String deleteAccountConfirm = 'Delete';
+static const String accountDeleteFailed = 'Could not delete account. Please try again.';
 }

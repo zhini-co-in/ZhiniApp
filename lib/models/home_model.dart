@@ -22,12 +22,16 @@ class HomeModel extends HiveObject {
   @HiveField(4)
   List<Map<String, dynamic>> members;
 
+ @HiveField(5)
+  String? homeName;
+
   HomeModel({
     this.id,
     required this.address,
     required this.pincode,
     required this.rooms,
     required this.members,
+    this.homeName,
   });
 
   // Convenience converters so existing code (which works with
@@ -38,6 +42,7 @@ class HomeModel extends HiveObject {
         'pincode': pincode,
         'rooms': rooms,
         'members': members,
+                'homeName': homeName,
       };
 
   factory HomeModel.fromMap(Map<String, dynamic> map) => HomeModel(
@@ -57,5 +62,6 @@ class HomeModel extends HiveObject {
                 ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ??
             [],
+                    homeName: map['homeName']?.toString(),
       );
 }

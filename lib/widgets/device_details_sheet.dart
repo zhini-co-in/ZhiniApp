@@ -32,7 +32,9 @@ class DeviceEntry {
   final String pincode;
   final String roomKey; // still needed by the backend (delete API)
   final String roomName;
-  final Map<String, dynamic> raw;
+    final Map<String, dynamic> raw;
+  final double? latitude;
+  final double? longitude;
 
   DeviceEntry({
     required this.homeId,
@@ -41,6 +43,8 @@ class DeviceEntry {
     required this.roomKey,
     required this.roomName,
     required this.raw,
+    this.latitude,
+    this.longitude,
   });
 
   String get product => raw['product']?.toString().trim().isNotEmpty == true
@@ -522,30 +526,70 @@ Future<void> _openMapDirections(String address) async {
 }
 
 // Offline-ku last providers cache (Hive 'session' box, opened in main.dart)
-String _nearbyCacheKey(DeviceEntry e) =>
-    'nearby:${e.brand.toLowerCase()}|${e.product.toLowerCase()}|${e.pincode}|${e.isUnderWarranty}';
+String _nearbyCacheKey(DeviceEntry e) {
+  final loc = e.pincode.isNotEmpty
+      ? e.pincode
+      : (e.latitude != null && e.longitude != null)
+          ? 'gps:${e.latitude!.toStringAsFixed(2)},${e.longitude!.toStringAsFixed(2)}'
+          : '';
+  return 'nearby:${e.brand.toLowerCase()}|${e.product.toLowerCase()}|$loc|${e.isUnderWarranty}';
+}
+
+// Pincode irundha pincode, illa na GPS lat/lng anuppum.
+Map<String, dynamic> _nearbyBody(DeviceEntry e) => {
+      'brand': e.brand,
+      'product': e.product,
+      'isUnderWarranty': e.isUnderWarranty,
+      if (e.pincode.isNotEmpty)
+        'pincode': e.pincode
+      else if (e.latitude != null && e.longitude != null) ...{
+        'latitude': e.latitude,
+        'longitude': e.longitude,
+      },
+    };
+
+String _nearbyLastKey(DeviceEntry e) =>
+    'nearbyLast:${e.brand.toLowerCase()}|${e.product.toLowerCase()}|${e.isUnderWarranty}';
+
+void _saveNearbyCache(DeviceEntry e, List<Map<String, dynamic>> list) {
+  try {
+    final box = Hive.box('session');
+    final json = jsonEncode(list);
+    box.put(_nearbyCacheKey(e), json);
+    if (list.isNotEmpty) box.put(_nearbyLastKey(e), json); // location-independent
+  } catch (err) {
+    debugPrint('❌ Nearby cache write error: $err');
+  }
+}
 
 List<Map<String, dynamic>>? _readNearbyCache(DeviceEntry e) {
   try {
-    final raw = Hive.box('session').get(_nearbyCacheKey(e));
-    if (raw is! String) return null;
-    return (jsonDecode(raw) as List)
-        .map((x) => Map<String, dynamic>.from(x as Map))
-        .toList();
+    final box = Hive.box('session');
+    for (final key in [_nearbyCacheKey(e), _nearbyLastKey(e)]) {
+      final raw = box.get(key);
+      if (raw is! String) continue;
+      final list = (jsonDecode(raw) as List)
+          .map((x) => Map<String, dynamic>.from(x as Map))
+          .toList();
+      if (list.isNotEmpty) return list;
+    }
   } catch (err) {
     debugPrint('❌ Nearby cache read error: $err');
-    return null;
   }
+  return null;
 }
 
 Future<List<Map<String, dynamic>>> _fetchNearbyProviders(DeviceEntry e) async {
   try {
-    final response = await ApiClient.post(ApiConfig.nearbyServiceUrl, body: {
-      'brand': e.brand,
-      'product': e.product,
-      'pincode': e.pincode,
-      'isUnderWarranty': e.isUnderWarranty,
-    });
+        final body = _nearbyBody(e);
+    debugPrint('🔧 Service URL: ${ApiConfig.nearbyServiceUrl}');
+    debugPrint('🔧 Service request: $body');
+
+    final response = await ApiClient.post(ApiConfig.nearbyServiceUrl, body: body);
+
+    debugPrint('🔧 Service status: ${response.statusCode}');
+    debugPrint('🔧 Service body: ${response.body}');
+
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       if (data['success'] == true && data['data'] != null) {
@@ -553,19 +597,16 @@ Future<List<Map<String, dynamic>>> _fetchNearbyProviders(DeviceEntry e) async {
         final List<dynamic> rawList = rawData is List ? rawData : [rawData];
         final list =
             rawList.map((x) => Map<String, dynamic>.from(x as Map)).toList();
-        try {
-          Hive.box('session').put(_nearbyCacheKey(e), jsonEncode(list));
-        } catch (err) {
-          debugPrint('❌ Nearby cache write error: $err');
-        }
+                _saveNearbyCache(e, list);
         return list;
       }
     }
   } catch (err) {
     debugPrint('❌ Nearby service fetch error: $err');
   }
-  // Failed (offline / error) -> last cached list, else empty
-  return _readNearbyCache(e) ?? [];
+    final cached = _readNearbyCache(e);
+  debugPrint('📴 Provider cache: ${cached?.length ?? 'miss'}');
+  return cached ?? [];
 }
 
 void showDeviceServiceSheet(
@@ -575,7 +616,7 @@ void showDeviceServiceSheet(
   String name = '',
 }) {
     final providersFuture = _fetchNearbyProviders(e).timeout(
-    const Duration(seconds: 30),
+        const Duration(seconds: 8),
     onTimeout: () => _readNearbyCache(e) ?? <Map<String, dynamic>>[],
   );
 
@@ -801,12 +842,8 @@ void _openBookingDialog(
 /// Success na true, offline/error na false.
 Future<bool> prefetchNearbyProviders(DeviceEntry e) async {
   try {
-    final response = await ApiClient.post(ApiConfig.nearbyServiceUrl, body: {
-      'brand': e.brand,
-      'product': e.product,
-      'pincode': e.pincode,
-      'isUnderWarranty': e.isUnderWarranty,
-    });
+        final response =
+        await ApiClient.post(ApiConfig.nearbyServiceUrl, body: _nearbyBody(e));
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       if (data['success'] == true) {
@@ -815,7 +852,7 @@ Future<bool> prefetchNearbyProviders(DeviceEntry e) async {
             raw == null ? <dynamic>[] : (raw is List ? raw : [raw]);
         final list =
             rawList.map((x) => Map<String, dynamic>.from(x as Map)).toList();
-        Hive.box('session').put(_nearbyCacheKey(e), jsonEncode(list));
+                _saveNearbyCache(e, list);
         return true;
       }
     }

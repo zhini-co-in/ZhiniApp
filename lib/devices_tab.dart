@@ -16,9 +16,9 @@ import 'models/home_model.dart';
 import 'theme/app_theme.dart';
 import 'utils/devices_filter_bus.dart';
 import 'widgets/device_details_sheet.dart';
-import 'utils/appliance_bus.dart';
 import 'widgets/service_group_card.dart';
 import 'widgets/service_group_sheet.dart';
+import 'services/appliance_services_loader.dart';
 
 class DevicesTab extends StatefulWidget {
   final String mobileNumber;
@@ -1259,25 +1259,28 @@ class _DevicesTabState extends State<DevicesTab> {
     // ---------------- APPLIANCE CATALOG (from Home "See All") ----------------
   // ---------------- SERVICE GROUPS (from Home "See All") ----------------
   // ---------------- APPLIANCE & GADGET SERVICES (below my devices) ----------------
-  Widget _buildCatalogView() {
-    final groups = kServiceGroups.toList(); // all groups
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Appliance & Gadget Services',
-            style: TextStyle(
-                color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 2),
-        const Text('Doorstep diagnosis & expert repair', style: AppText.caption),
-        const SizedBox(height: 12),
-        ...groups.map((g) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: ServiceGroupCard(group: g, onTap: () => _openGroupItems(g)),
-            )),
-      ],
-    );
-  }
+Widget _buildCatalogView() {
+  return ValueListenableBuilder<List<Map<String, dynamic>>>(
+    valueListenable: ApplianceServicesLoader.groups,
+    builder: (context, groups, _) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Appliance & Gadget Services',
+              style: TextStyle(
+                  color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          const Text('Doorstep diagnosis & expert repair', style: AppText.caption),
+          const SizedBox(height: 12),
+          ...groups.map((g) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: ServiceGroupCard(group: g, onTap: () => _openGroupItems(g)),
+              )),
+        ],
+      );
+    },
+  );
+}
 
   // Tap on a card -> all appliances of that group
 void _openGroupItems(Map<String, dynamic> g) {

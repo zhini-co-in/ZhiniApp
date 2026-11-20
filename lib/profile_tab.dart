@@ -38,6 +38,7 @@ import 'widgets/theme_mode_toggle.dart';
 import 'utils/warranty_utils.dart';
 import 'theme/text_scale_controller.dart';
 import 'warranty_vault_screen.dart';
+import 'services/account_service.dart';
 
 // Optional, backend-fed extras. Leave null/default until you have a real
 // source for them — the UI degrades gracefully either way.
@@ -262,7 +263,7 @@ class _ProfileTabState extends State<ProfileTab> {
   // ---------------------------------------------------------------------
   // ADD HOME / EDIT ADDRESS  (mirrors HomeTab's flows)
   // ---------------------------------------------------------------------
-  Future<void> _openAddHomeDialog() async {
+ Future<void> _openAddHomeDialog() async {
     // If a "Default" home already exists (created silently by Skip+Scan),
     // registering should UPDATE that same home instead of creating a new
     // one — otherwise already-scanned devices get orphaned.
@@ -286,14 +287,33 @@ class _ProfileTabState extends State<ProfileTab> {
     final pincode = result['pincode']?.toString();
     if (address == null || address.isEmpty) return;
 
+    final enteredName = result['name']?.toString().trim() ?? '';
+    final enteredHomeName = result['homeName']?.toString().trim() ?? '';
+    final firstPart = address.split(',').first.trim();
+    final resolvedHomeName = enteredHomeName.isNotEmpty
+        ? enteredHomeName
+        : (firstPart.isNotEmpty ? firstPart : 'Home');
+
     if (existingDefaultId != null) {
       // Promote the existing Default home in place.
       final updateResult = await EntityUpdateService.update(
         homeId: existingDefaultId,
         address: address,
         pincode: pincode != null && pincode.isNotEmpty ? pincode : null,
+        homeName: resolvedHomeName,
+        name: enteredName.isNotEmpty ? enteredName : null,
       );
       if (!mounted) return;
+
+      if (updateResult['success'] == true) {
+        if (enteredName.isNotEmpty) {
+          setState(() => _displayName = enteredName);
+          widget.onNameChanged?.call(enteredName);
+        }
+        await _refreshHomes(homeId: existingDefaultId);
+        if (!mounted) return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(updateResult['success'] == true
@@ -301,7 +321,6 @@ class _ProfileTabState extends State<ProfileTab> {
               : (updateResult['message']?.toString() ?? AppStrings.homeRegisterFailed)),
         ),
       );
-      setState(() {}); // Hive listener refreshes once HomeTab re-fetches
       return;
     }
 
@@ -309,8 +328,8 @@ class _ProfileTabState extends State<ProfileTab> {
     final newHomeId = await _createNewHomeRecord(
       address: address,
       pincode: pincode ?? '',
-      name: widget.name,
-      homeName: address.split(',').first.trim().isNotEmpty ? address.split(',').first.trim() : 'Home',
+      name: enteredName.isNotEmpty ? enteredName : widget.name,
+      homeName: resolvedHomeName,
     );
 
     if (!mounted) return;
@@ -486,7 +505,7 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
     );
   }
-    static const String _supportPhone = '1111111111';
+    static const String _supportPhone = '8754869149';
 
   void _openHelpSupportSheet() {
     showModalBottomSheet(
@@ -629,6 +648,51 @@ class _ProfileTabState extends State<ProfileTab> {
     Navigator.pushAndRemoveUntil(
         context, MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false);
   }
+    Future<void> _handleDeleteAccount() async {
+    final confirm = await showConfirmActionDialog(
+      context,
+      title: AppStrings.deleteAccountQ,
+      content: AppStrings.deleteAccountContent,
+      confirmLabel: AppStrings.deleteAccountConfirm,
+    );
+    if (confirm != true || !mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final result = await AccountService.deleteAccount();
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // loader close
+
+    if (result['success'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(result['message']?.toString().isNotEmpty == true
+                ? result['message'].toString()
+                : AppStrings.accountDeleteFailed)),
+      );
+      return;
+    }
+
+    try {
+      await FirebaseAuth.instance.currentUser?.delete();
+    } catch (e) {
+      debugPrint('Firebase user delete skipped: $e');
+    }
+
+    ApiClient.reset();
+    await FirebaseAuth.instance.signOut();
+    await SessionManager.clearSession();
+    await Hive.box<HomeModel>('homes').clear();
+
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+        context, MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false);
+  }
 
   // ---------------------------------------------------------------------
   // REFRESH
@@ -672,10 +736,11 @@ class _ProfileTabState extends State<ProfileTab> {
         ? membersRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
         : <Map<String, dynamic>>[];
 
-    return {
+   return {
       'id': (h['_id'] ?? h['id'])?.toString(),
       'address': h['address']?.toString() ?? widget.address,
       'pincode': h['pincode']?.toString() ?? widget.pincode,
+      'homeName': h['homeName']?.toString(),
       'rooms': rooms,
       'roomIds': roomIds,
       'members': members,
@@ -908,13 +973,21 @@ const hasHome = true; // new user-ku kooda full profile
                       ]),
                       const SizedBox(height: 24),
 
-                      _groupCard([
+                                            _groupCard([
                         _accountRow(
                           icon: Icons.logout_rounded,
                           iconColor: AppColors.danger,
                           title: AppStrings.signOut,
                           titleColor: AppColors.danger,
                           onTap: _handleLogout,
+                        ),
+                        _accountRow(
+                          icon: Icons.delete_forever_rounded,
+                          iconColor: AppColors.danger,
+                          title: AppStrings.deleteAccount,
+                          titleColor: AppColors.danger,
+                          subtitle: AppStrings.deleteAccountSub,
+                          onTap: _handleDeleteAccount,
                         ),
                       ]),
                     ],
@@ -1391,8 +1464,21 @@ const hasHome = true; // new user-ku kooda full profile
               : (result['message']?.toString() ?? ''))),
     );
 
-    if (result['success'] == true) {
+        if (result['success'] == true) {
       await MemberService.refreshHomeMembers(homeId: homeId, mobileNumber: widget.mobileNumber);
+
+      // Backend/refresh la innum irundhaalum Hive la irundhu remove pannidu
+      for (final k in _homeBox.keys.toList()) {
+        final m = _homeBox.get(k)?.toMap();
+        if (m == null || m['id']?.toString() != homeId) continue;
+        final members = ((m['members'] as List?) ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .where((e) => e['mobile']?.toString() != mobile)
+            .toList();
+        m['members'] = members;
+        await _homeBox.put(k, HomeModel.fromMap(m));
+        break;
+      }
       if (mounted) setState(() {});
     }
   }
@@ -1602,7 +1688,10 @@ const hasHome = true; // new user-ku kooda full profile
     return homes.asMap().entries.map((entry) {
       final home = entry.value;
       final address = home['address']?.toString() ?? '';
-      final title = address.isNotEmpty ? address.split(',').first.trim() : AppStrings.homeN(entry.key + 1);
+            final savedName = home['homeName']?.toString().trim() ?? '';
+            final title = (savedName.isNotEmpty && savedName.toLowerCase() != 'default home')
+          ? savedName
+          : (address.isNotEmpty ? address.split(',').first.trim() : AppStrings.homeN(entry.key + 1));
       final locality = address.contains(',') ? address.split(',').skip(1).join(',').trim() : '';
       final deviceCount = _deviceCountForHome(home);
       final isSelected = _isSelected(home, homes);

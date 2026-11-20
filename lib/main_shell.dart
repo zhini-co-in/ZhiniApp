@@ -159,6 +159,7 @@ class _MainShellState extends State<MainShell> {
       address: widget.address,
       pincode: widget.pincode,
       name: _name,
+      onNameChanged: (newName) => setState(() => _name = newName),
       onScanTap: _goToScan,
       onProfileTap: () => _switchTab(_Slot.profile),
       onHomeStatusChanged: _onHomeStatusChanged,

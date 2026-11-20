@@ -41,6 +41,7 @@ class AddressScreen extends StatefulWidget {
 
 class _AddressScreenState extends State<AddressScreen> {
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _homeNameController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _pincodeController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
@@ -56,6 +57,7 @@ class _AddressScreenState extends State<AddressScreen> {
       !widget.isAddingHome && !widget.isServiceProfessional;
 
   // Drives the Register/Add Home button's enabled state.
+  // (Home name is optional, so it is NOT part of validation.)
   bool get _isFormValid =>
       _nameController.text.trim().isNotEmpty &&
       _addressController.text.trim().isNotEmpty &&
@@ -197,6 +199,7 @@ class _AddressScreenState extends State<AddressScreen> {
 
   Future<void> _saveAndContinue() async {
     final name = _nameController.text.trim();
+    final homeNameInput = _homeNameController.text.trim();
     final address = _addressController.text.trim();
     final city = _cityController.text.trim();
     final pincode = _pincodeController.text.trim();
@@ -212,12 +215,16 @@ class _AddressScreenState extends State<AddressScreen> {
 
     final fullAddress = '$address, $city - $pincode';
 
-    // "Add Home" flow — hand the new address back to HomeTab.
+    // "Add Home" flow — hand the new address back to HomeTab / ProfileTab.
     if (widget.isAddingHome) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      Navigator.pop(
-          context, {'address': fullAddress, 'pincode': pincode, 'name': name});
+      Navigator.pop(context, {
+        'address': fullAddress,
+        'pincode': pincode,
+        'name': name,
+        'homeName': homeNameInput,
+      });
       return;
     }
 
@@ -232,6 +239,7 @@ class _AddressScreenState extends State<AddressScreen> {
       address: fullAddress,
       pincode: pincode,
       name: name,
+      homeName: homeNameInput.isNotEmpty ? homeNameInput : address,
     );
 
     if (!mounted) return;
@@ -278,6 +286,7 @@ class _AddressScreenState extends State<AddressScreen> {
   // Creates a "Default" home (empty pincode) and opens the home screen.
   // Nearby services will use live GPS lat/long because pincode is empty.
   // The user adds a real address later via Register / Add Home in HomeTab.
+  // (No homeName here on purpose: placeholder home = "Default Home".)
   // ---------------------------------------------------------------------
 
   Future<void> _skip() async {
@@ -344,6 +353,7 @@ class _AddressScreenState extends State<AddressScreen> {
     required String address,
     required String pincode,
     required String name,
+    String? homeName,
   }) async {
     try {
       final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
@@ -368,6 +378,7 @@ class _AddressScreenState extends State<AddressScreen> {
           'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
           'address': address,
           'pincode': pincode,
+          if (homeName != null && homeName.isNotEmpty) 'homeName': homeName,
           'role': widget.isServiceProfessional ? 'service_provider' : 'user',
           'PlatformInfo': {
             'device': {
@@ -405,6 +416,7 @@ class _AddressScreenState extends State<AddressScreen> {
       c.removeListener(_onFieldChanged);
     }
     _nameController.dispose();
+    _homeNameController.dispose();
     _addressController.dispose();
     _pincodeController.dispose();
     _cityController.dispose();
@@ -429,12 +441,12 @@ class _AddressScreenState extends State<AddressScreen> {
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton(
-  style: ElevatedButton.styleFrom(
-      backgroundColor: AppColors.primary),
-  onPressed: _skip,
-  child: const Text('Retry',
-      style: TextStyle(color: AppColors.onPrimary)),
-),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary),
+                      onPressed: _skip,
+                      child: const Text('Retry',
+                          style: TextStyle(color: AppColors.onPrimary)),
+                    ),
                   ],
                 )
               : const CircularProgressIndicator(color: AppColors.primary),
@@ -461,22 +473,27 @@ class _AddressScreenState extends State<AddressScreen> {
                         ? "Let's add a new home"
                         : "Let's set up your home",
                     style: const TextStyle(
-  color: AppColors.textPrimary,
-  fontSize: 26,
-  fontWeight: FontWeight.bold,
-),
+                      color: AppColors.textPrimary,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     widget.isAddingHome
                         ? 'Use your current location for a one-tap add, or enter the address manually below.'
                         : 'ZHINI uses this to personalize your experience and connect you with nearby service.',
-                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 14),
                   ),
                   const SizedBox(height: 20),
 
                   AppDialogField(
                       controller: _nameController, hint: 'Your name'),
+                  const SizedBox(height: 16),
+                  AppDialogField(
+                      controller: _homeNameController,
+                      hint: 'Home name (Home / Office) - optional'),
                   const SizedBox(height: 16),
                   AppDialogField(
                       controller: _addressController,
@@ -518,16 +535,17 @@ class _AddressScreenState extends State<AddressScreen> {
                           ? null
                           : _useCurrentLocationForAddress,
                       icon: _isFetchingLocation
-    ? const SizedBox(
-        height: 16,
-        width: 16,
-        child: CircularProgressIndicator(strokeWidth: 2))
-    : const Icon(Icons.my_location,
-        size: 18, color: AppColors.primary),
-label: const Text(
-  'Use current location',
-  style: TextStyle(color: AppColors.primary),
-),
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.my_location,
+                              size: 18, color: AppColors.primary),
+                      label: const Text(
+                        'Use current location',
+                        style: TextStyle(color: AppColors.primary),
+                      ),
                     ),
                   ),
 
@@ -539,31 +557,31 @@ label: const Text(
                           ? null
                           : _saveAndContinue,
                       style: ElevatedButton.styleFrom(
-  backgroundColor: AppColors.primary,
-  disabledBackgroundColor: AppColors.cardBgAlt,
-  padding: const EdgeInsets.symmetric(vertical: 16),
-  shape: RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(8),
-  ),
-),
-child: _isSaving
-    ? const SizedBox(
-        height: 20,
-        width: 20,
-        child: CircularProgressIndicator(
-          color: AppColors.onPrimary,
-          strokeWidth: 2,
-        ),
-      )
-    : Text(
-        widget.isAddingHome ? 'Add Home' : 'Register',
-        style: TextStyle(
-          color: _isFormValid
-              ? AppColors.onPrimary
-              : AppColors.textFaint,
-          fontSize: 16,
-        ),
-      ),
+                        backgroundColor: AppColors.primary,
+                        disabledBackgroundColor: AppColors.cardBgAlt,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: _isSaving
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: AppColors.onPrimary,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              widget.isAddingHome ? 'Add Home' : 'Register',
+                              style: TextStyle(
+                                color: _isFormValid
+                                    ? AppColors.onPrimary
+                                    : AppColors.textFaint,
+                                fontSize: 16,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 40),
@@ -583,7 +601,7 @@ child: _isSaving
                       ? null
                       : () => Navigator.pop(context),
                   icon: const Icon(Icons.arrow_back_rounded,
-    color: AppColors.textSecondary),
+                      color: AppColors.textSecondary),
                   tooltip: 'Back',
                 ),
               ),

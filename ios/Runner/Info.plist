@@ -40,9 +40,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Zhini needs camera access to capture photos of your appliances.</string>
 	<key>NSContactsUsageDescription</key>
-	<string>Zhini needs contacts access so you can invite friends from your contact list.</string>
+<string>Zhini accesses your contacts only when you choose to invite friends, so you can pick people from your contact list to send an invite.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>App ku location access thevai</string>
+<string>Zhini uses your location to show service centers and technicians near you, for example, authorized repair centers for your washing machine or AC.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Zhini needs photo library access so you can attach appliance and warranty card photos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -71,11 +71,10 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-		<string>fetch</string>
-		<string>remote-notification</string>
-	</array>
+<array>
+    <string>fetch</string>
+    <string>remote-notification</string>
+</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

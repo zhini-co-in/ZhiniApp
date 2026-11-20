@@ -39,5 +39,8 @@ static String get providerTicketsUrl => '$baseUrl/service/provider-tickets';
     static const String crashLogUrl = '$baseUrl/crash/add';
     static const String sessionSyncUrl = '$baseUrl/product/session';
     static String get updateProviderUrl => '$baseUrl/service/update-provider';
+    static String get templateUrl => '$baseUrl/product/template';
+    static String get bannersUrl => '$baseUrl/product/banners';   // route path-ku match pannunga
+    static const String deleteAccountUrl = '$baseUrl/product/delete-account';
 
 }

@@ -30,6 +30,8 @@ import 'device_details_screen.dart';
 import 'utils/appliance_bus.dart';
 import 'widgets/service_group_card.dart';
 import 'widgets/service_group_sheet.dart';
+import 'services/appliance_services_loader.dart';
+import 'services/banner_loader.dart';
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
@@ -48,6 +50,7 @@ class HomeTab extends StatefulWidget {
   final String address;
   final String pincode;
   final String name;
+    final ValueChanged<String>? onNameChanged;
   final ScanRequest? onScanTap;
   final VoidCallback? onProfileTap;
   final ValueChanged<bool>? onHomeStatusChanged;
@@ -59,7 +62,8 @@ class HomeTab extends StatefulWidget {
     required this.mobileNumber,
     required this.address,
     required this.pincode,
-    this.name = '',
+     this.name = '',
+    this.onNameChanged,
     this.onScanTap,
     this.onProfileTap,
     this.onHomeStatusChanged,
@@ -127,7 +131,6 @@ class HomeTabState extends State<HomeTab> {
     'microwave': Icons.microwave_rounded,
     'water purifier': Icons.water_drop_rounded,
   };
-  static const List<String> _applianceCatalog = kApplianceCatalog;
 
   // serviceType -> provider count, shown as "X nearby".
   final Map<String, int> _serviceCounts = {};
@@ -175,9 +178,12 @@ class HomeTabState extends State<HomeTab> {
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
       );
-      _lat = pos.latitude;
+            _lat = pos.latitude;
       _lng = pos.longitude;
-      if (mounted) _prefetchServiceCounts();
+      if (mounted) {
+        _prefetchServiceCounts();
+        _prefetchAllApplianceProviders();
+      }
     } catch (e) {
       debugPrint('❌ Home GPS error: $e');
     }
@@ -189,17 +195,13 @@ class HomeTabState extends State<HomeTab> {
   Timer? _bannerTimer;
   final ScrollController _servicesController = ScrollController();
 
-  static const List<String> _bannerImages = [
-    'assets/images/banner_ac.png',
-    'assets/images/banner_appliance.png',
-    'assets/images/banner_fridge.png',
-  ];
-
   void _startBannerTimer() {
     _bannerTimer?.cancel();
     _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!mounted || !_bannerController.hasClients) return;
-      final next = (_bannerIndex + 1) % _bannerImages.length;
+            final count = BannerLoader.banners.value.length;
+      if (count == 0) return;
+      final next = (_bannerIndex + 1) % count;
       _bannerController.animateToPage(
         next,
         duration: const Duration(milliseconds: 400),
@@ -220,12 +222,16 @@ class HomeTabState extends State<HomeTab> {
   @override
   void initState() {
     super.initState();
+    ApplianceServicesLoader.load().then((_) {
+  if (mounted) _prefetchAllApplianceProviders();
+});
     applianceAddRequest.addListener(_onApplianceAddRequest);
     _loadCachedCounts();
     _fetchAppliances();
     _prefetchServiceCounts();
     _loadGps();
     _startBannerTimer();
+        BannerLoader.load();
   }
 
   void _onApplianceAddRequest() {
@@ -292,38 +298,32 @@ class HomeTabState extends State<HomeTab> {
   // ---------------------------------------------------------------------
   Future<void> _prefetchAllApplianceProviders() async {
     if (_prefetching) return;
-    if (_homes.isEmpty) return; // wait until homes are loaded (correct pincode)
-    final pin = _currentPincode;
-    if (pin.isEmpty) return;
+    if (_homes.isEmpty) return; // wait until homes are loaded
 
-    // V2 key: an old stale stamp is ignored.
-    final stampKey = 'nearbyPrefetchV2:$pin';
+    // Location: pincode irundha pincode, illa na GPS.
+    final pin = _currentPincode;
+    final usePin = pin.isNotEmpty;
+    if (!usePin && (_lat == null || _lng == null)) return;
+    final loc = usePin
+        ? pin
+        : 'gps:${_lat!.toStringAsFixed(2)},${_lng!.toStringAsFixed(2)}';
+
+    // V3 key: old stamps ignored.
+    final stampKey = 'nearbyPrefetchV3:$loc';
     final last = _sessionBox.get(stampKey);
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (last is int && nowMs - last < 12 * 3600 * 1000) return;
 
-    // All appliance names from every group (String items or Map items).
     final names = <String>{};
-    for (final g in kServiceGroups) {
+    for (final g in ApplianceServicesLoader.groups.value) {
       for (final it in (g['items'] as List)) {
-        String? n;
-        if (it is Map) {
-          for (final k in const ['name', 'title', 'label', 'product', 'service']) {
-            final v = it[k]?.toString().trim();
-            if (v != null && v.isNotEmpty) {
-              n = v;
-              break;
-            }
-          }
-        } else {
-          n = it?.toString().trim();
-        }
+        final n = it?.toString().trim();
         if (n != null && n.isNotEmpty) names.add(n);
       }
     }
 
     final list = names.toList();
-    debugPrint('🔧 Prefetch start: ${list.length} appliances, pincode $pin');
+    debugPrint('🔧 Prefetch start: ${list.length} appliances, loc $loc');
     if (list.isEmpty) return;
 
     _prefetching = true;
@@ -335,10 +335,12 @@ class HomeTabState extends State<HomeTab> {
           return prefetchNearbyProviders(DeviceEntry(
             homeId: _currentHomeId,
             homeAddress: _currentAddress,
-            pincode: pin,
+            pincode: usePin ? pin : '',
             roomKey: _defaultRoomName.toLowerCase(),
             roomName: _defaultRoomName,
             raw: {'product': n, 'brand': ''},
+            latitude: usePin ? null : _lat,
+            longitude: usePin ? null : _lng,
           ));
         }));
         okCount += results.where((r) => r).length;
@@ -348,7 +350,6 @@ class HomeTabState extends State<HomeTab> {
         }
       }
       debugPrint('🔧 Prefetch done: $okCount/${list.length} cached');
-      // Stamp only when EVERYTHING succeeded; otherwise it retries next time.
       if (okCount == list.length) _sessionBox.put(stampKey, nowMs);
     } finally {
       _prefetching = false;
@@ -452,6 +453,7 @@ class HomeTabState extends State<HomeTab> {
               'id': (h['_id'] ?? h['id'])?.toString(),
               'address': h['address']?.toString() ?? widget.address,
               'pincode': h['pincode']?.toString() ?? widget.pincode,
+                            'homeName': h['homeName']?.toString(),
               'rooms': rooms,
               'roomIds': roomIds,
               'members': members,
@@ -546,6 +548,7 @@ class HomeTabState extends State<HomeTab> {
           'id': home['id'],
           'address': home['address'],
           'pincode': home['pincode'],
+           'homeName': home['homeName'],
           'rooms': roomsIn.map((k, v) => MapEntry(k, List<Map<String, dynamic>>.from(v))),
           'roomIds': Map<String, String>.from(roomIdsIn),
           'members': List<Map<String, dynamic>>.from(home['members'] as List),
@@ -683,7 +686,9 @@ class HomeTabState extends State<HomeTab> {
     widget.onSelectedHomeChanged?.call(id, addr, pin);
   }
 
-  String _homeLabel(Map<String, dynamic> home, int index) {
+    String _homeLabel(Map<String, dynamic> home, int index) {
+    final saved = home['homeName']?.toString().trim() ?? '';
+    if (saved.isNotEmpty && saved.toLowerCase() != 'default home') return saved;
     final address = home['address']?.toString() ?? '';
     final firstPart = address.split(',').first.trim();
     return firstPart.isNotEmpty ? firstPart : AppStrings.homeN(index + 1);
@@ -824,7 +829,7 @@ class HomeTabState extends State<HomeTab> {
   //  REGISTER flow : user has only the Guest/"Default" home -> UPDATE it.
   //  ADD-HOME flow : user already has a registered home -> CREATE a new one.
   // ---------------------------------------------------------------------
-  void _openAddHomeDialog() async {
+ void _openAddHomeDialog() async {
     final bool isRegisterFlow = !_hasRegisteredHome;
 
     String? existingDefaultId;
@@ -850,15 +855,26 @@ class HomeTabState extends State<HomeTab> {
     final newPincode = result['pincode'] ?? '';
     if (newAddress.isEmpty) return;
     final newName = (result['name'] ?? '').toString().trim();
+    final enteredHomeName = (result['homeName'] ?? '').toString().trim();
+    final firstPart = newAddress.split(',').first.trim();
     if (newName.isNotEmpty) setState(() => _nameOverride = newName);
 
     // ---------- UPDATE the Default (Guest) home ----------
     if (existingDefaultId != null) {
       debugPrint('✏️ Updating Default home $existingDefaultId -> $newAddress');
-      final ok = await _submitAddressUpdate(existingDefaultId, newAddress, newPincode);
+      final ok = await _submitAddressUpdate(
+        existingDefaultId,
+        newAddress,
+        newPincode,
+        homeName: enteredHomeName.isNotEmpty
+            ? enteredHomeName
+            : (firstPart.isNotEmpty ? firstPart : 'Home'),
+        name: newName.isNotEmpty ? newName : null,
+      );
       if (ok && mounted) {
         if (newName.isNotEmpty) {
           setState(() => _nameOverride = newName);
+          widget.onNameChanged?.call(newName);
           await SessionManager.saveSession(
             mobileNumber: widget.mobileNumber,
             address: newAddress,
@@ -887,12 +903,13 @@ class HomeTabState extends State<HomeTab> {
 
     // ---------- CREATE a brand-new home ----------
     debugPrint('🆕 Creating NEW home -> $newAddress');
-    final firstPart = newAddress.split(',').first.trim();
     final newHomeId = await _createNewHomeRecord(
       address: newAddress,
       pincode: newPincode,
       name: newName.isNotEmpty ? newName : _displayName,
-      homeName: firstPart.isNotEmpty ? firstPart : AppStrings.homeN(_homes.length + 1),
+      homeName: enteredHomeName.isNotEmpty
+          ? enteredHomeName
+          : (firstPart.isNotEmpty ? firstPart : AppStrings.homeN(_homes.length + 1)),
     );
 
     if (newHomeId == null) {
@@ -978,11 +995,19 @@ class HomeTabState extends State<HomeTab> {
     return null;
   }
 
-  Future<bool> _submitAddressUpdate(String homeId, String address, String pincode) async {
+    Future<bool> _submitAddressUpdate(
+    String homeId,
+    String address,
+    String pincode, {
+    String? homeName,
+    String? name,
+  }) async {
     final result = await EntityUpdateService.update(
       homeId: homeId,
       address: address,
       pincode: pincode.isNotEmpty ? pincode : null,
+      homeName: homeName,
+      name: name,
     );
 
     if (!mounted) return false;
@@ -1283,51 +1308,69 @@ class HomeTabState extends State<HomeTab> {
           ),
           const SizedBox(height: 14),
 
-          // Banner carousel (images are 1600x533 => 3:1)
-          AspectRatio(
-            aspectRatio: 3 / 1.05,
-            child: PageView.builder(
-              controller: _bannerController,
-              itemCount: _bannerImages.length,
-              onPageChanged: (i) {
-                setState(() => _bannerIndex = i);
-                _startBannerTimer(); // restart the 4 sec count after a swipe
-              },
-              itemBuilder: (context, i) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: Image.asset(
-                      _bannerImages[i],
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(color: AppColors.lightSurface),
+          // Banner carousel (backend + assets fallback)
+          ValueListenableBuilder<List<String>>(
+            valueListenable: BannerLoader.banners,
+            builder: (context, images, _) {
+              if (_bannerIndex >= images.length) _bannerIndex = 0;
+              return Column(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 3 / 1.05,
+                    child: PageView.builder(
+                      controller: _bannerController,
+                      itemCount: images.length,
+                      onPageChanged: (i) {
+                        setState(() => _bannerIndex = i);
+                        _startBannerTimer();
+                      },
+                      itemBuilder: (context, i) {
+                        final src = images[i];
+                        final placeholder = Container(color: AppColors.lightSurface);
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 5),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: src.startsWith('http')
+                                ? Image.network(
+                                    src,
+                                    fit: BoxFit.cover,
+                                    loadingBuilder: (_, child, p) =>
+                                        p == null ? child : placeholder,
+                                    errorBuilder: (_, __, ___) => placeholder,
+                                  )
+                                : Image.asset(
+                                    src,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => placeholder,
+                                  ),
+                          ),
+                        );
+                      },
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Dots
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (int i = 0; i < _bannerImages.length; i++)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  width: i == _bannerIndex ? 18 : 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: i == _bannerIndex
-                        ? AppColors.lightPrimary
-                        : AppColors.textPrimary.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(4),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (int i = 0; i < images.length; i++)
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          width: i == _bannerIndex ? 18 : 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: i == _bannerIndex
+                                ? AppColors.lightPrimary
+                                : AppColors.textPrimary.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-            ],
+                ],
+              );
+            },
           ),
           const SizedBox(height: 14),
         ],
@@ -1731,41 +1774,49 @@ Widget avatars() {
   }
 
   // ── Appliance & Gadget Services (first cards; See All -> Devices tab) ──
-  Widget _buildAppliancesGadgets() {
-    final shown = kServiceGroups.take(kHomeGroupCount).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Appliance & Gadget Services', style: AppText.lightSectionTitle),
-                  const SizedBox(height: 2),
-                  Text('Doorstep diagnosis & expert repair', style: AppText.lightCaption),
-                ],
-              ),
+Widget _buildAppliancesGadgets() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Appliance & Gadget Services', style: AppText.lightSectionTitle),
+                const SizedBox(height: 2),
+                Text('Doorstep diagnosis & expert repair', style: AppText.lightCaption),
+              ],
             ),
-            TextButton(
-              onPressed: () => _openDevicesTabWith('Catalog'),
-              child: Text('See All', style: AppText.lightLink),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        ServiceGroupGrid(
-          groups: shown,
-          light: !ThemeController.isDark,
-          compact: true,
-          onTap: _openServiceGroup,
-        ),
-      ],
-    );
-  }
+          ),
+          TextButton(
+            onPressed: () => _openDevicesTabWith('Catalog'),
+            child: Text('See All', style: AppText.lightLink),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      ValueListenableBuilder<List<Map<String, dynamic>>>(
+        valueListenable: ApplianceServicesLoader.groups,
+        builder: (context, all, _) {
+          if (all.isEmpty) return const SizedBox.shrink();
+          final shown = all
+              .where((g) => g['show_on_home'] != false)
+              .take(ApplianceServicesLoader.homeGroupCount)
+              .toList();
+          return ServiceGroupGrid(
+            groups: shown,
+            light: !ThemeController.isDark,
+            compact: true,
+            onTap: _openServiceGroup,
+          );
+        },
+      ),
+    ],
+  );
+}
 
   // Tap on a card -> list of ALL services in that group
   void _openServiceGroup(Map<String, dynamic> g) {
@@ -1779,6 +1830,7 @@ Widget avatars() {
 
   // Tap on an appliance -> directly show nearby service providers.
   void _openApplianceService(String name) {
+    final noPin = _currentPincode.isEmpty;
     final entry = DeviceEntry(
       homeId: _currentHomeId,
       homeAddress: _currentAddress,
@@ -1786,109 +1838,14 @@ Widget avatars() {
       roomKey: _defaultRoomName.toLowerCase(),
       roomName: _defaultRoomName,
       raw: {'product': name, 'brand': ''},
+      latitude: noPin ? _lat : null,
+      longitude: noPin ? _lng : null,
     );
     showDeviceServiceSheet(
       context,
       entry,
       mobileNumber: widget.mobileNumber,
       name: _displayName,
-    );
-  }
-
-  void _openApplianceCatalog() {
-    final searchCtrl = TextEditingController();
-    StateSetter? refreshSheet;
-    searchCtrl.addListener(() => refreshSheet?.call(() {}));
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.cardBg,
-      shape: AppDecor.sheetShape,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (sheetContext, setSheet) {
-            refreshSheet = setSheet;
-            final q = searchCtrl.text.trim().toLowerCase();
-            final filtered = _applianceCatalog
-                .where((n) => n.toLowerCase().contains(q))
-                .toList()
-              ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-
-            final rows = <Widget>[];
-            String? lastLetter;
-            for (final name in filtered) {
-              final letter = name[0].toUpperCase();
-              if (letter != lastLetter) {
-                lastLetter = letter;
-                rows.add(Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
-                  child: Text(letter,
-                      style: TextStyle(
-                          color: AppColors.lightPrimary,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13)),
-                ));
-              }
-              rows.add(ListTile(
-                dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _openApplianceService(name);
-                },
-                leading: Icon(_iconForAppliance(name), color: AppColors.lightPrimary),
-                title: Text(name, style: AppText.lightCardTitle),
-                trailing: TextButton(
-                  onPressed: () {
-                    Navigator.pop(sheetContext);
-                    _openManualAddDialog(prefillProduct: name);
-                  },
-                  child: Text('Add', style: AppText.lightLink),
-                ),
-              ));
-            }
-
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
-              ),
-              child: SizedBox(
-                height: MediaQuery.of(sheetContext).size.height * 0.75,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Appliances & Gadgets', style: AppText.dialogTitle),
-                    const SizedBox(height: 12),
-                    AppDialogField(
-                      controller: searchCtrl,
-                      hint: 'Search appliance or gadget',
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? Center(
-                              child: TextButton(
-                                onPressed: () {
-                                  Navigator.pop(sheetContext);
-                                  _openManualAddDialog(prefillProduct: searchCtrl.text.trim());
-                                },
-                                child: Text('Not found? Add "${searchCtrl.text.trim()}"',
-                                    style: AppText.lightLink),
-                              ),
-                            )
-                          : ListView(children: rows),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 

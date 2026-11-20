@@ -29,13 +29,14 @@ class HomeModelAdapter extends TypeAdapter<HomeModel> {
       members: (fields[4] as List)
           .map((e) => (e as Map).cast<String, dynamic>())
           .toList(),
+      homeName: fields[5] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, HomeModel obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -45,7 +46,9 @@ class HomeModelAdapter extends TypeAdapter<HomeModel> {
       ..writeByte(3)
       ..write(obj.rooms)
       ..writeByte(4)
-      ..write(obj.members);
+      ..write(obj.members)
+      ..writeByte(5)
+      ..write(obj.homeName);
   }
 
   @override
