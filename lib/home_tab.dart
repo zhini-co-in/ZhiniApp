@@ -32,6 +32,7 @@ import 'widgets/service_group_card.dart';
 import 'widgets/service_group_sheet.dart';
 import 'services/appliance_services_loader.dart';
 import 'services/banner_loader.dart';
+import 'widgets/zhini_logo.dart';
 
 // Called whenever HomeTab wants the Scan tab to open. `homeId` is the home
 // appliances should be attached to — pass null to make the backend create a
@@ -1262,128 +1263,216 @@ class HomeTabState extends State<HomeTab> {
     );
   }
 
-  Widget _buildHeader() {
-    final hasName = _displayName.isNotEmpty && _displayName.toLowerCase() != 'guest';
+Widget _buildHeader() {
+  final hasName = _displayName.isNotEmpty && _displayName.toLowerCase() != 'guest';
+  final current = _currentHome;
+  final registeredCount = _homes.where((h) => !_isDefaultHome(h)).length;
+  final title = current == null ? AppStrings.select : _homeLabel(current, _selectedHomeIndex);
+ final address = current?['address']?.toString().trim() ?? ''; 
+  final parts = address.split(',');                                                        // 👈 add
+  final shortAddress = parts.length > 1 ? parts.skip(1).join(',').trim() : address;   
+  final topPad = MediaQuery.of(context).padding.top;
 
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(gradient: AppDecor.lightHeaderGradient),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Logo + avatar
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-                20, 12 + MediaQuery.of(context).padding.top, 20, 0),
-            child: Row(
-              children: [
-                Text(
-                  'ZHINI',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: widget.onProfileTap,
-                  child: CircleAvatar(
-                    radius: 18,
-                    backgroundColor: AppColors.lightSurface,
-                    child: Text(
-                      hasName ? _displayName[0].toUpperCase() : 'P',
-                      style: TextStyle(
-                        color: AppColors.lightPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+  return Container(
+  width: double.infinity,
+  color: AppColors.lightBg, // page background maari plain
+  child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Top bar: logo | home switcher | profile ──
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(16, topPad + 10, 16, 10),
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            boxShadow: const [
+              BoxShadow(color: Color(0x0F000000), blurRadius: 10, offset: Offset(0, 3)),
+            ],
+          ),
+          child: Row(
+  crossAxisAlignment: CrossAxisAlignment.center,
+  children: [
+    _buildBrandLogo(),
+              const SizedBox(width: 8),
+              Expanded(
+                child: (_hasRegisteredHome && current != null)
+                    ? _buildHomeSwitcher(
+                        registeredCount,
+                        trigger: Row(
+                          children: [
+                            Container(
+  width: 32,
+  height: 32,
+  decoration: BoxDecoration(
+    color: AppColors.lightPrimary.withValues(alpha: 0.10),
+    borderRadius: BorderRadius.circular(10),
+  ),
+  child: Icon(Icons.home_outlined,
+      size: 17, color: AppColors.lightPrimary),
+),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                                color: AppColors.lightTextDark,
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700)),
+                                      ),
+                                      Icon(Icons.keyboard_arrow_down_rounded,
+                                          size: 20, color: AppColors.lightTextMuted),
+                                    ],
+                                  ),
+                                  Text(shortAddress,                      // 👈 inga
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppText.lightCaption),
+    ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              const SizedBox(width: 10),
+             GestureDetector(
+  behavior: HitTestBehavior.opaque,
+  onTap: widget.onProfileTap,
+  child: SizedBox(
+    width: 42,
+    height: 42,
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          child: Container(
+            margin: const EdgeInsets.only(top: 2, right: 2),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.lightPrimary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                color: AppColors.lightPrimary.withValues(alpha: 0.25),
+                width: 1.2,
+              ),
+            ),
+            child: Text(
+              hasName ? _displayName[0].toUpperCase() : 'P',
+              style: TextStyle(
+                color: AppColors.lightPrimary,
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+              ),
             ),
           ),
-          const SizedBox(height: 14),
-
-          // Banner carousel (backend + assets fallback)
-          ValueListenableBuilder<List<String>>(
-            valueListenable: BannerLoader.banners,
-            builder: (context, images, _) {
-              if (_bannerIndex >= images.length) _bannerIndex = 0;
-              return Column(
-                children: [
-                  AspectRatio(
-                    aspectRatio: 3 / 1.05,
-                    child: PageView.builder(
-                      controller: _bannerController,
-                      itemCount: images.length,
-                      onPageChanged: (i) {
-                        setState(() => _bannerIndex = i);
-                        _startBannerTimer();
-                      },
-                      itemBuilder: (context, i) {
-                        final src = images[i];
-                        final placeholder = Container(color: AppColors.lightSurface);
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 5),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(18),
-                            child: src.startsWith('http')
-                                ? Image.network(
-                                    src,
-                                    fit: BoxFit.cover,
-                                    loadingBuilder: (_, child, p) =>
-                                        p == null ? child : placeholder,
-                                    errorBuilder: (_, __, ___) => placeholder,
-                                  )
-                                : Image.asset(
-                                    src,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => placeholder,
-                                  ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      for (int i = 0; i < images.length; i++)
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                          width: i == _bannerIndex ? 18 : 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: i == _bannerIndex
-                                ? AppColors.lightPrimary
-                                : AppColors.textPrimary.withValues(alpha: 0.7),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              );
-            },
+        ),
+        // green online dot (top-right)
+        Positioned(
+          right: 0,
+          top: 0,
+          child: Container(
+            width: 11,
+            height: 11,
+            decoration: BoxDecoration(
+              color: const Color(0xFF22C55E),
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.cardBg, width: 2),
+            ),
           ),
-          const SizedBox(height: 14),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  ),
+),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // ── Banner carousel (unchanged) ──
+        ValueListenableBuilder<List<String>>(
+          valueListenable: BannerLoader.banners,
+          builder: (context, images, _) {
+            if (_bannerIndex >= images.length) _bannerIndex = 0;
+            return Column(
+              children: [
+                AspectRatio(
+                  aspectRatio: 3 / 1.05,
+                  child: PageView.builder(
+                    controller: _bannerController,
+                    itemCount: images.length,
+                    onPageChanged: (i) {
+                      setState(() => _bannerIndex = i);
+                      _startBannerTimer();
+                    },
+                    itemBuilder: (context, i) {
+                      final src = images[i];
+                      final placeholder = Container(color: AppColors.lightSurface);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: src.startsWith('http')
+                              ? Image.network(src,
+                                  fit: BoxFit.cover,
+                                  loadingBuilder: (_, child, p) => p == null ? child : placeholder,
+                                  errorBuilder: (_, __, ___) => placeholder)
+                              : Image.asset(src,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => placeholder),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (int i = 0; i < images.length; i++)
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: i == _bannerIndex ? 18 : 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: i == _bannerIndex
+                              ? AppColors.lightPrimary
+                              : AppColors.textPrimary.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 14),
+      ],
+    ),
+  );
+}
+
+// Theme-aware brand logo (replaces the "ZHINI" text)
+// Same logo as the login screen
+Widget _buildBrandLogo() {
+  return const ZhiniLogo(size: 40);
+}
 
   // ── ACTIVE HOME card: home name, members avatars, devices, Switch dropdown ──
   Widget _buildActiveHomeCard() {
     final current = _currentHome;
-    final title =
-        current == null ? AppStrings.select : _homeLabel(current, _selectedHomeIndex);
     final deviceCount = _allDevices.length;
-    final registeredCount = _homes.where((h) => !_isDefaultHome(h)).length;
     final myPlain = ApiConfig.stripCountryCode(widget.mobileNumber);
     final members = (current?['members'] as List?)
             ?.map((e) => Map<String, dynamic>.from(e as Map))
@@ -1471,45 +1560,6 @@ Widget avatars() {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── ACTIVE HOME  +  Switch (n) ──
-          Row(
-            children: [
-              Container(
-  width: 32,
-  height: 32,
-  decoration: BoxDecoration(
-    color: AppColors.lightPrimary.withValues(alpha: 0.10),
-    borderRadius: BorderRadius.circular(10),
-  ),
-  child: Icon(Icons.home_outlined, size: 17, color: AppColors.lightPrimary),
-),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text('ACTIVE HOME',
-    maxLines: 1,
-    style: TextStyle(
-        color: AppColors.lightPrimary,
-        fontSize: 12,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 0.5)),
-                ),
-              ),
-              const SizedBox(width: 8),
-              _buildHomeSwitcher(registeredCount),
-            ],
-          ),
-                    const SizedBox(height: 14),
-          Text(current?['address']?.toString() ?? title,
-    maxLines: 2,
-    overflow: TextOverflow.ellipsis,
-    style: TextStyle(
-        color: AppColors.lightTextDark,
-        fontSize: 12,
-        fontWeight: FontWeight.w500)),
-          Divider(height: 28, color: AppColors.lightBorder),
 
           // ── Members (avatars next to the count) ──
           Row(
@@ -1540,11 +1590,6 @@ Widget avatars() {
     ],
   ],
 ),
-                    const SizedBox(height: 2),
-                    Text('Sharing devices & care',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.lightCaption),
                   ],
                 ),
               ),
@@ -1592,7 +1637,7 @@ Widget avatars() {
   }
 
   // "Switch (3) ▾" dropdown
-  Widget _buildHomeSwitcher(int count) {
+  Widget _buildHomeSwitcher(int count, {Widget? trigger}) {
     return PopupMenuButton<int>(
       offset: const Offset(0, 40),
       color: AppColors.cardBg,
@@ -1639,10 +1684,6 @@ Widget avatars() {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppText.lightCardTitle),
-                          Text(_homes[i]['address']?.toString() ?? '',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.lightCaption),
                         ],
                       ),
                     ),
@@ -1662,18 +1703,22 @@ Widget avatars() {
           ),
         ),
       ],
-            child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(count > 1 ? 'Switch ($count)' : 'Switch',
-              maxLines: 1,
-              softWrap: false,
-              style: TextStyle(
-                  color: AppColors.lightPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(width: 2),
-          Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: AppColors.lightPrimary),
-        ],
-      ),
+                   child: trigger ??
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(count > 1 ? 'Switch ($count)' : 'Switch',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                      color: AppColors.lightPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14)),
+              const SizedBox(width: 2),
+              Icon(Icons.keyboard_arrow_down_rounded,
+                  size: 20, color: AppColors.lightPrimary),
+            ],
+          ),
     );
   }
 

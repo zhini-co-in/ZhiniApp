@@ -262,7 +262,6 @@ class _MainShellState extends State<MainShell> {
                 _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
                 if (_hasHome)
                   _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
-                _addDeviceButton(),
                 if (_hasHome)
                   _navItem(icon: Icons.build_rounded, label: 'Services', slot: _Slot.service),
                 _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),

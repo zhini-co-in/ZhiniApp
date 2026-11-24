@@ -42,7 +42,9 @@
 	<key>NSContactsUsageDescription</key>
 <string>Zhini accesses your contacts only when you choose to invite friends, so you can pick people from your contact list to send an invite.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-<string>Zhini uses your location to show service centers and technicians near you, for example, authorized repair centers for your washing machine or AC.</string>
+	<string>Zhini uses your location to show service centers and technicians near you, for example, authorized repair centers for your washing machine or AC.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Zhini uses your location to show service centers and technicians near you, for example, authorized repair centers for your washing machine or AC.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Zhini needs photo library access so you can attach appliance and warranty card photos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
