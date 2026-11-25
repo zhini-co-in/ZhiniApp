@@ -1207,18 +1207,7 @@ class _DevicesTabState extends State<DevicesTab> {
           ...healthy.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 10), child: _buildDashCard(e, 'healthy'))),
         ],
-        if (all.isEmpty) ...[
-          const SizedBox(height: 40),
-          const Center(
-            child: Column(
-              children: [
-                Icon(Icons.devices_other_rounded, size: 40, color: AppColors.textFaint),
-                SizedBox(height: 10),
-                Text(AppStrings.noAppliancesYet, style: TextStyle(color: AppColors.textMuted)),
-              ],
-            ),
-          ),
-        ] else if (visible.isEmpty) ...[
+        if (all.isEmpty) ...<Widget>[] else if (visible.isEmpty) ...[
           const SizedBox(height: 40),
           const Center(child: Text(AppStrings.noDevicesInFilter, style: TextStyle(color: AppColors.textMuted))),
         ],

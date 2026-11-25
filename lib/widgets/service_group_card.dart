@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_type.dart';
 
 /// Rounded card: icon + badge, title, subtitle.
 /// compact = false (Devices tab): icon border + footer row ("6 appliances >")
@@ -31,57 +32,54 @@ class ServiceGroupCard extends StatelessWidget {
 
     return Material(
       color: bg,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-                child: Container(
-          padding: EdgeInsets.all(compact ? 10 : 14),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(AppSpace.md), // 16
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-                            Container(
-                width: compact ? 36 : 44,
-                height: compact ? 36 : 44,
+              Container(
+                width: compact ? 40 : 48,
+                height: compact ? 40 : 48,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(compact ? 11 : 14),
+                  borderRadius: BorderRadius.circular(12),
                   // Devices tab: border irukku, Home tab (compact): illa
                   border: compact
                       ? null
                       : Border.all(color: color.withValues(alpha: 0.25)),
                 ),
                 child: Icon(group['icon'] as IconData,
-                    color: color, size: compact ? 18 : 22),
+                    color: color, size: compact ? 20 : 24),
               ),
-              SizedBox(height: compact ? 8 : 14),
+              const SizedBox(height: AppSpace.gap), // 12
 
               // Title: up to 2 lines so "Smartphones & Tablets" is not cut.
               Text(group['title'] as String,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      color: titleColor,
-                      fontSize: compact ? 13 : 14.5,
-                      fontWeight: FontWeight.w800)),
-              const SizedBox(height: 2),
+                  style: AppType.cardTitle.copyWith(color: titleColor)),
+              const SizedBox(height: AppSpace.xs), // 4
 
               // Subtitle: up to 2 lines.
               Text(group['sub'] as String,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: subColor, fontSize: compact ? 10.5 : 11.5)),
+                  style: AppType.caption.copyWith(color: subColor)),
 
               // Footer: Devices tab-la mattum
               if (!compact) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: AppSpace.gap),
                 Divider(height: 1, color: border),
-                const SizedBox(height: 10),
+                const SizedBox(height: AppSpace.gap),
                 Row(
                   children: [
                     Expanded(
@@ -91,14 +89,11 @@ class ServiceGroupCard extends StatelessWidget {
                         child: Text('$count appliances',
                             maxLines: 1,
                             softWrap: false,
-                            style: TextStyle(
-                                color: linkColor,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700)),
+                            style: AppType.cardTitle.copyWith(color: linkColor)),
                       ),
                     ),
-                    const SizedBox(width: 2),
-                    Icon(Icons.chevron_right_rounded, size: 18, color: subColor),
+                    const SizedBox(width: AppSpace.xs),
+                    Icon(Icons.chevron_right_rounded, size: 20, color: subColor),
                   ],
                 ),
               ],
@@ -132,7 +127,7 @@ class ServiceGroupGrid extends StatelessWidget {
       final a = groups[i];
       final b = i + 1 < groups.length ? groups[i + 1] : null;
       rows.add(Padding(
-        padding: EdgeInsets.only(bottom: i + 2 < groups.length ? 12 : 0),
+        padding: EdgeInsets.only(bottom: i + 2 < groups.length ? AppSpace.gap : 0),
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -140,7 +135,7 @@ class ServiceGroupGrid extends StatelessWidget {
               Expanded(
                   child: ServiceGroupCard(
                       group: a, light: light, compact: compact, onTap: () => onTap(a))),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpace.gap),
               Expanded(
                 child: b == null
                     ? const SizedBox.shrink()

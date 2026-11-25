@@ -17,6 +17,7 @@ import 'services/entity_update_service.dart';
 import 'services/home_services.dart';
 import 'services/session_manager.dart';
 import 'theme/app_theme.dart';
+import 'theme/app_type.dart';
 import 'utils/devices_filter_bus.dart';
 import 'utils/warranty_utils.dart';
 import 'widgets/app_dialog_field.dart';
@@ -57,6 +58,7 @@ class HomeTab extends StatefulWidget {
   final ValueChanged<bool>? onHomeStatusChanged;
   final void Function(String? homeId, String address, String pincode)? onSelectedHomeChanged;
   final ValueChanged<String>? onOpenDevices; // 'All' | 'Warranty' | 'Attention'
+  final VoidCallback? onOpenServices; // "See All" -> Service tab
 
   const HomeTab({
     super.key,
@@ -70,6 +72,7 @@ class HomeTab extends StatefulWidget {
     this.onHomeStatusChanged,
     this.onSelectedHomeChanged,
     this.onOpenDevices,
+    this.onOpenServices,
   });
 
   @override
@@ -935,6 +938,93 @@ class HomeTabState extends State<HomeTab> {
     _snack(AppStrings.homeAdded);
   }
 
+  // ── Edit the currently selected home (name / address / pincode) ──
+  void _openEditHomeDialog() {
+    final home = _currentHome;
+    final homeId = home?['id']?.toString();
+    if (home == null || homeId == null) return;
+
+    final savedName = home['homeName']?.toString().trim() ?? '';
+    final nameController = TextEditingController(
+        text: savedName.toLowerCase() == 'default home' ? '' : savedName);
+    final addressController =
+        TextEditingController(text: home['address']?.toString() ?? '');
+    final pincodeController =
+        TextEditingController(text: home['pincode']?.toString() ?? '');
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.cardBg,
+          shape: AppDecor.dialogShape,
+          title: const Text('Edit home', style: AppText.dialogTitle),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppDialogField(controller: nameController, hint: 'Home name'),
+                const SizedBox(height: 12),
+                AppDialogField(controller: addressController, hint: 'Address'),
+                const SizedBox(height: 12),
+                AppDialogField(
+                    controller: pincodeController,
+                    hint: 'Pincode',
+                    keyboardType: TextInputType.number,
+                    maxLength: 6),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+              child: Text(AppStrings.cancel, style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      final newAddress = addressController.text.trim();
+                      final newPincode = pincodeController.text.trim();
+                      final newName = nameController.text.trim();
+                      if (newAddress.isEmpty) {
+                        _snack('Please enter the address');
+                        return;
+                      }
+                      setDialogState(() => isSaving = true);
+                      final ok = await _submitAddressUpdate(
+                        homeId,
+                        newAddress,
+                        newPincode,
+                        homeName: newName.isNotEmpty ? newName : null,
+                      );
+                      if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      if (ok && mounted) {
+                        await _fetchAppliances(homeId: homeId);
+                        if (!mounted) return;
+                        setState(_loadCachedCounts);
+                        _notifySelectedHome();
+                        _prefetchServiceCounts();
+                        _prefetchAllApplianceProviders();
+                      }
+                    },
+              child: isSaving
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          color: AppColors.onPrimary, strokeWidth: 2))
+                  : Text(AppStrings.save, style: TextStyle(color: AppColors.onPrimary)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // Creates a brand-new home on the backend and returns its homeId.
   Future<String?> _createNewHomeRecord({
     required String address,
@@ -1224,7 +1314,7 @@ class HomeTabState extends State<HomeTab> {
                             slivers: [
                               SliverToBoxAdapter(child: _buildHeader()),
                               SliverPadding(
-                                padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                                 sliver: SliverList(
                                   delegate: SliverChildListDelegate([
                                     if (_error != null)
@@ -1236,16 +1326,16 @@ class HomeTabState extends State<HomeTab> {
                                     else if (!hasHome) ...[
                                       _buildRegisterHomeCard(),
                                       _buildDefaultHomePreview(),
-                                      const SizedBox(height: 28),
+                                      const SizedBox(height: 24),
                                       _buildAppliancesGadgets(),
-                                      const SizedBox(height: 28),
+                                      const SizedBox(height: 24),
                                       _buildServicesNearYou(),
                                     ] else ...[
                                       // Devices are INSIDE the active home card.
                                       _buildActiveHomeCard(),
-                                      const SizedBox(height: 28),
+                                      const SizedBox(height: 24),
                                       _buildAppliancesGadgets(),
-                                      const SizedBox(height: 28),
+                                      const SizedBox(height: 24),
                                       _buildServicesNearYou(),
                                     ],
                                   ]),
@@ -1282,7 +1372,7 @@ Widget _buildHeader() {
         // ── Top bar: logo | home switcher | profile ──
         Container(
           width: double.infinity,
-          padding: EdgeInsets.fromLTRB(16, topPad + 10, 16, 10),
+          padding: EdgeInsets.fromLTRB(16, topPad + 8, 16, 8),
           decoration: BoxDecoration(
             color: AppColors.cardBg,
             boxShadow: const [
@@ -1308,9 +1398,9 @@ Widget _buildHeader() {
     borderRadius: BorderRadius.circular(10),
   ),
   child: Icon(Icons.home_outlined,
-      size: 17, color: AppColors.lightPrimary),
+      size: 16, color: AppColors.lightPrimary),
 ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1322,10 +1412,7 @@ Widget _buildHeader() {
                                         child: Text(title,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                                color: AppColors.lightTextDark,
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w700)),
+                                            style: AppType.headerTitle.copyWith(color: AppColors.lightTextDark)),
                                       ),
                                       Icon(Icons.keyboard_arrow_down_rounded,
                                           size: 20, color: AppColors.lightTextMuted),
@@ -1343,13 +1430,13 @@ Widget _buildHeader() {
                       )
                     : const SizedBox.shrink(),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
              GestureDetector(
   behavior: HitTestBehavior.opaque,
   onTap: widget.onProfileTap,
   child: SizedBox(
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
     child: Stack(
       clipBehavior: Clip.none,
       children: [
@@ -1369,7 +1456,7 @@ Widget _buildHeader() {
               hasName ? _displayName[0].toUpperCase() : 'P',
               style: TextStyle(
                 color: AppColors.lightPrimary,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
                 fontSize: 16,
               ),
             ),
@@ -1380,8 +1467,8 @@ Widget _buildHeader() {
           right: 0,
           top: 0,
           child: Container(
-            width: 11,
-            height: 11,
+            width: 12,
+            height: 12,
             decoration: BoxDecoration(
               color: const Color(0xFF22C55E),
               shape: BoxShape.circle,
@@ -1396,7 +1483,7 @@ Widget _buildHeader() {
             ],
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
 
         // ── Banner carousel (unchanged) ──
         ValueListenableBuilder<List<String>>(
@@ -1418,7 +1505,7 @@ Widget _buildHeader() {
                       final src = images[i];
                       final placeholder = Container(color: AppColors.lightSurface);
                       return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(18),
                           child: src.startsWith('http')
@@ -1434,7 +1521,7 @@ Widget _buildHeader() {
                     },
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -1457,7 +1544,7 @@ Widget _buildHeader() {
             );
           },
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
       ],
     ),
   );
@@ -1486,8 +1573,8 @@ Widget _buildBrandLogo() {
       Color(0xFF16A34A),
       Color(0xFFD97706),
     ];
-    const double size = 26;
-    const double overlap = 18;
+    const double size = 24;
+    const double overlap = 16;
 
     String initialOf(Map<String, dynamic> m) {
       if (m['mobile']?.toString() == myPlain) return 'Y';
@@ -1555,7 +1642,7 @@ Widget avatars() {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: AppDecor.lightCard(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1572,10 +1659,7 @@ Widget avatars() {
                     Row(
   children: [
     Text('Members',
-        style: TextStyle(
-            color: AppColors.lightTextDark,
-            fontSize: 15,
-            fontWeight: FontWeight.w700)),
+        style: AppType.headerTitle.copyWith(color: AppColors.lightTextDark)),
     if (members.isNotEmpty) ...[
       const SizedBox(width: 8),
       Flexible(
@@ -1606,20 +1690,17 @@ Widget avatars() {
           ),
 
           // ── Devices (same layer, inside the Active Home card) ──
-          Divider(height: 28, color: AppColors.lightBorder),
+          Divider(height: 24, color: AppColors.lightBorder),
           Row(
             children: [
               Expanded(
                 child: Text.rich(TextSpan(children: [
                   TextSpan(
                       text: 'Devices ',
-                      style: TextStyle(
-                          color: AppColors.lightTextDark,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700)),
+                      style: AppType.headerTitle.copyWith(color: AppColors.lightTextDark)),
                   TextSpan(
                       text: '($deviceCount)',
-                      style: TextStyle(color: AppColors.lightTextMuted, fontSize: 14)),
+                      style: AppType.body.copyWith(color: AppColors.lightTextMuted)),
                 ])),
               ),
               if (deviceCount > _maxDevicesOnHome)
@@ -1643,6 +1724,10 @@ Widget avatars() {
       color: AppColors.cardBg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       onSelected: (value) {
+        if (value == -2) {
+          _openEditHomeDialog();
+          return;
+        }
         if (value == -1) {
           _openAddHomeDialog();
           return;
@@ -1693,6 +1778,16 @@ Widget avatars() {
             ),
         const PopupMenuDivider(),
         PopupMenuItem<int>(
+          value: -2,
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined, size: 18, color: AppColors.lightPrimary),
+              const SizedBox(width: 10),
+              const Text('Edit home', style: AppText.lightLink),
+            ],
+          ),
+        ),
+        PopupMenuItem<int>(
           value: -1,
           child: Row(
             children: [
@@ -1726,22 +1821,7 @@ Widget avatars() {
   Widget _buildDevicesList() {
     final devices = _allDeviceEntries;
 
-    if (devices.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: AppDecor.lightCard(),
-        child: Column(
-          children: [
-            Icon(Icons.devices_other_rounded, color: AppColors.lightChevron, size: 32),
-            const SizedBox(height: 8),
-            const Text(AppStrings.noAppliancesYet, style: AppText.lightCardTitle),
-            const SizedBox(height: 4),
-            const Text(AppStrings.tapAddDeviceBelow, style: AppText.lightCaption),
-          ],
-        ),
-      );
-    }
+    if (devices.isEmpty) return const SizedBox.shrink();
 
     final shown = devices.take(_maxDevicesOnHome).toList();
     final isDark = ThemeController.isDark;
@@ -1750,10 +1830,10 @@ Widget avatars() {
       children: [
         for (int i = 0; i < shown.length; i++)
           Container(
-            margin: EdgeInsets.only(bottom: i == shown.length - 1 ? 0 : 10),
+            margin: EdgeInsets.only(bottom: i == shown.length - 1 ? 0 : 12),
             decoration: BoxDecoration(
               color: isDark ? AppColors.cardBgAlt : Colors.white,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: isDark
                   ? null
                   : const [
@@ -1782,12 +1862,12 @@ Widget avatars() {
       onTap: () => _openDeviceDetails(e),
       borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             Container(
-              width: 46,
-              height: 46,
+              width: 48,
+              height: 48,
               decoration: AppDecor.lightIconBox(radius: 12),
               clipBehavior: Clip.antiAlias,
               child: (imageUrl != null && imageUrl.isNotEmpty)
@@ -1801,7 +1881,7 @@ Widget avatars() {
                 children: [
                   Text(product,
                       maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCardTitle),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
                   Text(hasBrand ? brand : AppStrings.brandNotAdded,
                       maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.lightCaption),
                 ],
@@ -1810,7 +1890,7 @@ Widget avatars() {
             const SizedBox(width: 8),
             DeviceWarrantyIndicator(e),
             const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded, color: AppColors.lightChevron, size: 22),
+            Icon(Icons.chevron_right_rounded, color: AppColors.lightChevron, size: 24),
           ],
         ),
       ),
@@ -1830,13 +1910,13 @@ Widget _buildAppliancesGadgets() {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Appliance & Gadget Services', style: AppText.lightSectionTitle),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text('Doorstep diagnosis & expert repair', style: AppText.lightCaption),
               ],
             ),
           ),
           TextButton(
-            onPressed: () => _openDevicesTabWith('Catalog'),
+            onPressed: () => widget.onOpenServices?.call(),
             child: Text('See All', style: AppText.lightLink),
           ),
         ],
@@ -1904,12 +1984,12 @@ Widget _buildAppliancesGadgets() {
         const SizedBox(height: 12),
         LayoutBuilder(
           builder: (context, constraints) {
-            const gap = 10.0;
-            const visible = 3.3; // 3 full cards + 4th card lighta peek
+            const gap = 12.0;
+            const visible = 3.5; // 3 full cards + half of the 4th (scroll hint)
             final cardWidth = (constraints.maxWidth - gap * 3) / visible;
 
             return SizedBox(
-              height: 118,
+              height: 120,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: categories.length,
@@ -1937,7 +2017,7 @@ Widget _buildAppliancesGadgets() {
                             color: color.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Icon(cat['icon'] as IconData, color: color, size: 22),
+                          child: Icon(cat['icon'] as IconData, color: color, size: 24),
                         ),
                         const Spacer(),
                         FittedBox(
@@ -1984,7 +2064,7 @@ Widget _buildAppliancesGadgets() {
     return GestureDetector(
       onTap: _openAddHomeDialog,
       child: Container(
-        height: 60,
+        height: 56,
         width: double.infinity,
         decoration: BoxDecoration(
           color: fill,
@@ -1995,8 +2075,8 @@ Widget _buildAppliancesGadgets() {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 42,
-              height: 42,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 color: accent,
                 borderRadius: BorderRadius.circular(12),
@@ -2014,7 +2094,7 @@ Widget _buildAppliancesGadgets() {
               'Set Up Your Home',
               style: TextStyle(
                 color: fg,
-                fontSize: 18,
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.2,
               ),
@@ -2034,7 +2114,7 @@ Widget _buildAppliancesGadgets() {
         // ── Add Your Devices card ──
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: AppColors.cardBg,
             borderRadius: BorderRadius.circular(22),
@@ -2085,25 +2165,17 @@ Widget _buildAppliancesGadgets() {
               const SizedBox(height: 16),
               Text(
                 'Add Your Devices',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: AppType.sectionTitle.copyWith(color: AppColors.textPrimary),
               ),
               const SizedBox(height: 8),
               Text(
                 'Register your appliances to manage device details, track warranty information, and request services easily.',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 15,
-                  height: 1.4,
-                ),
+                style: AppType.body.copyWith(color: AppColors.textSecondary),
               ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
-                height: 52,
+                height: 56,
                 child: ElevatedButton.icon(
                   onPressed: _requestScan, // 👉 Scan tab
                   style: ElevatedButton.styleFrom(
@@ -2118,7 +2190,7 @@ Widget _buildAppliancesGadgets() {
                     'Add Devices',
                     style: TextStyle(
                       color: AppColors.onPrimary,
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

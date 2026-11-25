@@ -14,6 +14,11 @@ import 'constants/api_config.dart';
 import 'theme/app_theme.dart';
 import 'services/api_client.dart';
 import 'services/home_services.dart';
+import 'services/appliance_services_loader.dart';
+import 'home_tab.dart' show ScanRequest;
+import 'widgets/device_details_sheet.dart';
+import 'widgets/service_group_card.dart';
+import 'widgets/service_group_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
 // ---------------------------------------------------------------------
 // ADD THIS to lib/constants/api_config.dart (if not already present):
@@ -27,6 +32,8 @@ class ServiceTab extends StatefulWidget {
   final String address;
   final String pincode;
   final String name;
+  final String? homeId;
+  final ScanRequest? onScanTap;
 
   const ServiceTab({
     super.key,
@@ -34,6 +41,8 @@ class ServiceTab extends StatefulWidget {
     required this.address,
     required this.pincode,
     this.name = '',
+    this.homeId,
+    this.onScanTap,
   });
 
   @override
@@ -852,6 +861,61 @@ Widget build(BuildContext context) {
       ),
     );
   }
+  // ---------- Appliance & Gadget Services (same cards as Devices tab) ----------
+  Widget _buildApplianceServices() {
+    return ValueListenableBuilder<List<Map<String, dynamic>>>(
+      valueListenable: ApplianceServicesLoader.groups,
+      builder: (context, groups, _) {
+        if (groups.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Appliance & Gadget Services', style: AppText.lightSectionTitle),
+            const SizedBox(height: 4),
+            const Text('Doorstep diagnosis & expert repair', style: AppText.lightCaption),
+            const SizedBox(height: 12),
+            ServiceGroupGrid(groups: groups, compact: true, onTap: _openServiceGroup),
+          ],
+        );
+      },
+    );
+  }
+
+  // Tap on a card -> list of ALL services in that group
+  void _openServiceGroup(Map<String, dynamic> g) {
+    showServiceGroupSheet(
+      context,
+      group: g,
+      onSelect: _openApplianceService,
+      onScan: _requestScan,
+    );
+  }
+
+  // Tap on an appliance -> nearby service providers
+  void _openApplianceService(String name) {
+    showDeviceServiceSheet(
+      context,
+      DeviceEntry(
+        homeId: widget.homeId,
+        homeAddress: widget.address,
+        pincode: widget.pincode,
+        roomKey: 'default',
+        roomName: 'Default',
+        raw: {'product': name, 'brand': ''},
+      ),
+      mobileNumber: widget.mobileNumber,
+      name: widget.name,
+    );
+  }
+
+  void _requestScan() {
+    widget.onScanTap?.call(
+      homeId: widget.homeId,
+      address: widget.address,
+      pincode: widget.pincode,
+    );
+  }
+
   Widget _buildComingSoon() {
   return Scaffold(
     backgroundColor: AppColors.scaffoldBg,
@@ -893,6 +957,8 @@ Widget build(BuildContext context) {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const _ComingSoonCard(),
+                  const SizedBox(height: 24),
+                  _buildApplianceServices(),
                   const SizedBox(height: 24),
                   _sectionHeader(AppStrings.quickBook),
                   const SizedBox(height: 10),

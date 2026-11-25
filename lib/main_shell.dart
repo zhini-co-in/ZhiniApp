@@ -6,6 +6,7 @@ import 'service_tab.dart';
 import 'profile_tab.dart';
 import 'scan_tab.dart';
 import 'theme/app_theme.dart';
+import 'theme/app_type.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'models/home_model.dart';
 import 'theme/theme_controller.dart';
@@ -165,6 +166,7 @@ class _MainShellState extends State<MainShell> {
       onHomeStatusChanged: _onHomeStatusChanged,
       onSelectedHomeChanged: _onSelectedHomeChanged,
       onOpenDevices: (_) => _switchTab(_Slot.devices),
+      onOpenServices: () => _switchTab(_Slot.service),
     );
 
     final tabAddress = _selectedAddress.isNotEmpty ? _selectedAddress : widget.address;
@@ -185,6 +187,8 @@ class _MainShellState extends State<MainShell> {
       address: tabAddress,
       pincode: tabPincode,
       name: _name,
+      homeId: _selectedHomeId,
+      onScanTap: _goToScan,
     );
 
     final profileTab = ProfileTab(
@@ -233,6 +237,10 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // BOTTOM NAV — outline icons, 24px icon, 12px label, 64px bar
+  // (+ system safe-area only; no extra empty space)
+  // ─────────────────────────────────────────────────────────────
   Widget _buildBottomNavBar() {
     return Container(
       decoration: BoxDecoration(
@@ -255,16 +263,15 @@ class _MainShellState extends State<MainShell> {
             ),
           ),
           child: SizedBox(
-            height: 68,
+            height: 64,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _navItem(icon: Icons.home_rounded, label: 'Home', slot: _Slot.home),
+                _navItem(icon: Icons.home_outlined, label: 'Home', slot: _Slot.home),
                 if (_hasHome)
-                  _navItem(icon: Icons.devices_other_rounded, label: 'Devices', slot: _Slot.devices),
+                  _navItem(icon: Icons.devices_other_outlined, label: 'Devices', slot: _Slot.devices),
                 if (_hasHome)
-                  _navItem(icon: Icons.build_rounded, label: 'Services', slot: _Slot.service),
-                _navItem(icon: Icons.person_rounded, label: 'Profile', slot: _Slot.profile),
+                  _navItem(icon: Icons.work_outline_rounded, label: 'Services', slot: _Slot.service), // briefcase
+                _navItem(icon: Icons.person_outline_rounded, label: 'Profile', slot: _Slot.profile),
               ],
             ),
           ),
@@ -273,27 +280,24 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
+  // Each tab takes equal width (Expanded) so icons are evenly aligned.
   Widget _navItem({required IconData icon, required String label, required int slot}) {
     final selected = _currentIndex == slot;
     final color = selected ? AppColors.primary : AppColors.textFaint;
 
-    return InkWell(
-      onTap: () => _switchTab(slot),
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        width: 64,
+    return Expanded(
+      child: InkWell(
+        onTap: () => _switchTab(slot),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 22, color: color),
-            const SizedBox(height: 3),
+            Icon(icon, size: 24, color: color),
+            const SizedBox(height: AppSpace.xs),
             Text(
               label,
-              style: TextStyle(
-                fontSize: 10.5,
-                color: color,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
+              maxLines: 1,
+              style: (selected ? AppType.navActive : AppType.navInactive)
+                  .copyWith(color: color),
             ),
           ],
         ),

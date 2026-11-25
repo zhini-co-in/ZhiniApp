@@ -135,7 +135,7 @@ class _ScanShutterButtonState extends State<ScanShutterButton>
         ),
         const SizedBox(height: 8),
         Text(
-          widget.busy ? 'Capturing…' : 'Tap to scan',
+          widget.busy ? 'Capturing…' : '',
           style: TextStyle(
             color: AppColors.textPrimary,
             fontSize: 13,

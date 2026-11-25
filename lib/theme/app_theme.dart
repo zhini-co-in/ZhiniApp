@@ -153,29 +153,35 @@ class AppText {
   static const TextStyle cancelAction = TextStyle(color: AppColors.textMuted);
 
   // ───────────── LIGHT ─────────────
+  // Type scale: 18 (section) / 16 (header) / 14 (card, link) / 12 (caption)
   static const TextStyle lightSectionTitle = TextStyle(
     color: AppColors.lightTextDark,
-    fontSize: 17,
-    fontWeight: FontWeight.w700,
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
   );
   static const TextStyle lightCardTitle = TextStyle(
     color: AppColors.lightTextDark,
-    fontSize: 13.5,
-    fontWeight: FontWeight.w700,
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    height: 1.4,
   );
   static const TextStyle lightCaption = TextStyle(
     color: AppColors.lightTextMuted,
-    fontSize: 11.5,
+    fontSize: 12,
+    fontWeight: FontWeight.w400,
+    height: 1.4,
   );
   static const TextStyle lightLink = TextStyle(
     color: AppColors.lightPrimary,
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: FontWeight.w600,
   );
   static const TextStyle lightSuccessCaption = TextStyle(
     color: AppColors.lightSuccess,
-    fontSize: 11,
-    fontWeight: FontWeight.w600,
+    fontSize: 12,
+    fontWeight: FontWeight.w500,
+    height: 1.4,
   );
   static const TextStyle lightHeroTitle = TextStyle(
     color: AppColors.lightTextDark,
