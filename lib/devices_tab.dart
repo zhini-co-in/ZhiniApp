@@ -16,9 +16,6 @@ import 'models/home_model.dart';
 import 'theme/app_theme.dart';
 import 'utils/devices_filter_bus.dart';
 import 'widgets/device_details_sheet.dart';
-import 'widgets/service_group_card.dart';
-import 'widgets/service_group_sheet.dart';
-import 'services/appliance_services_loader.dart';
 import 'services/location_helper.dart';
 
 class DevicesTab extends StatefulWidget {
@@ -81,9 +78,6 @@ class _DevicesTabState extends State<DevicesTab> {
     {'label': AppStrings.catFan, 'key': 'fan'},
   ];
   String? _categoryFilter;
-    bool _showAllHomes = false; // "View all" -> devices from every home
-      bool _showCatalog = false; // "See All" from Home -> appliance catalog
-      final GlobalKey _catalogKey = GlobalKey(); // "See All" -> scroll here
 
   bool get _searchActive => _searchFocus.hasFocus || _query.trim().isNotEmpty;
 
@@ -112,25 +106,13 @@ class _DevicesTabState extends State<DevicesTab> {
     if (f == null) return;
     devicesFilterRequest.value = null; // consume
 
-          void apply() {
-      _activeTab = f == 'Catalog' ? 'All' : f;
-      _showAllHomes = false;
-      _quickFilters.clear();
-      _roomFilter = null;
-      _categoryFilter = null;
-      _clearAdvanced();
-
-      // Home "See All" -> scroll down to the services section
-      if (f == 'Catalog') {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final ctx = _catalogKey.currentContext;
-          if (ctx != null) {
-            Scrollable.ensureVisible(ctx,
-                duration: const Duration(milliseconds: 350), curve: Curves.easeInOut);
-          }
-        });
-      }
-    }
+         void apply() {
+  _activeTab = f == 'Catalog' ? 'All' : f;
+  _quickFilters.clear();
+  _roomFilter = null;
+  _categoryFilter = null;
+  _clearAdvanced();
+}
 
     if (initial) {
       apply();
@@ -201,13 +183,6 @@ class _DevicesTabState extends State<DevicesTab> {
       }
     });
     return entries;
-  }
-  List<_DeviceEntry> _flattenAllHomes(List<HomeModel> homes) {
-    final out = <_DeviceEntry>[];
-    for (final h in homes) {
-      out.addAll(_flatten(h.toMap()));
-    }
-    return out;
   }
 
   // -----------------------------------------------------------------
@@ -391,17 +366,11 @@ class _DevicesTabState extends State<DevicesTab> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1) User's added devices (top)
-        _searchActive
+                _searchActive
             ? _buildSearchMode(allDevices, filtered)
             : (_advancedActive
                 ? _buildFilteredView(allDevices, filtered)
                 : _buildDashboard(allDevices)),
-
-        // 2) Appliances & Gadgets (below)
-        if (!_searchActive) ...[
-          const SizedBox(height: 28),
-          KeyedSubtree(key: _catalogKey, child: _buildCatalogView()),
-        ],
       ],
     ),
   ),
@@ -1268,59 +1237,6 @@ class _DevicesTabState extends State<DevicesTab> {
     return Text(title,
         style: const TextStyle(
             color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8));
-  }
-
-    // ---------------- APPLIANCE CATALOG (from Home "See All") ----------------
-  // ---------------- SERVICE GROUPS (from Home "See All") ----------------
-  // ---------------- APPLIANCE & GADGET SERVICES (below my devices) ----------------
-Widget _buildCatalogView() {
-  return ValueListenableBuilder<List<Map<String, dynamic>>>(
-    valueListenable: ApplianceServicesLoader.groups,
-    builder: (context, groups, _) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Appliance & Gadget Services',
-              style: TextStyle(
-                  color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 2),
-          const Text('Doorstep diagnosis & expert repair', style: AppText.caption),
-          const SizedBox(height: 12),
-          ...groups.map((g) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: ServiceGroupCard(group: g, onTap: () => _openGroupItems(g)),
-              )),
-        ],
-      );
-    },
-  );
-}
-
-  // Tap on a card -> all appliances of that group
-void _openGroupItems(Map<String, dynamic> g) {
-  showServiceGroupSheet(
-    context,
-    group: g,
-    onSelect: _openCatalogService,
-    onScan: _requestScan,
-  );
-}
-  void _openCatalogService(String name) {
-    showDeviceServiceSheet(
-      context,
-      _DeviceEntry(
-        homeId: _currentHomeIdCache,
-        homeAddress: widget.address,
-        pincode: widget.pincode,
-        roomKey: 'default',
-        roomName: 'Default',
-        raw: {'product': name, 'brand': ''},
-        latitude: _searchLat,
-        longitude: _searchLng,
-      ),
-      mobileNumber: widget.mobileNumber,
-      name: widget.name,
-    );
   }
 
   // Dashboard card: tap -> details sheet, three-dot menu for quick actions.
