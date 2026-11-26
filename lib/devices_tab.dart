@@ -19,6 +19,7 @@ import 'widgets/device_details_sheet.dart';
 import 'widgets/service_group_card.dart';
 import 'widgets/service_group_sheet.dart';
 import 'services/appliance_services_loader.dart';
+import 'services/location_helper.dart';
 
 class DevicesTab extends StatefulWidget {
   final String mobileNumber;
@@ -58,6 +59,19 @@ class _DevicesTabState extends State<DevicesTab> {
   // Id of the home currently shown (set in build). Used by the scan buttons
   // so new devices are added to THIS home instead of creating a new one.
   String? _currentHomeIdCache;
+    double? _gpsLat;
+  double? _gpsLng;
+  Map<String, dynamic>? _homeCache;
+
+  bool get _registered =>
+      _homeCache != null &&
+      (_homeCache!['address']?.toString().trim().toLowerCase() ?? '') != 'default';
+  double? get _searchLat => _registered
+      ? (double.tryParse(_homeCache?['latitude']?.toString() ?? '') ?? _gpsLat)
+      : _gpsLat;
+  double? get _searchLng => _registered
+      ? (double.tryParse(_homeCache?['longitude']?.toString() ?? '') ?? _gpsLng)
+      : _gpsLng;
 
   static const List<Map<String, String>> _categories = [
     {'label': AppStrings.catAc, 'key': 'ac'},
@@ -80,7 +94,15 @@ class _DevicesTabState extends State<DevicesTab> {
       setState(() => _query = _searchController.text);
     });
     devicesFilterRequest.addListener(_onFilterRequest);
-    _consumeFilterRequest(initial: true); // request came before this tab was created
+    _consumeFilterRequest(initial: true);
+    LocationHelper.current().then((p) {
+      if (p != null && mounted) {
+        setState(() {
+          _gpsLat = p.latitude;
+          _gpsLng = p.longitude;
+        });
+      }
+    });
   }
 
   void _onFilterRequest() => _consumeFilterRequest();
@@ -173,6 +195,8 @@ class _DevicesTabState extends State<DevicesTab> {
           roomKey: roomKey,
           roomName: roomKey.isNotEmpty ? '${roomKey[0].toUpperCase()}${roomKey.substring(1)}' : roomKey,
           raw: map,
+                    latitude: _searchLat,
+          longitude: _searchLng,
         ));
       }
     });
@@ -335,6 +359,7 @@ class _DevicesTabState extends State<DevicesTab> {
       builder: (context, box, _) {
         final home = _findCurrentHome(box.values.toList());
         _currentHomeIdCache = home?['id']?.toString();
+                _homeCache = home;
         final allDevices = _flatten(home);
         final filtered = _applyAllFilters(allDevices);
         final city = (home?['address']?.toString() ?? widget.address).split(',').first.trim();
@@ -1280,7 +1305,7 @@ void _openGroupItems(Map<String, dynamic> g) {
     onScan: _requestScan,
   );
 }
-    void _openCatalogService(String name) {
+  void _openCatalogService(String name) {
     showDeviceServiceSheet(
       context,
       _DeviceEntry(
@@ -1290,6 +1315,8 @@ void _openGroupItems(Map<String, dynamic> g) {
         roomKey: 'default',
         roomName: 'Default',
         raw: {'product': name, 'brand': ''},
+        latitude: _searchLat,
+        longitude: _searchLng,
       ),
       mobileNumber: widget.mobileNumber,
       name: widget.name,

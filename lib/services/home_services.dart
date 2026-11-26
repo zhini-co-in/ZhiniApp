@@ -2,7 +2,9 @@
 //
 // Single shared place for "Services near you" (Home tab) and "Quick book"
 // (Service tab): categories, fetch, counts and the bottom sheet.
-// Registered users -> pincode. Unregistered users -> current GPS lat/long.
+// Backend (scrapeHomeServices) needs lat/lng, so ALWAYS coordinates:
+//   registered home  -> that home's saved lat/lng
+//   unregistered     -> current GPS lat/lng
 //
 // OFFLINE: every successful fetch is cached in the Hive 'session' box.
 //  - Counts: a failed fetch is SKIPPED (never reported as 0), so the last
@@ -33,13 +35,12 @@ class HomeServices {
 
   // ---------------------------------------------------------------------
   // CACHE (Hive 'session' box, opened in main.dart)
+  // Key is based on coordinates only (2 decimals ~ 1 km).
   // ---------------------------------------------------------------------
   static String _cacheKey(
-      String serviceType, String pin, double? latitude, double? longitude) {
-    final where = pin.isNotEmpty
-        ? pin
-        : '${latitude?.toStringAsFixed(2)},${longitude?.toStringAsFixed(2)}';
-    return 'svc:$serviceType:$where';
+      String serviceType, double? latitude, double? longitude) {
+    return 'svc:$serviceType:'
+        '${latitude?.toStringAsFixed(2)},${longitude?.toStringAsFixed(2)}';
   }
 
   static void _writeCache(String key, List<Map<String, dynamic>> list) {
@@ -66,8 +67,8 @@ class HomeServices {
   // FETCH
   // ---------------------------------------------------------------------
 
-  /// Returns the providers, or **null if the request failed** (offline, server
-  /// error...). An empty list means "request worked, no providers".
+  /// Returns the providers, or **null if the request failed / no coordinates**
+  /// (offline, server error, GPS not available). Empty list = "worked, none".
   static Future<List<Map<String, dynamic>>?> fetchOrNull(
     String serviceType,
     String pincode, {
@@ -75,16 +76,16 @@ class HomeServices {
     double? longitude,
   }) async {
     final pin = pincode.trim();
-    final hasGps = latitude != null && longitude != null;
 
-    // Neither GPS nor pincode -> nothing to search with.
-    if (!hasGps && pin.isEmpty) return [];
+    // Backend needs coordinates. No coordinates -> don't call.
+    if (latitude == null || longitude == null) return null;
 
     try {
       var url = '${ApiConfig.homeServicesUrl}'
-          '?serviceType=${Uri.encodeQueryComponent(serviceType)}';
+          '?serviceType=${Uri.encodeQueryComponent(serviceType)}'
+          '&latitude=$latitude&longitude=$longitude';
+      // pincode is optional extra; backend ignores it if it only uses lat/lng.
       if (pin.isNotEmpty) url += '&pincode=${Uri.encodeQueryComponent(pin)}';
-      if (hasGps) url += '&latitude=$latitude&longitude=$longitude';
 
       final response = await ApiClient.post(url);
       debugPrint('🔧 Home services ($serviceType) status: ${response.statusCode}');
@@ -98,7 +99,7 @@ class HomeServices {
           final sorted = ProviderSort.sort(
             list.map((e) => Map<String, dynamic>.from(e as Map)).toList(),
           );
-          _writeCache(_cacheKey(serviceType, pin, latitude, longitude), sorted);
+          _writeCache(_cacheKey(serviceType, latitude, longitude), sorted);
           return sorted;
         }
       }
@@ -109,7 +110,7 @@ class HomeServices {
   }
 
   /// Providers for [serviceType]. If the request fails, the last cached list
-  /// is returned (or [] if there is none). Other screens can keep using this.
+  /// is returned (or [] if there is none).
   static Future<List<Map<String, dynamic>>> fetch(
     String serviceType,
     String pincode, {
@@ -120,9 +121,7 @@ class HomeServices {
         latitude: latitude, longitude: longitude);
     if (fresh != null) return fresh;
 
-    return _readCache(_cacheKey(
-            serviceType, pincode.trim(), latitude, longitude)) ??
-        [];
+    return _readCache(_cacheKey(serviceType, latitude, longitude)) ?? [];
   }
 
   /// Fetches the count for every category; [onCount] is called as each
@@ -133,6 +132,7 @@ class HomeServices {
     double? latitude,
     double? longitude,
   }) async {
+    if (latitude == null || longitude == null) return;
     await Future.wait(categories.map((cat) async {
       final type = cat['type'] as String;
       final list = await fetchOrNull(type, pincode,
@@ -153,6 +153,14 @@ class HomeServices {
     final type = category['type'] as String;
     final label = category['label'] as String;
 
+    if (latitude == null || longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Location edukka mudiyala. GPS on pannunga / location permission kudunga.')),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.cardBg,
@@ -160,7 +168,6 @@ class HomeServices {
       shape: AppDecor.sheetShape,
       builder: (_) => ServiceCategorySheet(
         label: label,
-        // fetch() already falls back to the cached list when offline
         fetchServices: () => fetch(type, pincode,
             latitude: latitude, longitude: longitude),
       ),

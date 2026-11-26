@@ -527,11 +527,9 @@ Future<void> _openMapDirections(String address) async {
 
 // Offline-ku last providers cache (Hive 'session' box, opened in main.dart)
 String _nearbyCacheKey(DeviceEntry e) {
-  final loc = e.pincode.isNotEmpty
-      ? e.pincode
-      : (e.latitude != null && e.longitude != null)
-          ? 'gps:${e.latitude!.toStringAsFixed(2)},${e.longitude!.toStringAsFixed(2)}'
-          : '';
+  final loc = (e.latitude != null && e.longitude != null)
+      ? 'gps:${e.latitude!.toStringAsFixed(2)},${e.longitude!.toStringAsFixed(2)}'
+      : e.pincode;
   return 'nearby:${e.brand.toLowerCase()}|${e.product.toLowerCase()}|$loc|${e.isUnderWarranty}';
 }
 
@@ -540,9 +538,8 @@ Map<String, dynamic> _nearbyBody(DeviceEntry e) => {
       'brand': e.brand,
       'product': e.product,
       'isUnderWarranty': e.isUnderWarranty,
-      if (e.pincode.isNotEmpty)
-        'pincode': e.pincode
-      else if (e.latitude != null && e.longitude != null) ...{
+      if (e.pincode.isNotEmpty) 'pincode': e.pincode,
+      if (e.latitude != null && e.longitude != null) ...{
         'latitude': e.latitude,
         'longitude': e.longitude,
       },

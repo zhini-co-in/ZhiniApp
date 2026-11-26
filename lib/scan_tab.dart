@@ -27,6 +27,8 @@ import 'device_edit_screen.dart';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:image/image.dart' as imglib;
 import 'package:native_device_orientation/native_device_orientation.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
+import 'models/home_model.dart';
 class ScanTab extends StatefulWidget {
   final String mobileNumber;
   final String address;
@@ -121,6 +123,8 @@ class _ScanTabState extends State<ScanTab> {
   // (used when the user was not registered / had no home before).
   String? _homeAddress;
   String? _homePincode;
+    double? _homeLat;
+  double? _homeLng;
 
   String get _effectiveAddress =>
       (_homeAddress?.isNotEmpty ?? false) ? _homeAddress! : widget.address;
@@ -389,7 +393,26 @@ _lastCapturedImage = File(fixedPath);
   }
 
   // Silent GPS fetch.
+  // Registered home -> saved lat/lng. Illana current GPS.
   Future<String?> _buildGpsLocationQuery() async {
+    if (_homeLat != null && _homeLng != null) {
+      return '&latitude=$_homeLat&longitude=$_homeLng';
+    }
+    try {
+      final id = _currentHomeId;
+      if (id != null) {
+        for (final h in Hive.box<HomeModel>('homes').values) {
+          if (h.id == id &&
+              h.address.trim().toLowerCase() != 'default' &&
+              h.latitude != null &&
+              h.longitude != null) {
+            return '&latitude=${h.latitude}&longitude=${h.longitude}';
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Home coords read error: $e');
+    }
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return null;
@@ -653,10 +676,12 @@ Future<bool> _createHomeThenContinue() async {
   );
   if (homeId == null || !mounted) return false;
 
-  setState(() {
+   setState(() {
     _currentHomeId = homeId;
     _homeAddress = address;
     _homePincode = pincode;
+    _homeLat = pinLat;
+    _homeLng = pinLng;
   });
   widget.onHomeCreated?.call(homeId);
   await SessionManager.updateHomeId(homeId);

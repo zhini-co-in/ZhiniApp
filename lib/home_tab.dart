@@ -145,7 +145,8 @@ class HomeTabState extends State<HomeTab> {
   // True while the background "cache every appliance's providers" job runs.
   bool _prefetching = false;
 
-  String get _countsKey => 'serviceCounts:$_currentPincode';
+    String get _countsKey =>
+      'serviceCounts:${_hasRegisteredHome ? (_currentHomeId ?? _currentPincode) : 'gps'}';
 
   // Last known counts (offline-ku).
   void _loadCachedCounts() {
@@ -182,12 +183,13 @@ class HomeTabState extends State<HomeTab> {
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
       );
-            _lat = pos.latitude;
-      _lng = pos.longitude;
-      if (mounted) {
-        _prefetchServiceCounts();
-        _prefetchAllApplianceProviders();
-      }
+      if (!mounted) return;
+      setState(() {
+        _lat = pos.latitude;
+        _lng = pos.longitude;
+      });
+      _prefetchServiceCounts();
+      _prefetchAllApplianceProviders();
     } catch (e) {
       debugPrint('❌ Home GPS error: $e');
     }
@@ -283,7 +285,7 @@ class HomeTabState extends State<HomeTab> {
   // SERVICES NEAR YOU — data (shared HomeServices, pincode only)
   // ---------------------------------------------------------------------
   void _prefetchServiceCounts() {
-    final key = _countsKey; // capture the pincode this request is for
+    final key = _countsKey;
     HomeServices.prefetchCounts(
       _currentPincode,
       (type, count) {
@@ -291,8 +293,8 @@ class HomeTabState extends State<HomeTab> {
         setState(() => _serviceCounts[type] = count);
         _sessionBox.put(key, Map<String, int>.from(_serviceCounts));
       },
-      latitude: _useGps ? _lat : null,
-      longitude: _useGps ? _lng : null,
+      latitude: _searchLat,
+      longitude: _searchLng,
     );
   }
 
@@ -305,14 +307,13 @@ class HomeTabState extends State<HomeTab> {
     if (_homes.isEmpty) return; // wait until homes are loaded
 
     // Location: pincode irundha pincode, illa na GPS.
-       final pin = _currentPincode;
+           final pin = _currentPincode;
     final usePin = pin.isNotEmpty;
-    final lat = _currentHomeLat ?? _lat;
-    final lng = _currentHomeLng ?? _lng;
+    final lat = _searchLat;
+    final lng = _searchLng;
     if (lat == null || lng == null) return; // backend needs coordinates
-    final loc = usePin
-        ? pin
-        : 'gps:${lat.toStringAsFixed(2)},${lng.toStringAsFixed(2)}';
+    final loc =
+        'h:${_currentHomeId ?? 'gps'}:${lat.toStringAsFixed(2)},${lng.toStringAsFixed(2)}';
 
     // V3 key: old stamps ignored.
     final stampKey = 'nearbyPrefetchV3:$loc';
@@ -504,7 +505,8 @@ class HomeTabState extends State<HomeTab> {
               _restoreSelection();
               _loading = false;
             });
-            // Homes are loaded -> pincode is correct -> cache all providers.
+                        // Homes are loaded -> coordinates known -> counts + provider cache.
+            _prefetchServiceCounts();
             _prefetchAllApplianceProviders();
           }
           return;
@@ -667,6 +669,8 @@ class HomeTabState extends State<HomeTab> {
               ? '${roomKey[0].toUpperCase()}${roomKey.substring(1)}'
               : roomKey,
           raw: item,
+                    latitude: _searchLat,
+          longitude: _searchLng,
         ));
       }
     });
@@ -685,6 +689,11 @@ class HomeTabState extends State<HomeTab> {
       double.tryParse(_currentHome?['latitude']?.toString() ?? '');
   double? get _currentHomeLng =>
       double.tryParse(_currentHome?['longitude']?.toString() ?? '');
+        // Registered home -> home oda saved lat/lng (illana GPS). Register aagala -> GPS.
+  double? get _searchLat =>
+      _hasRegisteredHome ? (_currentHomeLat ?? _lat) : _lat;
+  double? get _searchLng =>
+      _hasRegisteredHome ? (_currentHomeLng ?? _lng) : _lng;
 
   void _notifySelectedHome() {
     final id = _currentHomeId;
@@ -1987,8 +1996,8 @@ Widget _buildAppliancesGadgets() {
       roomKey: _defaultRoomName.toLowerCase(),
       roomName: _defaultRoomName,
       raw: {'product': name, 'brand': ''},
-      latitude: _currentHomeLat ?? _lat,
-      longitude: _currentHomeLng ?? _lng,
+            latitude: _searchLat,
+      longitude: _searchLng,
     );
     showDeviceServiceSheet(
       context,
@@ -2029,8 +2038,8 @@ Widget _buildAppliancesGadgets() {
                       context,
                       cat,
                       _currentPincode,
-                      latitude: _useGps ? _lat : null,
-                      longitude: _useGps ? _lng : null,
+                      latitude: _searchLat,
+                      longitude: _searchLng,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

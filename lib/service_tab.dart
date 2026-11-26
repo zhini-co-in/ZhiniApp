@@ -20,6 +20,9 @@ import 'widgets/device_details_sheet.dart';
 import 'widgets/service_group_card.dart';
 import 'widgets/service_group_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
+import 'models/home_model.dart';
+import 'services/location_helper.dart';
 // ---------------------------------------------------------------------
 // ADD THIS to lib/constants/api_config.dart (if not already present):
 //
@@ -57,6 +60,25 @@ class ServiceTabState extends State<ServiceTab> {
   List<Map<String, dynamic>> _tickets = [];
   String _selectedFilter = 'all'; // 'all', 'open', 'in_progress', 'completed', 'cancelled'
   final Map<String, int> _quickBookCounts = {};
+    double? _gpsLat;
+  double? _gpsLng;
+
+  HomeModel? _myHome() {
+    for (final h in Hive.box<HomeModel>('homes').values) {
+      if (h.id == widget.homeId) return h;
+    }
+    return null;
+  }
+
+  bool get _registered {
+    final h = _myHome();
+    return h != null && h.address.trim().toLowerCase() != 'default';
+  }
+
+  double? get _searchLat =>
+      _registered ? (_myHome()?.latitude ?? _gpsLat) : _gpsLat;
+  double? get _searchLng =>
+      _registered ? (_myHome()?.longitude ?? _gpsLng) : _gpsLng;
 
   static const List<Map<String, String>> _filterOptions = [
     {'key': 'all', 'label': AppStrings.filterAll},
@@ -72,9 +94,14 @@ class ServiceTabState extends State<ServiceTab> {
   // QUICK BOOK COUNTS (shared HomeServices, pincode only)
   // ---------------------------------------------------------------------
   void _prefetchQuickBookCounts() {
-    HomeServices.prefetchCounts(widget.pincode, (type, count) {
-      if (mounted) setState(() => _quickBookCounts[type] = count);
-    });
+    HomeServices.prefetchCounts(
+      widget.pincode,
+      (type, count) {
+        if (mounted) setState(() => _quickBookCounts[type] = count);
+      },
+      latitude: _searchLat,
+      longitude: _searchLng,
+    );
   }
 
   @override
@@ -82,12 +109,19 @@ class ServiceTabState extends State<ServiceTab> {
     super.initState();
     if (!_comingSoon) _fetchTickets();
     _prefetchQuickBookCounts();
+    LocationHelper.current().then((p) {
+      if (p == null || !mounted) return;
+      _gpsLat = p.latitude;
+      _gpsLng = p.longitude;
+      _prefetchQuickBookCounts();
+    });
   }
 
   @override
   void didUpdateWidget(covariant ServiceTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.pincode != widget.pincode) {
+    if (oldWidget.pincode != widget.pincode ||
+        oldWidget.homeId != widget.homeId) {
       setState(() => _quickBookCounts.clear());
       _prefetchQuickBookCounts();
     }
@@ -902,6 +936,8 @@ Widget build(BuildContext context) {
         roomKey: 'default',
         roomName: 'Default',
         raw: {'product': name, 'brand': ''},
+        latitude: _searchLat,
+        longitude: _searchLng,
       ),
       mobileNumber: widget.mobileNumber,
       name: widget.name,
@@ -1210,8 +1246,14 @@ Widget build(BuildContext context) {
         final type = cat['type'] as String;
         final count = _quickBookCounts[type];
         final color = cat['color'] as Color;
-        return InkWell(
-          onTap: () => HomeServices.openSheet(context, cat, widget.pincode),
+                return InkWell(
+          onTap: () => HomeServices.openSheet(
+            context,
+            cat,
+            widget.pincode,
+            latitude: _searchLat,
+            longitude: _searchLng,
+          ),
           borderRadius: BorderRadius.circular(14),
           child: Container(
             padding: const EdgeInsets.all(12),

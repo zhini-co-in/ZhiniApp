@@ -1,6 +1,7 @@
 class ApiConfig {
-  static const String baseUrl = 'https://zhini.atom8itsolutions.com'; 
+  //static const String baseUrl = 'https://zhini.atom8itsolutions.com'; 
   //static const String baseUrl = 'https://crucial-purifier-canopener.ngrok-free.dev';
+  static const String baseUrl = 'http://192.168.1.12:5000';
 
 
   static const String productSubmitUrl = '$baseUrl/product/submit';

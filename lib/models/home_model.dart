@@ -43,8 +43,6 @@ class HomeModel extends HiveObject {
     this.longitude,
   });
 
-  // Convenience converters so existing code (which works with
-  // Map<String, dynamic>) doesn't need to change everywhere.
   Map<String, dynamic> toMap() => {
         'id': id,
         'address': address,
