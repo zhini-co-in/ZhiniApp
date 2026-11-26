@@ -180,6 +180,19 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
       }
     });
   }
+  Future<void> _pickWarrantyDate() async {
+  final now = DateTime.now();
+  final picked = await showDatePicker(
+    context: context,
+    initialDate: now,
+    firstDate: DateTime(now.year - 20),
+    lastDate: DateTime(now.year + 30),
+  );
+  if (picked == null || !mounted) return;
+  final dd = picked.day.toString().padLeft(2, '0');
+  final mm = picked.month.toString().padLeft(2, '0');
+  setState(() => _warranty.text = '$dd/$mm/${picked.year}');
+}
 
   Future<void> _pickExtras() async {
     final picked = await ImagePicker()
@@ -336,8 +349,9 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
     );
   }
 
-  InputDecoration _dec(String hint) => InputDecoration(
-        hintText: hint,
+  InputDecoration _dec(String hint, {Widget? suffix}) => InputDecoration(
+      hintText: hint,
+      suffixIcon: suffix,
         hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 14),
         isDense: true,
         filled: true,
@@ -355,29 +369,39 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
             borderSide: BorderSide(color: AppColors.primary)),
       );
 
-  Widget _row(String label, TextEditingController c, {String hint = ''}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 4,
-            child: Text(label,
-                style: TextStyle(color: AppColors.textMuted, fontSize: 15)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            flex: 6,
-            child: TextField(
-              controller: c,
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
-              decoration: _dec(hint),
+Widget _row(String label, TextEditingController c,
+    {String hint = '', VoidCallback? onPickDate}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(
+      children: [
+        Expanded(
+          flex: 4,
+          child: Text(label,
+              style: TextStyle(color: AppColors.textMuted, fontSize: 15)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 6,
+          child: TextField(
+            controller: c,
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+            decoration: _dec(
+              hint,
+              suffix: onPickDate == null
+                  ? null
+                  : IconButton(
+                      icon: Icon(Icons.calendar_month_rounded,
+                          size: 20, color: AppColors.primary),
+                      onPressed: onPickDate,
+                    ),
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _heroImage() {
     Widget img;
@@ -853,18 +877,16 @@ class _DeviceEditScreenState extends State<DeviceEditScreen> {
                       _box(
                         child: Column(
                           children: [
-                            _header(Icons.info_outline_rounded,
-                                'Device Information'),
-                            const SizedBox(height: 12),
-                            _row('Brand', _brand, hint: 'e.g. Daikin'),
-                            _row('Warranty', _warranty, hint: 'e.g. 2 years'),
-                            _warrantyStatus(),
-                            _row('Purchased From', _shop,
-                                hint: 'Shop / website'),
-                            _row('Shop Warranty', _shopWarranty,
-                                hint: 'Optional'),
-                            _row('Model Number', _model, hint: 'Optional'),
-                            _row('Serial Number', _serial, hint: 'Optional'),
+                           _header(Icons.info_outline_rounded, 'Device Information'),
+const SizedBox(height: 12),
+_row('Brand', _brand, hint: 'e.g. Daikin'),
+_row('Warranty', _warranty,
+    hint: 'e.g. 2 years or pick date', onPickDate: _pickWarrantyDate),
+_warrantyStatus(),
+_row('Purchased From', _shop, hint: 'Shop / website'),
+_row('Shop Warranty', _shopWarranty, hint: 'Enter shop warranty'),
+_row('Model Number', _model, hint: 'Enter model number'),
+_row('Serial Number', _serial, hint: 'Enter serial number'),
                           ],
                         ),
                       ),

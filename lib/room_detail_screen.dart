@@ -453,30 +453,70 @@ Future<void> _confirmDeleteProduct(Map<String, dynamic> item) async {
     );
   }
 
- void _openServiceBookingSheet(Map<String, dynamic> item) {
+void _openServiceBookingSheet(Map<String, dynamic> item) {
   final isUnderWarranty = _isItemUnderWarranty(item);
   final product = item['product']?.toString() ?? 'Appliance';
   final accent = isUnderWarranty ? AppColors.success : AppColors.danger;
 
   final providersFuture = _fetchNearbyProviders(item, isUnderWarranty)
-      .timeout(const Duration(seconds: 30), onTimeout: () => <Map<String, dynamic>>[]);
+      .timeout(const Duration(seconds: 30),
+          onTimeout: () => <Map<String, dynamic>>[]);
+
+  BuildContext? sheetCtx;
+
+  // Service illana -> sheet close pannitu nadula popup kaattum
+  providersFuture.then((list) async {
+    if (!list.isEmpty || !mounted) return;
+    if (sheetCtx != null && sheetCtx!.mounted) {
+      Navigator.of(sheetCtx!).pop();
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        shape: AppDecor.dialogShape,
+        icon: Icon(Icons.error_outline_rounded,
+            color: AppColors.danger, size: 36),
+        title: const Text('No service found', style: AppText.dialogTitle),
+        content: Text(
+          'We could not find any service providers near '
+          'pincode ${widget.pincode} for $product. Please try again later.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          ElevatedButton(
+            style:
+                ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('OK', style: TextStyle(color: AppColors.onPrimary)),
+          ),
+        ],
+      ),
+    );
+  });
 
   showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.cardBg,
-      isScrollControlled: true,
-      shape: AppDecor.sheetShape,
-          builder: (sheetContext) {
-      return FutureBuilder<List<Map<String, dynamic>>>(
-        future: providersFuture,
-        builder: (context, snapshot) {
-          final loading = snapshot.connectionState != ConnectionState.done;
+    context: context,
+    backgroundColor: AppColors.cardBg,
+    isScrollControlled: true,
+    useSafeArea: true,
+    shape: AppDecor.sheetShape,
+    builder: (sheetContext) {
+      sheetCtx = sheetContext;
+      return SizedBox(
+        height: MediaQuery.of(sheetContext).size.height * 0.85,
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: providersFuture,
+          builder: (context, snapshot) {
+            final loading = snapshot.connectionState != ConnectionState.done;
             final providers = snapshot.data ?? [];
 
             return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
@@ -488,7 +528,9 @@ Future<void> _confirmDeleteProduct(Map<String, dynamic> item) async {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(
-                          isUnderWarranty ? Icons.shield_outlined : Icons.build_rounded,
+                          isUnderWarranty
+                              ? Icons.shield_outlined
+                              : Icons.build_rounded,
                           color: accent,
                           size: 18,
                         ),
@@ -499,97 +541,68 @@ Future<void> _confirmDeleteProduct(Map<String, dynamic> item) async {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              isUnderWarranty ? 'Authorized service centers' : 'Local repair providers',
+                              isUnderWarranty
+                                  ? 'Authorized service centers'
+                                  : 'Local repair providers',
                               style: AppText.dialogTitle,
                             ),
                             const SizedBox(height: 2),
-                            Text('$product · Pincode ${widget.pincode}', style: AppText.caption),
+                            Text('$product · Pincode ${widget.pincode}',
+                                style: AppText.caption),
                           ],
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  if (loading)
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 30),
-                      child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-                    )
-                  else if (providers.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Text('No service providers found nearby.', style: AppText.faintCaption),
-                    )
-                  else
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.55),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: providers.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) {
-                          final p = providers[i];
-                          final phone = (p['mobile'] ?? p['phone'])?.toString();
-                          final address = p['address']?.toString();
-                          final ratingRaw = p['rating'];
-                          final rating = ratingRaw != null && ratingRaw.toString() != 'N/A'
-                              ? double.tryParse(ratingRaw.toString())
-                              : null;
-                          final hasPhone = phone != null && phone.isNotEmpty && phone != 'N/A';
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              ServiceProviderCard(
+                  Expanded(
+                    child: loading
+                        ? Center(
+                            child: CircularProgressIndicator(
+                                color: AppColors.primary))
+                        : ListView.separated(
+                            itemCount: providers.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (context, i) {
+                              final p = providers[i];
+                              final phone =
+                                  (p['mobile'] ?? p['phone'])?.toString();
+                              final address = p['address']?.toString();
+                              final ratingRaw = p['rating'];
+                              final rating = ratingRaw != null &&
+                                      ratingRaw.toString() != 'N/A'
+                                  ? double.tryParse(ratingRaw.toString())
+                                  : null;
+                              final hasPhone = phone != null &&
+                                  phone.isNotEmpty &&
+                                  phone != 'N/A';
+                              return ServiceProviderCard(
                                 name: p['name']?.toString() ?? 'Not available',
                                 address: address,
                                 phone: phone,
                                 rating: rating,
-                                onCall: hasPhone ? () => _callNumber(phone) : null,
+                                onCall: hasPhone
+                                    ? () => _callNumber(phone)
+                                    : null,
                                 onDirections: (address != null &&
                                         address.isNotEmpty &&
                                         address != 'Address not available')
                                     ? () => _openMapDirections(address)
                                     : null,
-                              ),
-                                                                                      /*
-                              if (!isUnderWarranty) ...[
-                                const SizedBox(height: 6),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: hasPhone
-                                        ? () => _openBookingDialog(p, item, isUnderWarranty)
-                                        : null,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.primary,
-                                      foregroundColor: AppColors.onPrimary,
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                    ),
-                                    icon: Icon(Icons.calendar_month_rounded, size: 15, color: AppColors.onPrimary),
-                                    label: Text('Book this provider',
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.onPrimary)),
-                                  ),
-                                ),
-                              ],
-                              */
-                            ],
-                          );
-                        },
-                      ),
-                    ),
+                              );
+                            },
+                          ),
+                  ),
                 ],
               ),
             );
           },
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   // ---------------------------------------------------------------------
   // BUILD

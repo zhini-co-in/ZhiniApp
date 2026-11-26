@@ -109,7 +109,7 @@ class AppStrings {
   // ===================================================================
   static const String myDevices = 'My Devices';
   static String citySummary(String city, int total) => '$city · $total registered';
-  static const String scanNew = 'Scan new';
+  static const String scanNew = 'Add devices';
   static const String searchApplianceHint = 'Search appliances, brand, room…';
 
   // Tab / pill DISPLAY labels (keep the internal keys 'All', 'Warranty'... as they are!)

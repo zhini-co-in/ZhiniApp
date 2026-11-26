@@ -29,6 +29,7 @@ import 'package:image/image.dart' as imglib;
 import 'package:native_device_orientation/native_device_orientation.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'models/home_model.dart';
+
 class ScanTab extends StatefulWidget {
   final String mobileNumber;
   final String address;
@@ -96,7 +97,8 @@ class _ScanTabState extends State<ScanTab> {
   String? _manualWarranty;
   String? _warrantyCardUrl;
   File? _warrantyCardFile;
-    // Extra purchase details + extra photos (extra photos go as 'others')
+
+  // Extra purchase details + extra photos (extra photos go as 'others')
   String? _purchasedShopName;
   String? _shopWarranty;
   String? _modelNumber;
@@ -123,7 +125,7 @@ class _ScanTabState extends State<ScanTab> {
   // (used when the user was not registered / had no home before).
   String? _homeAddress;
   String? _homePincode;
-    double? _homeLat;
+  double? _homeLat;
   double? _homeLng;
 
   String get _effectiveAddress =>
@@ -139,6 +141,7 @@ class _ScanTabState extends State<ScanTab> {
   int _reviewCountdown = _reviewSecs;
   bool _capturing = false;
   bool _reviewing = false;
+  bool _manualRequested = false; // user chose "Add manually" in failed dialog
 
   @override
   void initState() {
@@ -186,7 +189,7 @@ class _ScanTabState extends State<ScanTab> {
     // No auto-capture. User taps the shutter button when ready.
   }
 
-  Future<void> _captureForReview() async {  
+  Future<void> _captureForReview() async {
     final c = _cameraController;
     if (c == null || !c.value.isInitialized || c.value.isTakingPicture) {
       _startLiveCountdown();
@@ -194,48 +197,47 @@ class _ScanTabState extends State<ScanTab> {
     }
     if (mounted) setState(() => _capturing = true);
     try {
-  // 1) takePicture-ku MUNNADI sensor orientation padikkanum
-  final orientation = await NativeDeviceOrientationCommunicator()
-      .orientation(useSensor: true);
-  debugPrint('orientation = $orientation');
+      // 1) takePicture-ku MUNNADI sensor orientation padikkanum
+      final orientation = await NativeDeviceOrientationCommunicator()
+          .orientation(useSensor: true);
+      debugPrint('orientation = $orientation');
 
-  final XFile file = await c.takePicture();
-  final previous = _lastCapturedImage;
+      final XFile file = await c.takePicture();
+      final previous = _lastCapturedImage;
 
-  // 2) Orientation-ku thagundha angle
-  int angle = 0;
-  switch (orientation) {
-    case NativeDeviceOrientation.landscapeLeft:
-      angle = -90;
-      break;
-    case NativeDeviceOrientation.landscapeRight:
-      angle = 90;
-      break;
-    case NativeDeviceOrientation.portraitDown:
-      angle = 180;
-      break;
-    default:
-      angle = 0;
-  }
+      // 2) Orientation-ku thagundha angle
+      int angle = 0;
+      switch (orientation) {
+        case NativeDeviceOrientation.landscapeLeft:
+          angle = -90;
+          break;
+        case NativeDeviceOrientation.landscapeRight:
+          angle = 90;
+          break;
+        case NativeDeviceOrientation.portraitDown:
+          angle = 180;
+          break;
+        default:
+          angle = 0;
+      }
 
-  // 3) Rotate pannitu, rotate aana file-a use pannunga
-  final fixedPath =
-      await compute(_rotateToPortraitIsolate, [file.path, angle]);
+      // 3) Rotate pannitu, rotate aana file-a use pannunga
+      final fixedPath =
+          await compute(_rotateToPortraitIsolate, [file.path, angle]);
       await FileImage(File(fixedPath)).evict();
-_lastCapturedImage = File(fixedPath);
-  _lastCapturedImage = File(fixedPath);
+      _lastCapturedImage = File(fixedPath);
 
-  // 4) Keela irukkradhu apdiye (maathadheenga)
-  if (previous != null && previous.path != fixedPath) {
-    previous.delete().catchError((_) => previous);
-  }
-  if (!mounted) return;
+      // 4) Pazhaya photo-va delete
+      if (previous != null && previous.path != fixedPath) {
+        previous.delete().catchError((_) => previous);
+      }
+      if (!mounted) return;
 
-  setState(() {
-    _capturing = false;
-    _reviewing = true;
-    _reviewCountdown = _reviewSecs;
-  });
+      setState(() {
+        _capturing = false;
+        _reviewing = true;
+        _reviewCountdown = _reviewSecs;
+      });
 
       // 6..0 — if the user does nothing, the photo is cancelled and the
       // camera starts again automatically.
@@ -278,6 +280,10 @@ _lastCapturedImage = File(fixedPath);
       final ok = await _identifyWithAi();
       if (!mounted) return;
       if (!ok) {
+        if (_manualRequested) {
+          await _addManually();
+          return;
+        }
         setState(() => _aiThinking = false);
         await _cameraController?.resumePreview(); // illana freeze aagum
         _startLiveCountdown();
@@ -299,6 +305,7 @@ _lastCapturedImage = File(fixedPath);
   // Returns true only if a valid product was identified.
   Future<bool> _identifyWithAi({bool silent = false}) async {
     if (_lastCapturedImage == null) return false;
+    _manualRequested = false;
     try {
       final bytes = await _lastCapturedImage!.readAsBytes();
       final base64Image = base64Encode(bytes);
@@ -315,7 +322,7 @@ _lastCapturedImage = File(fixedPath);
         _showSnack(AppStrings.sessionExpired);
         return false;
       }
-            if (response.statusCode == 400) {
+      if (response.statusCode == 400) {
         // Server said: not a serviceable appliance -> show its message.
         String msg =
             'Please take a clear picture of a supported home appliance or electronic device.';
@@ -324,17 +331,23 @@ _lastCapturedImage = File(fixedPath);
           final serverMsg = err['message']?.toString().trim();
           if (serverMsg != null && serverMsg.isNotEmpty) msg = serverMsg;
         } catch (_) {}
-        if (!silent) await _showNotApplianceDialog(msg);
+        if (!silent) _manualRequested = await _showScanFailedDialog(msg);
         return false;
       }
       if (response.statusCode != 200) {
-        if (!silent) _showSnack(AppStrings.scanFailed(response.statusCode));
+        if (!silent) {
+          _manualRequested = await _showScanFailedDialog(
+              AppStrings.scanFailed(response.statusCode));
+        }
         return false;
       }
 
       final data = jsonDecode(response.body);
       if (data['success'] != true || data['data'] == null) {
-        if (!silent) _showSnack(AppStrings.couldNotIdentify);
+        if (!silent) {
+          _manualRequested =
+              await _showScanFailedDialog(AppStrings.couldNotIdentify);
+        }
         return false;
       }
 
@@ -349,7 +362,10 @@ _lastCapturedImage = File(fixedPath);
       final aiWarranty = clean(data['data']['warranty']);
 
       if (aiProduct == null) {
-        if (!silent) _showSnack(AppStrings.noApplianceFoundPointCamera);
+        if (!silent) {
+          _manualRequested = await _showScanFailedDialog(
+              AppStrings.noApplianceFoundPointCamera);
+        }
         return false;
       }
 
@@ -365,7 +381,10 @@ _lastCapturedImage = File(fixedPath);
       return true;
     } catch (e) {
       debugPrint('❌ AI error: $e');
-      if (!silent) _showSnack(AppStrings.networkErrorWhileScanning);
+      if (!silent) {
+        _manualRequested =
+            await _showScanFailedDialog(AppStrings.networkErrorWhileScanning);
+      }
       return false;
     }
   }
@@ -386,6 +405,10 @@ _lastCapturedImage = File(fixedPath);
           _showSnack(AppStrings.updatedBrandProduct(
               _effectiveBrand ?? AppStrings.unbranded, _resultLabel ?? '—'));
         }
+      }
+      if (!ok && _manualRequested) {
+        _manualRequested = false;
+        await _openEditDialog();
       }
     } finally {
       if (mounted) setState(() => _aiThinking = false);
@@ -483,31 +506,89 @@ _lastCapturedImage = File(fixedPath);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
-    Future<void> _showNotApplianceDialog(String message) async {
-    if (!mounted) return;
-    await showDialog<void>(
+
+  // Scan failed dialog. Returns true if the user chose "Add manually".
+  Future<bool> _showScanFailedDialog(String message) async {
+    if (!mounted) return false;
+    final manual = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardBg,
         shape: AppDecor.dialogShape,
-        title: const Text(
-          'Appliance not recognized',
-          style: AppText.dialogTitle,
-        ),
+        title: const Text('Appliance not recognized',
+            style: AppText.dialogTitle),
         content: Text(
           message,
           style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
         ),
         actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Add manually',
+                style: TextStyle(color: AppColors.primary)),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx, false),
             child: Text('Try again',
                 style: TextStyle(color: AppColors.onPrimary)),
           ),
         ],
       ),
     );
+    return manual == true;
+  }
+
+  // Manual entry after a failed scan: opens the edit screen with empty
+  // details, then continues to the normal result card.
+  Future<void> _addManually() async {
+    _manualRequested = false;
+    final result = await Navigator.push<DeviceEditData>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DeviceEditScreen(
+          title: 'Add details',
+          photoFile: _lastCapturedImage,
+          building: _effectiveAddress.split(',').first.trim(),
+          initial: DeviceEditData(),
+          onSave: (_) async => null,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    // User backed out -> back to live camera
+    if (result == null) {
+      await _cameraController?.resumePreview();
+      _startLiveCountdown();
+      return;
+    }
+
+    String? n(String s) => s.trim().isEmpty ? null : s.trim();
+    setState(() {
+      _resultLabel = result.product;
+      _aiBrand = null;
+      _manualBrand = n(result.brand);
+      _manualWarranty = n(result.warranty);
+      _detectedWarranty = null;
+      _warrantyCardFile = result.warrantyCard;
+      _warrantyCardUrl = result.warrantyCard?.path;
+      _purchasedShopName = n(result.shop);
+      _shopWarranty = n(result.shopWarranty);
+      _modelNumber = n(result.model);
+      _serialNumber = n(result.serial);
+      _extraPhotos = List<File>.from(result.extraPhotos);
+    });
+
+    final services = await _fetchNearbyServices();
+    if (!mounted) return;
+    setState(() {
+      _nearbyServices = services;
+      _servicePage = 0;
+      _showDetectedCard = true;
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -559,9 +640,9 @@ _lastCapturedImage = File(fixedPath);
   }
 
   // ---------------------------------------------------------------------
-  // COMMON EDIT DIALOG — brand + product + warranty + warranty card
+  // COMMON EDIT SCREEN — brand + product + warranty + warranty card
   // ---------------------------------------------------------------------
-    Future<void> _openEditDialog() async {
+  Future<void> _openEditDialog() async {
     final result = await Navigator.push<DeviceEditData>(
       context,
       MaterialPageRoute(
@@ -617,109 +698,110 @@ _lastCapturedImage = File(fixedPath);
   // HOME CREATION — unregistered user: send to "Add New Home" screen,
   // then continue saving the same scanned device.
   // ---------------------------------------------------------------------
-Future<bool> _createHomeThenContinue() async {
-  // 1) User ku explain pannunga
-  final go = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      backgroundColor: AppColors.cardBg,
-      shape: AppDecor.dialogShape,
-      title: const Text(
-        'No home registered yet.',
-        style: AppText.dialogTitle,
-      ),
-      content: const Text(
-        'Please create a home first — your device will be saved to it '
-        'automatically once you’re done.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: Text(AppStrings.cancel,
-              style: TextStyle(color: AppColors.textMuted)),
+  Future<bool> _createHomeThenContinue() async {
+    // 1) User ku explain pannunga
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        shape: AppDecor.dialogShape,
+        title: const Text(
+          'No home registered yet.',
+          style: AppText.dialogTitle,
         ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-          onPressed: () => Navigator.pop(ctx, true),
-          child: Text('Create home',
-              style: TextStyle(color: AppColors.onPrimary)),
+        content: const Text(
+          'Please create a home first — your device will be saved to it '
+          'automatically once you’re done.',
         ),
-      ],
-    ),
-  );
-  if (go != true || !mounted) return false;
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(AppStrings.cancel,
+                style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Create home',
+                style: TextStyle(color: AppColors.onPrimary)),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !mounted) return false;
 
-  // 2) Add New Home screen (AddressScreen, Add Home mode)
+    // 2) Add New Home screen (AddressScreen, Add Home mode)
     final result = await Navigator.push<Map<String, dynamic>>(
-    context,
-    MaterialPageRoute(
-      builder: (_) => AddressScreen(
-        mobileNumber: widget.mobileNumber,
-        isAddingHome: true,
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddressScreen(
+          mobileNumber: widget.mobileNumber,
+          isAddingHome: true,
+        ),
       ),
-    ),
-  );
-  if (result == null || !mounted) return false; // user back pannitaanga
+    );
+    if (result == null || !mounted) return false; // user back pannitaanga
 
     final address = result['address']?.toString() ?? '';
-  final pincode = result['pincode']?.toString() ?? '';
-  final name = result['name']?.toString() ?? widget.name;
-  final pinLat = (result['latitude'] as num?)?.toDouble();
-  final pinLng = (result['longitude'] as num?)?.toDouble();
+    final pincode = result['pincode']?.toString() ?? '';
+    final name = result['name']?.toString() ?? widget.name;
+    final pinLat = (result['latitude'] as num?)?.toDouble();
+    final pinLng = (result['longitude'] as num?)?.toDouble();
 
-  final homeId = await _createHomeOnServer(
-    address: address,
-    pincode: pincode,
-    name: name,
-    latitude: pinLat,
-    longitude: pinLng,
-  );
-  if (homeId == null || !mounted) return false;
+    final homeId = await _createHomeOnServer(
+      address: address,
+      pincode: pincode,
+      name: name,
+      latitude: pinLat,
+      longitude: pinLng,
+    );
+    if (homeId == null || !mounted) return false;
 
-   setState(() {
-    _currentHomeId = homeId;
-    _homeAddress = address;
-    _homePincode = pincode;
-    _homeLat = pinLat;
-    _homeLng = pinLng;
-  });
-  widget.onHomeCreated?.call(homeId);
-  await SessionManager.updateHomeId(homeId);
-  return true;
-}
-Future<String?> _createHomeOnServer({
-  required String address,
-  required String pincode,
-  required String name,
-  double? latitude,
-  double? longitude,
-}) async {
-  try {
-    final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
-      'name': name,
-      'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
-      'address': address,
-      'pincode': pincode,
-      'homeName': address.split(',').first.trim(),
-            if (latitude != null && longitude != null) ...{
-        'latitude': latitude,
-        'longitude': longitude,
-      },
+    setState(() {
+      _currentHomeId = homeId;
+      _homeAddress = address;
+      _homePincode = pincode;
+      _homeLat = pinLat;
+      _homeLng = pinLng;
     });
-    debugPrint('🏠 Create home status: ${response.statusCode}');
-    debugPrint('🏠 Create home body: ${response.body}');
-
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final data = jsonDecode(response.body);
-      if (data['success'] == true && data['data'] != null) {
-        return data['data']['homeId']?.toString();
-      }
-    }
-  } catch (e) {
-    debugPrint('❌ Create home error: $e');
+    widget.onHomeCreated?.call(homeId);
+    await SessionManager.updateHomeId(homeId);
+    return true;
   }
-  return null;
-}
+
+  Future<String?> _createHomeOnServer({
+    required String address,
+    required String pincode,
+    required String name,
+    double? latitude,
+    double? longitude,
+  }) async {
+    try {
+      final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
+        'name': name,
+        'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
+        'address': address,
+        'pincode': pincode,
+        'homeName': address.split(',').first.trim(),
+        if (latitude != null && longitude != null) ...{
+          'latitude': latitude,
+          'longitude': longitude,
+        },
+      });
+      debugPrint('🏠 Create home status: ${response.statusCode}');
+      debugPrint('🏠 Create home body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return data['data']['homeId']?.toString();
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Create home error: $e');
+    }
+    return null;
+  }
 
   // ---------------------------------------------------------------------
   // SUBMIT
@@ -729,10 +811,10 @@ Future<String?> _createHomeOnServer({
     setState(() => _isSubmitting = true);
     try {
       final needsRealHome = _currentHomeId == null ||
-    (_homeAddress == null &&
-        (widget.address.trim().isEmpty || widget.address == 'Default'));
+          (_homeAddress == null &&
+              (widget.address.trim().isEmpty || widget.address == 'Default'));
 
-if (needsRealHome) {
+      if (needsRealHome) {
         final created = await _createHomeThenContinue();
         if (!created) {
           _showSnack(AppStrings.couldNotSetupHome);
@@ -757,12 +839,16 @@ if (needsRealHome) {
           _detectedWarranty ?? _manualWarranty ?? 'N/A';
       request.fields['roomName'] = 'Default';
       request.fields['name'] = widget.name;
-            if (_purchasedShopName != null) {
+      if (_purchasedShopName != null) {
         request.fields['purchasedShopName'] = _purchasedShopName!;
       }
-      if (_shopWarranty != null) request.fields['shopWarranty'] = _shopWarranty!;
+      if (_shopWarranty != null) {
+        request.fields['shopWarranty'] = _shopWarranty!;
+      }
       if (_modelNumber != null) request.fields['modelNumber'] = _modelNumber!;
-      if (_serialNumber != null) request.fields['serialNumber'] = _serialNumber!;
+      if (_serialNumber != null) {
+        request.fields['serialNumber'] = _serialNumber!;
+      }
 
       // extra photos -> 'others'
       for (final f in _extraPhotos) {
@@ -838,6 +924,37 @@ if (needsRealHome) {
     }
   }
 
+  // Back from the result card -> warn that the device is not added yet.
+  Future<void> _handleBackFromResult() async {
+    if (_isSubmitting) return;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        shape: AppDecor.dialogShape,
+        title: const Text('Device not added', style: AppText.dialogTitle),
+        content: Text(
+          "This device hasn't been added to your home yet. "
+          "If you go back now, it won't be saved.",
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Stay', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () => Navigator.pop(ctx, true),
+            child:
+                Text('Go back', style: TextStyle(color: AppColors.onPrimary)),
+          ),
+        ],
+      ),
+    );
+    if (leave == true && mounted) widget.onBack?.call();
+  }
+
   void _resetForNextScan() {
     setState(() {
       _showDetectedCard = false;
@@ -853,7 +970,7 @@ if (needsRealHome) {
       _manualWarranty = null;
       _warrantyCardUrl = null;
       _warrantyCardFile = null;
-            _purchasedShopName = null;
+      _purchasedShopName = null;
       _shopWarranty = null;
       _modelNumber = null;
       _serialNumber = null;
@@ -901,8 +1018,7 @@ if (needsRealHome) {
         ],
       );
     }
-    // Expired -> old badge
-        // Expired -> red shield + "Warranty expired"
+    // Expired -> red shield + "Warranty expired"
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -943,13 +1059,20 @@ if (needsRealHome) {
   // ---------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.scaffoldBg,
-      body: !_isCameraReady || _cameraController == null
-          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
-          : _showDetectedCard
-              ? _buildDetectedCard()
-              : _buildCameraView(),
+    return PopScope(
+      canPop: !_showDetectedCard,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleBackFromResult();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.scaffoldBg,
+        body: !_isCameraReady || _cameraController == null
+            ? Center(
+                child: CircularProgressIndicator(color: AppColors.primary))
+            : _showDetectedCard
+                ? _buildDetectedCard()
+                : _buildCameraView(),
+      ),
     );
   }
 
@@ -988,8 +1111,8 @@ if (needsRealHome) {
               children: [
                 GestureDetector(
                   onTap: () => widget.onBack?.call(),
-                  child:
-                      Icon(Icons.arrow_back, color: AppColors.textSecondary),
+                  child: const Icon(Icons.arrow_back,
+                      color: Colors.white70, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -998,13 +1121,13 @@ if (needsRealHome) {
                     children: [
                       Text(AppStrings.scanAppliance,
                           style: TextStyle(
-                              color: AppColors.textPrimary,
+                              color: AppColors.onPrimary,
                               fontSize: 18,
                               fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
-                      Text(AppStrings.scanHint,
-                          style: TextStyle(
-                              color: AppColors.textMuted, fontSize: 12)),
+                      const Text(AppStrings.scanHint,
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 12)),
                     ],
                   ),
                 ),
@@ -1035,7 +1158,8 @@ if (needsRealHome) {
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: Image.file(_lastCapturedImage!, fit: BoxFit.contain),
+                    child:
+                        Image.file(_lastCapturedImage!, fit: BoxFit.contain),
                   ),
                   Positioned(
                     top: 56,
@@ -1044,7 +1168,7 @@ if (needsRealHome) {
                     child: Center(
                       child: Text(AppStrings.capturedProduct,
                           style: TextStyle(
-                              color: AppColors.textPrimary,
+                              color: AppColors.onPrimary,
                               fontSize: 18,
                               fontWeight: FontWeight.w600)),
                     ),
@@ -1060,14 +1184,14 @@ if (needsRealHome) {
                             onPressed: _cancelReview,
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 15),
-                              side: BorderSide(color: AppColors.textSecondary),
+                              side: const BorderSide(color: Colors.white70),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10)),
                             ),
                             child: Text(
                                 AppStrings.cancelWithCount(_reviewCountdown),
                                 style: TextStyle(
-                                    color: AppColors.textPrimary,
+                                    color: AppColors.onPrimary,
                                     fontSize: 15)),
                           ),
                         ),
@@ -1083,7 +1207,7 @@ if (needsRealHome) {
                             ),
                             child: Text(AppStrings.proceed,
                                 style: TextStyle(
-                                    color: AppColors.textPrimary,
+                                    color: AppColors.onPrimary,
                                     fontSize: 15)),
                           ),
                         ),
@@ -1107,287 +1231,317 @@ if (needsRealHome) {
       height: double.infinity,
       color: AppColors.cardBg,
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-                            Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => widget.onBack?.call(),
-                    child: Icon(Icons.arrow_back,
-                        color: AppColors.textPrimary, size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      AppStrings.productDetected,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                 Flexible(
-  child: OutlinedButton.icon(
-    onPressed: _aiThinking ? null : _recheckWithAi,
-    style: OutlinedButton.styleFrom(
-      side: BorderSide(color: AppColors.primaryBorder),
-      shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20)),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      minimumSize: const Size(0, 0),
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    ),
-    icon: _aiThinking
-        ? SizedBox(
-            width: 12,
-            height: 12,
-            child: CircularProgressIndicator(
-              color: AppColors.primary,
-              strokeWidth: 2,
-            ),
-          )
-        : Icon(Icons.refresh_rounded, size: 14, color: AppColors.primary),
-    label: Text(
-      _aiThinking ? AppStrings.checking : AppStrings.askZhini,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: AppText.linkAction,
-    ),
-  ),
-),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: AppColors.borderSubtle,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: (_lastCapturedImage != null)
-                        ? Image.file(_lastCapturedImage!, fit: BoxFit.cover)
-                        : Icon(Icons.ac_unit, color: AppColors.textFaint),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        // Brand + the ONE common Edit button
-                        Row(
-                          children: [
-                            Expanded(
-  child: Text(
-    _effectiveBrand ?? AppStrings.unbranded,
-    maxLines: 1,
-    overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: _effectiveBrand != null
-                                      ? AppColors.textPrimary
-                                      : AppColors.textFaint,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            OutlinedButton.icon(
-  onPressed: _openEditDialog,
-  style: OutlinedButton.styleFrom(
-    side: BorderSide(color: AppColors.primaryBorder),
-    shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20)),
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    minimumSize: const Size(0, 0),
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  ),
-  icon: Icon(Icons.edit_outlined, size: 14, color: AppColors.primary),
-  label: const Text(
-    AppStrings.edit,
-    maxLines: 1,
-    style: AppText.linkAction,
-  ),
-),
-                          ],
+                        GestureDetector(
+                          onTap: _handleBackFromResult,
+                          child: Icon(Icons.arrow_back,
+                              color: AppColors.textPrimary, size: 22),
                         ),
-                        const SizedBox(height: 4),
-                        Text(_resultLabel ?? '—', style: AppText.body),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            AppStrings.productDetected,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: OutlinedButton.icon(
+                            onPressed: _aiThinking ? null : _recheckWithAi,
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: AppColors.primaryBorder),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              minimumSize: const Size(0, 0),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: _aiThinking
+                                ? SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.primary,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(Icons.refresh_rounded,
+                                    size: 14, color: AppColors.primary),
+                            label: Text(
+                              _aiThinking
+                                  ? AppStrings.checking
+                                  : AppStrings.askZhini,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.linkAction,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(height: 16),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: AppColors.borderSubtle,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: (_lastCapturedImage != null)
+                              ? Image.file(_lastCapturedImage!,
+                                  fit: BoxFit.cover)
+                              : Icon(Icons.ac_unit,
+                                  color: AppColors.textFaint),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Brand + the ONE common Edit button
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _effectiveBrand ?? AppStrings.unbranded,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: _effectiveBrand != null
+                                            ? AppColors.textPrimary
+                                            : AppColors.textFaint,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: _openEditDialog,
+                                    style: OutlinedButton.styleFrom(
+                                      side: BorderSide(
+                                          color: AppColors.primaryBorder),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(20)),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 6),
+                                      minimumSize: const Size(0, 0),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    icon: Icon(Icons.edit_outlined,
+                                        size: 14, color: AppColors.primary),
+                                    label: const Text(
+                                      AppStrings.edit,
+                                      maxLines: 1,
+                                      style: AppText.linkAction,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(_resultLabel ?? '—', style: AppText.body),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
 
-              // Warranty status only (editing happens in the common dialog)
-              const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _warrantyIndicator(),
-              ),
-              if (_warrantyCardUrl != null) ...[
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(Icons.check_circle,
-                        size: 14, color: AppColors.success),
-                    const SizedBox(width: 6),
-                    Text(AppStrings.warrantyCardAdded,
-                        style: TextStyle(
-                            color: AppColors.success, fontSize: 12)),
-                  ],
-                ),
-              ],
-                            if (_extraPhotos.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(Icons.photo_library_outlined,
-                        size: 14, color: AppColors.success),
-                    const SizedBox(width: 6),
-                    Text('${_extraPhotos.length} extra photo(s) added',
-                        style: TextStyle(color: AppColors.success, fontSize: 12)),
-                  ],
-                ),
-              ],
-
-              if (_nearbyServices.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  _isUnderWarrantyNow
-                      ? AppStrings.authorizedCentersByRating
-                      : AppStrings.recommendedCentersByRating,
-                  style: AppText.faintCaption,
-                ),
-                const SizedBox(height: 8),
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _servicePageItems.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final s = _servicePageItems[index];
-                    final ratingRaw = s['rating'];
-                    final reviewsRaw = s['reviews_count'] ?? s['reviewsCount'];
-                    final neighborProof = s['neighborProof'];
-                    return ServiceProviderCard(
-                      name: s['name']?.toString() ?? AppStrings.notAvailable,
-                      address: s['address']?.toString(),
-                      phone: s['phone']?.toString(),
-                      rating: ratingRaw != null
-                          ? double.tryParse(ratingRaw.toString())
-                          : null,
-                      reviewsCount: reviewsRaw != null
-                          ? int.tryParse(reviewsRaw.toString())
-                          : null,
-                      badge: neighborProof is Map
-                          ? neighborProof['badge']?.toString()
-                          : null,
-                      showStarRow: true,
-                      onCall: () => _callService(s['phone']?.toString()),
-                      onDirections: () =>
-                          _openDirections(s['address']?.toString()),
-                    );
-                  },
-                ),
-                if (_nearbyServices.length > _servicePageSize) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      TextButton.icon(
-                        onPressed: _servicePage > 0
-                            ? () => setState(() => _servicePage--)
-                            : null,
-                        icon: const Icon(Icons.chevron_left_rounded, size: 18),
-                        label: const Text(AppStrings.previous),
-                      ),
-                      Text(
-                          AppStrings.pageOf(
-                              _servicePage + 1, _serviceTotalPages),
-                          style: AppText.caption),
-                      TextButton.icon(
-                        onPressed: _servicePage < _serviceTotalPages - 1
-                            ? () => setState(() => _servicePage++)
-                            : null,
-                        icon: const Icon(Icons.chevron_right_rounded, size: 18),
-                        label: const Text(AppStrings.next),
+                    // Warranty status only (editing happens in the edit screen)
+                    const SizedBox(height: 14),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: _warrantyIndicator(),
+                    ),
+                    if (_warrantyCardUrl != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.check_circle,
+                              size: 14, color: AppColors.success),
+                          const SizedBox(width: 6),
+                          Text(AppStrings.warrantyCardAdded,
+                              style: TextStyle(
+                                  color: AppColors.success, fontSize: 12)),
+                        ],
                       ),
                     ],
+                    if (_extraPhotos.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.photo_library_outlined,
+                              size: 14, color: AppColors.success),
+                          const SizedBox(width: 6),
+                          Text('${_extraPhotos.length} extra photo(s) added',
+                              style: TextStyle(
+                                  color: AppColors.success, fontSize: 12)),
+                        ],
+                      ),
+                    ],
+
+                    if (_nearbyServices.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        _isUnderWarrantyNow
+                            ? AppStrings.authorizedCentersByRating
+                            : AppStrings.recommendedCentersByRating,
+                        style: AppText.faintCaption,
+                      ),
+                      const SizedBox(height: 8),
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _servicePageItems.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          final s = _servicePageItems[index];
+                          final ratingRaw = s['rating'];
+                          final reviewsRaw =
+                              s['reviews_count'] ?? s['reviewsCount'];
+                          final neighborProof = s['neighborProof'];
+                          return ServiceProviderCard(
+                            name: s['name']?.toString() ??
+                                AppStrings.notAvailable,
+                            address: s['address']?.toString(),
+                            phone: s['phone']?.toString(),
+                            rating: ratingRaw != null
+                                ? double.tryParse(ratingRaw.toString())
+                                : null,
+                            reviewsCount: reviewsRaw != null
+                                ? int.tryParse(reviewsRaw.toString())
+                                : null,
+                            badge: neighborProof is Map
+                                ? neighborProof['badge']?.toString()
+                                : null,
+                            showStarRow: true,
+                            onCall: () => _callService(s['phone']?.toString()),
+                            onDirections: () =>
+                                _openDirections(s['address']?.toString()),
+                          );
+                        },
+                      ),
+                      if (_nearbyServices.length > _servicePageSize) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            TextButton.icon(
+                              onPressed: _servicePage > 0
+                                  ? () => setState(() => _servicePage--)
+                                  : null,
+                              icon: const Icon(Icons.chevron_left_rounded,
+                                  size: 18),
+                              label: const Text(AppStrings.previous),
+                            ),
+                            Text(
+                                AppStrings.pageOf(
+                                    _servicePage + 1, _serviceTotalPages),
+                                style: AppText.caption),
+                            TextButton.icon(
+                              onPressed: _servicePage < _serviceTotalPages - 1
+                                  ? () => setState(() => _servicePage++)
+                                  : null,
+                              icon: const Icon(Icons.chevron_right_rounded,
+                                  size: 18),
+                              label: const Text(AppStrings.next),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ] else if (!_aiThinking) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryFaint,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          _effectiveBrand == null
+                              ? AppStrings.brandNotIdentified
+                              : AppStrings.noAuthorizedCentersFound,
+                          style: AppText.faintCaption,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            // Fixed bottom buttons
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isSubmitting ? null : _confirmAndSubmit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: _isSubmitting
+                          ? SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  color: AppColors.onPrimary, strokeWidth: 2),
+                            )
+                          : const Text(AppStrings.ok, style: AppText.button),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: _resetForNextScan,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        side: BorderSide(color: AppColors.primaryBorder),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: Text(AppStrings.scanAnotherAppliance,
+                          style: TextStyle(
+                              color: AppColors.primary, fontSize: 16)),
+                    ),
                   ),
                 ],
-              ] else if (!_aiThinking) ...[
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryFaint,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    _effectiveBrand == null
-                        ? AppStrings.brandNotIdentified
-                        : AppStrings.noAuthorizedCentersFound,
-                    style: AppText.faintCaption,
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _confirmAndSubmit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: _isSubmitting
-                      ? SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                              color: AppColors.textPrimary, strokeWidth: 2),
-                        )
-                      : const Text(AppStrings.ok, style: AppText.button),
-                ),
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: _resetForNextScan,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    side: BorderSide(color: AppColors.primaryBorder),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: Text(AppStrings.scanAnotherAppliance,
-                      style:
-                          TextStyle(color: AppColors.primary, fontSize: 16)),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
 // args = [path, angle]
 Future<String> _rotateToPortraitIsolate(List<dynamic> args) async {
   final path = args[0] as String;

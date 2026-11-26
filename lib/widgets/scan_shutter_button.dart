@@ -87,7 +87,7 @@ class _ScanShutterButtonState extends State<ScanShutterButton>
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.black38,
-                          border: Border.all(color: AppColors.textPrimary, width: 3),
+                          border: Border.all(color: Colors.white, width: 3),
                           boxShadow: [
                             BoxShadow(
                               color: AppColors.primary.withOpacity(0.45),
@@ -107,18 +107,18 @@ class _ScanShutterButtonState extends State<ScanShutterButton>
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [
-                              AppColors.textPrimary,
-                              AppColors.primary.withOpacity(0.85),
-                            ],
+  Colors.white,
+  AppColors.primary.withOpacity(0.85),
+],
                           ),
                         ),
                         child: widget.busy
                             ? Padding(
                                 padding: EdgeInsets.all(18),
                                 child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: AppColors.textPrimary,
-                                ),
+  strokeWidth: 2.5,
+  color: Colors.white,
+),
                               )
                             : const Icon(
                                 Icons.document_scanner_rounded,
@@ -136,12 +136,12 @@ class _ScanShutterButtonState extends State<ScanShutterButton>
         const SizedBox(height: 8),
         Text(
           widget.busy ? 'Capturing…' : '',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 0.6,
-          ),
+          style: const TextStyle(
+  color: Colors.white,
+  fontSize: 13,
+  fontWeight: FontWeight.w500,
+  letterSpacing: 0.6,
+),
         ),
       ],
     );

@@ -188,7 +188,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           child: Text(
                             "Get Started",
                             style: TextStyle(
-                                color: AppColors.textPrimary,
+                                color: AppColors.onPrimary,
                                 fontWeight: FontWeight.w600),
                           ),
                         )
@@ -204,7 +204,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             ),
                             child: Icon(
                               Icons.arrow_forward,
-                              color: AppColors.textPrimary,
+                              color: AppColors.onPrimary,
                               size: 24,
                             ),
                           ),
