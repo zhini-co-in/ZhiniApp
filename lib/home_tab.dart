@@ -305,12 +305,14 @@ class HomeTabState extends State<HomeTab> {
     if (_homes.isEmpty) return; // wait until homes are loaded
 
     // Location: pincode irundha pincode, illa na GPS.
-    final pin = _currentPincode;
+       final pin = _currentPincode;
     final usePin = pin.isNotEmpty;
-    if (!usePin && (_lat == null || _lng == null)) return;
+    final lat = _currentHomeLat ?? _lat;
+    final lng = _currentHomeLng ?? _lng;
+    if (lat == null || lng == null) return; // backend needs coordinates
     final loc = usePin
         ? pin
-        : 'gps:${_lat!.toStringAsFixed(2)},${_lng!.toStringAsFixed(2)}';
+        : 'gps:${lat.toStringAsFixed(2)},${lng.toStringAsFixed(2)}';
 
     // V3 key: old stamps ignored.
     final stampKey = 'nearbyPrefetchV3:$loc';
@@ -336,15 +338,15 @@ class HomeTabState extends State<HomeTab> {
       for (int i = 0; i < list.length; i += 4) {
         if (!mounted) return;
         final results = await Future.wait(list.skip(i).take(4).map((n) {
-          return prefetchNearbyProviders(DeviceEntry(
+                    return prefetchNearbyProviders(DeviceEntry(
             homeId: _currentHomeId,
             homeAddress: _currentAddress,
             pincode: usePin ? pin : '',
             roomKey: _defaultRoomName.toLowerCase(),
             roomName: _defaultRoomName,
             raw: {'product': n, 'brand': ''},
-            latitude: usePin ? null : _lat,
-            longitude: usePin ? null : _lng,
+            latitude: lat,
+            longitude: lng,
           ));
         }));
         okCount += results.where((r) => r).length;
@@ -457,6 +459,8 @@ class HomeTabState extends State<HomeTab> {
               'address': h['address']?.toString() ?? widget.address,
               'pincode': h['pincode']?.toString() ?? widget.pincode,
                             'homeName': h['homeName']?.toString(),
+                                          'latitude': h['latitude'],
+              'longitude': h['longitude'],
               'rooms': rooms,
               'roomIds': roomIds,
               'members': members,
@@ -552,6 +556,8 @@ class HomeTabState extends State<HomeTab> {
           'address': home['address'],
           'pincode': home['pincode'],
            'homeName': home['homeName'],
+                     'latitude': home['latitude'],
+          'longitude': home['longitude'],
           'rooms': roomsIn.map((k, v) => MapEntry(k, List<Map<String, dynamic>>.from(v))),
           'roomIds': Map<String, String>.from(roomIdsIn),
           'members': List<Map<String, dynamic>>.from(home['members'] as List),
@@ -675,6 +681,10 @@ class HomeTabState extends State<HomeTab> {
     final p = _currentHome?['pincode']?.toString().trim() ?? '';
     return p.isNotEmpty ? p : widget.pincode;
   }
+    double? get _currentHomeLat =>
+      double.tryParse(_currentHome?['latitude']?.toString() ?? '');
+  double? get _currentHomeLng =>
+      double.tryParse(_currentHome?['longitude']?.toString() ?? '');
 
   void _notifySelectedHome() {
     final id = _currentHomeId;
@@ -842,7 +852,7 @@ class HomeTabState extends State<HomeTab> {
 
     debugPrint('🏠 isRegisterFlow=$isRegisterFlow existingDefaultId=$existingDefaultId');
 
-    final result = await Navigator.push<Map<String, String>>(
+    final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
         builder: (_) => AddressScreen(
@@ -854,18 +864,20 @@ class HomeTabState extends State<HomeTab> {
 
     if (result == null || !mounted) return;
 
-    final newAddress = result['address'] ?? '';
-    final newPincode = result['pincode'] ?? '';
+        final newAddress = result['address']?.toString() ?? '';
+    final newPincode = result['pincode']?.toString() ?? '';
     if (newAddress.isEmpty) return;
     final newName = (result['name'] ?? '').toString().trim();
     final enteredHomeName = (result['homeName'] ?? '').toString().trim();
+    final pinLat = (result['latitude'] as num?)?.toDouble();
+    final pinLng = (result['longitude'] as num?)?.toDouble();
     final firstPart = newAddress.split(',').first.trim();
     if (newName.isNotEmpty) setState(() => _nameOverride = newName);
 
     // ---------- UPDATE the Default (Guest) home ----------
     if (existingDefaultId != null) {
       debugPrint('✏️ Updating Default home $existingDefaultId -> $newAddress');
-      final ok = await _submitAddressUpdate(
+            final ok = await _submitAddressUpdate(
         existingDefaultId,
         newAddress,
         newPincode,
@@ -873,6 +885,8 @@ class HomeTabState extends State<HomeTab> {
             ? enteredHomeName
             : (firstPart.isNotEmpty ? firstPart : 'Home'),
         name: newName.isNotEmpty ? newName : null,
+        latitude: pinLat,
+        longitude: pinLng,
       );
       if (ok && mounted) {
         if (newName.isNotEmpty) {
@@ -906,13 +920,15 @@ class HomeTabState extends State<HomeTab> {
 
     // ---------- CREATE a brand-new home ----------
     debugPrint('🆕 Creating NEW home -> $newAddress');
-    final newHomeId = await _createNewHomeRecord(
+        final newHomeId = await _createNewHomeRecord(
       address: newAddress,
       pincode: newPincode,
       name: newName.isNotEmpty ? newName : _displayName,
       homeName: enteredHomeName.isNotEmpty
           ? enteredHomeName
           : (firstPart.isNotEmpty ? firstPart : AppStrings.homeN(_homes.length + 1)),
+      latitude: pinLat,
+      longitude: pinLng,
     );
 
     if (newHomeId == null) {
@@ -1026,11 +1042,13 @@ class HomeTabState extends State<HomeTab> {
   }
 
   // Creates a brand-new home on the backend and returns its homeId.
-  Future<String?> _createNewHomeRecord({
+    Future<String?> _createNewHomeRecord({
     required String address,
     required String pincode,
     required String name,
     required String homeName,
+    double? latitude,
+    double? longitude,
   }) async {
     try {
       final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
@@ -1057,6 +1075,10 @@ class HomeTabState extends State<HomeTab> {
           'address': address,
           'pincode': pincode,
           'homeName': homeName,
+                    if (latitude != null && longitude != null) ...{
+            'latitude': latitude,
+            'longitude': longitude,
+          },
           'PlatformInfo': {
             'device': {
               'deviceId': deviceId,
@@ -1085,12 +1107,14 @@ class HomeTabState extends State<HomeTab> {
     return null;
   }
 
-    Future<bool> _submitAddressUpdate(
+      Future<bool> _submitAddressUpdate(
     String homeId,
     String address,
     String pincode, {
     String? homeName,
     String? name,
+    double? latitude,
+    double? longitude,
   }) async {
     final result = await EntityUpdateService.update(
       homeId: homeId,
@@ -1098,6 +1122,8 @@ class HomeTabState extends State<HomeTab> {
       pincode: pincode.isNotEmpty ? pincode : null,
       homeName: homeName,
       name: name,
+      latitude: latitude,
+      longitude: longitude,
     );
 
     if (!mounted) return false;
@@ -1953,8 +1979,7 @@ Widget _buildAppliancesGadgets() {
   }
 
   // Tap on an appliance -> directly show nearby service providers.
-  void _openApplianceService(String name) {
-    final noPin = _currentPincode.isEmpty;
+   void _openApplianceService(String name) {
     final entry = DeviceEntry(
       homeId: _currentHomeId,
       homeAddress: _currentAddress,
@@ -1962,8 +1987,8 @@ Widget _buildAppliancesGadgets() {
       roomKey: _defaultRoomName.toLowerCase(),
       roomName: _defaultRoomName,
       raw: {'product': name, 'brand': ''},
-      latitude: noPin ? _lat : null,
-      longitude: noPin ? _lng : null,
+      latitude: _currentHomeLat ?? _lat,
+      longitude: _currentHomeLng ?? _lng,
     );
     showDeviceServiceSheet(
       context,

@@ -44,6 +44,8 @@ dependencies:
   webview_flutter: ^4.9.0
   native_device_orientation: ^2.0.3
   gal: ^2.3.0
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
 
 
 dev_dependencies:

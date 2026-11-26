@@ -289,6 +289,8 @@ class _ProfileTabState extends State<ProfileTab> {
 
     final enteredName = result['name']?.toString().trim() ?? '';
     final enteredHomeName = result['homeName']?.toString().trim() ?? '';
+        final pinLat = (result['latitude'] as num?)?.toDouble();
+    final pinLng = (result['longitude'] as num?)?.toDouble();
     final firstPart = address.split(',').first.trim();
     final resolvedHomeName = enteredHomeName.isNotEmpty
         ? enteredHomeName
@@ -296,12 +298,14 @@ class _ProfileTabState extends State<ProfileTab> {
 
     if (existingDefaultId != null) {
       // Promote the existing Default home in place.
-      final updateResult = await EntityUpdateService.update(
+            final updateResult = await EntityUpdateService.update(
         homeId: existingDefaultId,
         address: address,
         pincode: pincode != null && pincode.isNotEmpty ? pincode : null,
         homeName: resolvedHomeName,
         name: enteredName.isNotEmpty ? enteredName : null,
+        latitude: pinLat,
+        longitude: pinLng,
       );
       if (!mounted) return;
 
@@ -325,11 +329,13 @@ class _ProfileTabState extends State<ProfileTab> {
     }
 
     // No default home yet — genuine "add a new home" path.
-    final newHomeId = await _createNewHomeRecord(
+        final newHomeId = await _createNewHomeRecord(
       address: address,
       pincode: pincode ?? '',
       name: enteredName.isNotEmpty ? enteredName : widget.name,
       homeName: resolvedHomeName,
+      latitude: pinLat,
+      longitude: pinLng,
     );
 
     if (!mounted) return;
@@ -347,11 +353,13 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Future<String?> _createNewHomeRecord({
+    Future<String?> _createNewHomeRecord({
     required String address,
     required String pincode,
     required String name,
     required String homeName,
+    double? latitude,
+    double? longitude,
   }) async {
     try {
       final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
@@ -371,6 +379,10 @@ class _ProfileTabState extends State<ProfileTab> {
         'address': address,
         'pincode': pincode,
         'homeName': homeName,
+                if (latitude != null && longitude != null) ...{
+          'latitude': latitude,
+          'longitude': longitude,
+        },
         'PlatformInfo': {
           'device': {
             'deviceId': deviceId,
@@ -741,6 +753,8 @@ class _ProfileTabState extends State<ProfileTab> {
       'address': h['address']?.toString() ?? widget.address,
       'pincode': h['pincode']?.toString() ?? widget.pincode,
       'homeName': h['homeName']?.toString(),
+            'latitude': h['latitude'],
+      'longitude': h['longitude'],
       'rooms': rooms,
       'roomIds': roomIds,
       'members': members,

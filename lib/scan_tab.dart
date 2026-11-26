@@ -627,7 +627,7 @@ Future<bool> _createHomeThenContinue() async {
   if (go != true || !mounted) return false;
 
   // 2) Add New Home screen (AddressScreen, Add Home mode)
-  final result = await Navigator.push<Map<String, String>>(
+    final result = await Navigator.push<Map<String, dynamic>>(
     context,
     MaterialPageRoute(
       builder: (_) => AddressScreen(
@@ -638,15 +638,18 @@ Future<bool> _createHomeThenContinue() async {
   );
   if (result == null || !mounted) return false; // user back pannitaanga
 
-  final address = result['address'] ?? '';
-  final pincode = result['pincode'] ?? '';
-  final name = result['name'] ?? widget.name;
+    final address = result['address']?.toString() ?? '';
+  final pincode = result['pincode']?.toString() ?? '';
+  final name = result['name']?.toString() ?? widget.name;
+  final pinLat = (result['latitude'] as num?)?.toDouble();
+  final pinLng = (result['longitude'] as num?)?.toDouble();
 
-  // 3) Intha real address vechu server la home create pannunga
   final homeId = await _createHomeOnServer(
     address: address,
     pincode: pincode,
     name: name,
+    latitude: pinLat,
+    longitude: pinLng,
   );
   if (homeId == null || !mounted) return false;
 
@@ -663,6 +666,8 @@ Future<String?> _createHomeOnServer({
   required String address,
   required String pincode,
   required String name,
+  double? latitude,
+  double? longitude,
 }) async {
   try {
     final response = await ApiClient.post(ApiConfig.createHomeUrl, body: {
@@ -671,6 +676,10 @@ Future<String?> _createHomeOnServer({
       'address': address,
       'pincode': pincode,
       'homeName': address.split(',').first.trim(),
+            if (latitude != null && longitude != null) ...{
+        'latitude': latitude,
+        'longitude': longitude,
+      },
     });
     debugPrint('🏠 Create home status: ${response.statusCode}');
     debugPrint('🏠 Create home body: ${response.body}');

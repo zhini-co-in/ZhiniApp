@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'main_shell.dart';
+import 'map_picker_screen.dart';
 import 'service_provider_screen.dart';
 import 'services/session_manager.dart';
 import 'services/device_id_service.dart';
@@ -50,6 +51,12 @@ class _AddressScreenState extends State<AddressScreen> {
   bool _isSkipping = false; // auto default-home creation in progress
   bool _isFetchingLocation = false; // "use current location" autofill in progress
   bool _autoFailed = false; // auto default-home creation failed -> show Retry
+
+  // Remembers where the pin was last set (current location / map pick),
+  // so the confirm-map opens exactly there.
+  double? _pinLat;
+  double? _pinLng;
+  String _pinKey = '';
 
   // New user signup (not Add Home, not service provider): no form is shown.
   // We directly create a "Default" home and go to the home screen.
@@ -177,6 +184,9 @@ class _AddressScreenState extends State<AddressScreen> {
       _addressController.text = resolved.address;
       _cityController.text = resolved.city;
       _pincodeController.text = resolved.pincode;
+      _pinLat = position.latitude;
+      _pinLng = position.longitude;
+      _pinKey = _addressKey();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -194,6 +204,142 @@ class _AddressScreenState extends State<AddressScreen> {
   }
 
   // ---------------------------------------------------------------------
+  // MAP PIN
+  // ---------------------------------------------------------------------
+
+  String _addressKey() =>
+      '${_addressController.text.trim()}|${_cityController.text.trim()}|${_pincodeController.text.trim()}';
+
+  // "Pick on map" — Swiggy/Zomato style pin, then autofill the form.
+  Future<void> _pickOnMap() async {
+    final loc = await Navigator.push<PickedLocation>(
+      context,
+      MaterialPageRoute(builder: (_) => const MapPickerScreen()),
+    );
+    if (loc == null || !mounted) return;
+
+    String street = loc.address;
+    String city = '';
+    try {
+      final list = await placemarkFromCoordinates(loc.lat, loc.lng);
+      if (list.isNotEmpty) {
+        final p = list.first;
+        city = p.locality ?? p.subAdministrativeArea ?? '';
+        final bits = [p.name, p.street, p.subLocality]
+            .where((e) => e != null && e.isNotEmpty)
+            .toSet()
+            .join(', ');
+        if (bits.isNotEmpty) street = bits;
+      }
+    } catch (e) {
+      debugPrint('❌ Map reverse geocode error: $e');
+    }
+
+    _addressController.text = street;
+    _cityController.text = city;
+    _pincodeController.text = loc.pincode;
+    _pinLat = loc.lat;
+    _pinLng = loc.lng;
+    _pinKey = _addressKey();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('Location set from map. Add your flat / landmark and review.')),
+    );
+  }
+
+  // Free fallback geocoder (OpenStreetMap Nominatim). Used when the phone's
+  // own geocoder returns nothing. Returns [lat, lng] or null.
+  Future<List<double>?> _nominatimLookup(String query) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': query,
+        'format': 'json',
+        'limit': '1',
+        'countrycodes': 'in',
+      });
+      final res = await http
+          .get(uri, headers: {'User-Agent': 'com.zhini.mobile'})
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return null;
+      final list = jsonDecode(res.body);
+      if (list is List && list.isNotEmpty) {
+        final lat = double.tryParse(list.first['lat'].toString());
+        final lon = double.tryParse(list.first['lon'].toString());
+        if (lat != null && lon != null) return [lat, lon];
+      }
+    } catch (e) {
+      debugPrint('❌ Nominatim error: $e');
+    }
+    return null;
+  }
+
+  // Swiggy / Zomato style: before saving, show the map with a pin on the
+  // entered address (or current location). User adjusts it and confirms.
+  Future<PickedLocation?> _confirmPinOnMap(
+      String address, String city, String pincode) async {
+    double? lat;
+    double? lng;
+
+    if (_pinLat != null && _pinLng != null && _pinKey == _addressKey()) {
+      lat = _pinLat;
+      lng = _pinLng;
+    } else {
+      // From most specific to least specific.
+      final queries = <String>[
+        '$address, $city $pincode, India',
+        '$address, $city, India',
+        '$city $pincode, India',
+        '$pincode, India',
+        '$city, India',
+      ];
+
+      // 1) Phone's own geocoder
+      for (final q in queries) {
+        try {
+          debugPrint('🔎 Geocode query: $q');
+          final found = await locationFromAddress(q);
+          debugPrint('🔎 Geocode result: ${found.length}');
+          if (found.isNotEmpty) {
+            lat = found.first.latitude;
+            lng = found.first.longitude;
+            break;
+          }
+        } catch (e) {
+          debugPrint('❌ Forward geocode error: $e');
+        }
+      }
+
+      // 2) Fallback: OpenStreetMap Nominatim
+      if (lat == null || lng == null) {
+        for (final q in queries) {
+          debugPrint('🔎 Nominatim query: $q');
+          final p = await _nominatimLookup(q);
+          if (p != null) {
+            lat = p[0];
+            lng = p[1];
+            break;
+          }
+        }
+      }
+    }
+
+    if (!mounted) return null;
+    return Navigator.push<PickedLocation>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MapPickerScreen(
+          initialLat: lat,
+          initialLng: lng,
+          // Typed address: never jump to GPS, even if nothing was found.
+          useGpsIfNoStart: false,
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
   // SAVE (full manual/auto-filled address form)
   // ---------------------------------------------------------------------
 
@@ -202,7 +348,7 @@ class _AddressScreenState extends State<AddressScreen> {
     final homeNameInput = _homeNameController.text.trim();
     final address = _addressController.text.trim();
     final city = _cityController.text.trim();
-    final pincode = _pincodeController.text.trim();
+    var pincode = _pincodeController.text.trim();
 
     if (name.isEmpty || address.isEmpty || city.isEmpty || pincode.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -213,17 +359,29 @@ class _AddressScreenState extends State<AddressScreen> {
 
     setState(() => _isSaving = true);
 
+    // Confirm the exact location with a pin on the map.
+    final pin = await _confirmPinOnMap(address, city, pincode);
+    if (!mounted) return;
+    if (pin == null) {
+      setState(() => _isSaving = false);
+      return;
+    }
+
+    // Use the pincode of the confirmed pin when the map found one.
+    if (pin.pincode.isNotEmpty) pincode = pin.pincode;
+
     final fullAddress = '$address, $city - $pincode';
 
     // "Add Home" flow — hand the new address back to HomeTab / ProfileTab.
     if (widget.isAddingHome) {
-      if (!mounted) return;
       setState(() => _isSaving = false);
       Navigator.pop(context, {
         'address': fullAddress,
         'pincode': pincode,
         'name': name,
         'homeName': homeNameInput,
+        'latitude': pin.lat,
+        'longitude': pin.lng,
       });
       return;
     }
@@ -235,11 +393,13 @@ class _AddressScreenState extends State<AddressScreen> {
       name: name,
     );
 
-    final newHomeId = await _createNewHomeRecord(
+        final newHomeId = await _createNewHomeRecord(
       address: fullAddress,
       pincode: pincode,
       name: name,
       homeName: homeNameInput.isNotEmpty ? homeNameInput : address,
+      latitude: pin.lat,
+      longitude: pin.lng,
     );
 
     if (!mounted) return;
@@ -354,6 +514,8 @@ class _AddressScreenState extends State<AddressScreen> {
     required String pincode,
     required String name,
     String? homeName,
+    double? latitude,
+    double? longitude,
   }) async {
     try {
       final authToken = await FirebaseAuth.instance.currentUser?.getIdToken();
@@ -378,6 +540,10 @@ class _AddressScreenState extends State<AddressScreen> {
           'mobile': ApiConfig.stripCountryCode(widget.mobileNumber),
           'address': address,
           'pincode': pincode,
+                    if (latitude != null && longitude != null) ...{
+            'latitude': latitude,
+            'longitude': longitude,
+          },
           if (homeName != null && homeName.isNotEmpty) 'homeName': homeName,
           'role': widget.isServiceProfessional ? 'service_provider' : 'user',
           'PlatformInfo': {
@@ -527,7 +693,23 @@ class _AddressScreenState extends State<AddressScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: anyActionInProgress ? null : _pickOnMap,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(color: AppColors.primary),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.map_outlined,
+                          size: 18, color: AppColors.primary),
+                      label: const Text('Pick on map',
+                          style: TextStyle(color: AppColors.primary)),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Align(
                     alignment: Alignment.center,
                     child: TextButton.icon(

@@ -22,8 +22,15 @@ class HomeModel extends HiveObject {
   @HiveField(4)
   List<Map<String, dynamic>> members;
 
- @HiveField(5)
+  @HiveField(5)
   String? homeName;
+
+  // Pin location confirmed on the map (null for old / Default homes).
+  @HiveField(6)
+  double? latitude;
+
+  @HiveField(7)
+  double? longitude;
 
   HomeModel({
     this.id,
@@ -32,6 +39,8 @@ class HomeModel extends HiveObject {
     required this.rooms,
     required this.members,
     this.homeName,
+    this.latitude,
+    this.longitude,
   });
 
   // Convenience converters so existing code (which works with
@@ -42,7 +51,9 @@ class HomeModel extends HiveObject {
         'pincode': pincode,
         'rooms': rooms,
         'members': members,
-                'homeName': homeName,
+        'homeName': homeName,
+        'latitude': latitude,
+        'longitude': longitude,
       };
 
   factory HomeModel.fromMap(Map<String, dynamic> map) => HomeModel(
@@ -62,6 +73,8 @@ class HomeModel extends HiveObject {
                 ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ??
             [],
-                    homeName: map['homeName']?.toString(),
+        homeName: map['homeName']?.toString(),
+        latitude: double.tryParse(map['latitude']?.toString() ?? ''),
+        longitude: double.tryParse(map['longitude']?.toString() ?? ''),
       );
 }
