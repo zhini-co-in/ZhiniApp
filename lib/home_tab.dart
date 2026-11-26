@@ -199,7 +199,6 @@ class HomeTabState extends State<HomeTab> {
   final PageController _bannerController = PageController(viewportFraction: 0.92);
   int _bannerIndex = 0;
   Timer? _bannerTimer;
-  final ScrollController _servicesController = ScrollController();
 
   void _startBannerTimer() {
     _bannerTimer?.cancel();
@@ -220,7 +219,6 @@ class HomeTabState extends State<HomeTab> {
   void dispose() {
     _bannerTimer?.cancel();
     _bannerController.dispose();
-    _servicesController.dispose();
     applianceAddRequest.removeListener(_onApplianceAddRequest);
     super.dispose();
   }

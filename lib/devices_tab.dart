@@ -106,8 +106,8 @@ class _DevicesTabState extends State<DevicesTab> {
     if (f == null) return;
     devicesFilterRequest.value = null; // consume
 
-         void apply() {
-  _activeTab = f == 'Catalog' ? 'All' : f;
+        void apply() {
+  _activeTab = f;
   _quickFilters.clear();
   _roomFilter = null;
   _categoryFilter = null;
